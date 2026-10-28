@@ -103,11 +103,11 @@ elif authentication_status == True:
         if menu_principal == "Pagamentos":
             submenu = st.selectbox("2️⃣ Ação:", ["Cadastrar Cliente", "Ver Parcelas", "Baixar Parcela", "Excluir Contrato"])
         elif menu_principal == "Perícias":
-            submenu = st.selectbox("2️⃣ Ação:", ["Cadastrar Perícia", "Ver Perícias"])
+            submenu = st.selectbox("2️⃣ Ação:", ["Cadastrar Perícia", "Ver Perícias", "Excluir Perícia"])
         elif menu_principal == "Expedientes":
-            submenu = st.selectbox("2️⃣ Ação:", ["Cadastrar Expediente", "Consultar Expedientes"])
+            submenu = st.selectbox("2️⃣ Ação:", ["Cadastrar Expediente", "Consultar Expedientes", "Excluir Expediente"])
         elif menu_principal == "Pendências":
-            submenu = st.selectbox("2️⃣ Ação:", ["Cadastrar Pendência", "Consultar Pendências"])
+            submenu = st.selectbox("2️⃣ Ação:", ["Cadastrar Pendência", "Consultar Pendências", "Excluir Pendência"])
 
     st.markdown("---")
 
@@ -186,7 +186,8 @@ elif authentication_status == True:
                                 if v == 'Pago': return 'color: #28a745; font-weight: bold;'
                                 if v == 'Pendente': return 'color: #dc3545; font-weight: bold;'
                                 return ''
-                            st.dataframe(df_p.style.map(color_st, subset=['Status']), use_container_width=True)
+                            df_styled = df_p.style.map(color_st, subset=['Status'])
+                            st.dataframe(df_styled, use_container_width=True)
                         else: st.info("Sem parcelas.")
                 else: st.info("Nenhum cliente.")
             except Exception as e: st.error(f"Erro: {e}")
@@ -208,7 +209,8 @@ elif authentication_status == True:
                                 if v == 'Pago': return 'color: #28a745; font-weight: bold;'
                                 if v == 'Pendente': return 'color: #dc3545; font-weight: bold;'
                                 return ''
-                            st.dataframe(df_p.style.map(color_st, subset=['Status']), use_container_width=True)
+                            df_styled = df_p.style.map(color_st, subset=['Status'])
+                            st.dataframe(df_styled, use_container_width=True)
                             st.markdown("---")
                             id_bx = st.number_input("ID da Parcela para dar baixa:", min_value=1, step=1)
                             if st.button("Confirmar Baixa (Pago)", type="primary"):
@@ -220,19 +222,21 @@ elif authentication_status == True:
             except Exception as e: st.error(f"Erro: {e}")
                 
         elif submenu == "Excluir Contrato":
-            st.header("🗑️ Exclusão de Contratos")
+            st.header("🗑️ Exclusão de Contratos e Honorários")
             if user_role == 'admin':
                 try:
                     res_h = supabase.table("honorarios").select("*").execute()
                     if res_h.data:
-                        cdict = {f"{h['cliente']} — Serv: {h['servico']}": h['id'] for h in res_h.data}
-                        cli_sel = st.selectbox("Contrato a excluir:", options=list(cdict.keys()))
+                        cdict = {f"{h['cliente']} — Serv: {h['servico']} (ID: {h['id']})": h['id'] for h in res_h.data}
+                        cli_sel = st.selectbox("Selecione o Contrato a excluir:", options=list(cdict.keys()))
                         if cli_sel:
-                            st.warning("⚠️ Atenção: Exclusão permanente.")
-                            if st.button("Excluir Definitivamente", type="primary"):
-                                supabase.table("honorarios").delete().eq("id", cdict[cli_sel]).execute()
-                                st.success("Contrato excluído!")
-                                st.rerun()
+                            st.warning("⚠️ Atenção: A exclusão remove permanentemente o contrato e todas as parcelas associadas.")
+                            confirmar_exc = st.checkbox("Confirmo que deseja excluir permanentemente este contrato.")
+                            if confirmar_exc:
+                                if st.button("🚨 EXCLUIR DEFINITIVAMENTE", type="primary"):
+                                    supabase.table("honorarios").delete().eq("id", cdict[cli_sel]).execute()
+                                    st.success("Contrato excluído com sucesso!")
+                                    st.rerun()
                     else: st.info("Sem contratos.")
                 except Exception as e: st.error(f"Erro: {e}")
             else: st.error("🔒 Acesso Restrito aos administradores.")
@@ -266,8 +270,27 @@ elif authentication_status == True:
                         if v in ['Pago', 'Concluído']: return 'color: #28a745; font-weight: bold;'
                         if v == 'Pendente': return 'color: #dc3545; font-weight: bold;'
                         return ''
-                    st.dataframe(df_p.style.map(color_p, subset=['Status']), use_container_width=True)
+                    df_styled = df_p.style.map(color_p, subset=['Status'])
+                    st.dataframe(df_styled, use_container_width=True)
                 else: st.info("Nenhuma perícia.")
+            except Exception as e: st.error(f"Erro: {e}")
+
+        elif submenu == "Excluir Perícia":
+            st.header("🗑️ Exclusão de Perícias")
+            try:
+                res_p = supabase.table("pericias").select("*").execute()
+                if res_p.data:
+                    pdict = {f"ID: {i['id']} | Cliente: {i['cliente']} | Tipo: {i['tipo_pericia']}": i['id'] for i in res_p.data}
+                    p_sel = st.selectbox("Selecione a Perícia a excluir:", options=list(pdict.keys()))
+                    if p_sel:
+                        st.warning("⚠️ Atenção: A exclusão desta perícia é irreversível.")
+                        conf_p = st.checkbox("Confirmo que desejo excluir esta perícia.")
+                        if conf_p:
+                            if st.button("🚨 EXCLUIR PERÍCIA", type="primary"):
+                                supabase.table("pericias").delete().eq("id", pdict[p_sel]).execute()
+                                st.success("Perícia excluída com sucesso!")
+                                st.rerun()
+                else: st.info("Nenhuma perícia cadastrada.")
             except Exception as e: st.error(f"Erro: {e}")
                 
     elif menu_principal == "Expedientes":
@@ -299,7 +322,8 @@ elif authentication_status == True:
                         if v in ['Protocolado', 'Concluído']: return 'color: #28a745; font-weight: bold;'
                         if v == 'Pendente': return 'color: #dc3545; font-weight: bold;'
                         return ''
-                    st.dataframe(df_e.style.map(color_e, subset=['Status']), use_container_width=True)
+                    df_styled = df_e.style.map(color_e, subset=['Status'])
+                    st.dataframe(df_styled, use_container_width=True)
                     st.markdown("---")
                     id_bx_e = st.number_input("ID do Expediente concluído:", min_value=1, step=1)
                     if st.button("Marcar como Protocolado"):
@@ -307,6 +331,24 @@ elif authentication_status == True:
                         st.success("Atualizado!")
                         st.rerun()
                 else: st.info("Nenhum expediente.")
+            except Exception as e: st.error(f"Erro: {e}")
+
+        elif submenu == "Excluir Expediente":
+            st.header("🗑️ Exclusão de Expedientes")
+            try:
+                res_e = supabase.table("expedientes").select("*").execute()
+                if res_e.data:
+                    edict = {f"ID: {i['id']} | Proc: {i['numero_processo']} | Cliente: {i['cliente']}": i['id'] for i in res_e.data}
+                    e_sel = st.selectbox("Selecione o Expediente a excluir:", options=list(edict.keys()))
+                    if e_sel:
+                        st.warning("⚠️ Atenção: A exclusão deste expediente é irreversível.")
+                        conf_e = st.checkbox("Confirmo que desejo excluir este expediente.")
+                        if conf_e:
+                            if st.button("🚨 EXCLUIR EXPEDIENTE", type="primary"):
+                                supabase.table("expedientes").delete().eq("id", edict[e_sel]).execute()
+                                st.success("Expediente excluído com sucesso!")
+                                st.rerun()
+                else: st.info("Nenhum expediente cadastrado.")
             except Exception as e: st.error(f"Erro: {e}")
                 
     elif menu_principal == "Pendências":
@@ -347,7 +389,8 @@ elif authentication_status == True:
                         if v == 'Entregue': return 'color: #28a745; font-weight: bold;'
                         if v == 'Pendente': return 'color: #dc3545; font-weight: bold;'
                         return ''
-                    st.dataframe(df_pen.style.map(color_pen, subset=['Status']), use_container_width=True)
+                    df_styled = df_pen.style.map(color_pen, subset=['Status'])
+                    st.dataframe(df_styled, use_container_width=True)
                     st.markdown("---")
                     id_bx_p = st.number_input("ID da Pendência resolvida:", min_value=1, step=1)
                     if st.button("Marcar como Entregue"):
@@ -355,4 +398,22 @@ elif authentication_status == True:
                         st.success("Baixa realizada!")
                         st.rerun()
                 else: st.info("Sem pendências.")
+            except Exception as e: st.error(f"Erro: {e}")
+
+        elif submenu == "Excluir Pendência":
+            st.header("🗑️ Exclusão de Pendências")
+            try:
+                res_pen = supabase.table("pendencias").select("*").execute()
+                if res_pen.data:
+                    pdict = {f"ID: {i['id']} | Cliente: {i['cliente']} | Doc: {i['documento_devido']}": i['id'] for i in res_pen.data}
+                    p_sel = st.selectbox("Selecione a Pendência a excluir:", options=list(pdict.keys()))
+                    if p_sel:
+                        st.warning("⚠️ Atenção: A exclusão desta pendência é irreversível.")
+                        conf_pen = st.checkbox("Confirmo que desejo excluir esta pendência.")
+                        if conf_pen:
+                            if st.button("🚨 EXCLUIR PENDÊNCIA", type="primary"):
+                                supabase.table("pendencias").delete().eq("id", pdict[p_sel]).execute()
+                                st.success("Pendência excluída com sucesso!")
+                                st.rerun()
+                else: st.info("Nenhuma pendência cadastrada.")
             except Exception as e: st.error(f"Erro: {e}")

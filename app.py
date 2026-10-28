@@ -153,6 +153,10 @@ elif authentication_status == True:
 
     st.markdown("---")
 
+    # Inicializa o estado dos alertas se não existir
+    if 'esconder_alertas' not in st.session_state:
+        st.session_state['esconder_alertas'] = False
+
     try:
         lista_per = carregar_pericias()
         lista_exp = carregar_expedientes()
@@ -171,13 +175,26 @@ elif authentication_status == True:
                 dias = (dt - hoje).days
                 alertas.append((dias, f"📂 Expediente | Processo: {e['numero_processo']} | Prazo: {dt.strftime('%d/%m/%Y')} | Resp: {e['responsavel']}"))
                 
-        if alertas:
-            with st.expander("🚨 **CENTRAL DE ALERTAS DE PRAZOS**", expanded=True):
+        if alertas and not st.session_state['esconder_alertas']:
+            col_alerta_1, col_alerta_2 = st.columns([0.85, 0.15])
+            with col_alerta_1:
+                st.subheader("🚨 Central de Alertas de Prazos")
+            with col_alerta_2:
+                if st.button("🔕 Ocultar Alertas"):
+                    st.session_state['esconder_alertas'] = True
+                    st.rerun()
+
+            with st.expander("📌 **Ver Lista de Alertas Ativos**", expanded=True):
                 for dias, texto in sorted(alertas, key=lambda x: x[0]):
                     if dias < 0: st.error(f"⚠️ **VENCIDO ({abs(dias)} dias):** {texto}")
                     elif dias == 1: st.error(f"🚨 **CRÍTICO (1 dia):** {texto}")
                     elif dias <= 3: st.warning(f"⚠️ **URGENTE ({dias} dias):** {texto}")
                     elif dias <= 7: st.info(f"📅 **LEMBRETE ({dias} dias):** {texto}")
+            st.markdown("---")
+        elif st.session_state['esconder_alertas'] and alertas:
+            if st.button("🔔 Mostrar Alertas Novamente"):
+                st.session_state['esconder_alertas'] = False
+                st.rerun()
             st.markdown("---")
     except Exception:
         pass
@@ -409,7 +426,7 @@ elif authentication_status == True:
                         cli_sel = st.selectbox("Selecione o Contrato a excluir:", options=list(cdict.keys()))
                         if cli_sel:
                             st.warning("⚠️ Atenção: A exclusão remove permanentemente o contrato e todas as parcelas associadas.")
-                            confirmar_exc = st.checkbox("Confirmo que deseja excluir permanentemente este contrato.")
+                            confirmar_exc = st.checkbox("Confirmo que desejo excluir permanentemente este contrato.")
                             if confirmar_exc:
                                 if st.button("🚨 EXCLUIR DEFINITIVAMENTE", type="primary"):
                                     supabase.table("honorarios").delete().eq("id", cdict[cli_sel]).execute()

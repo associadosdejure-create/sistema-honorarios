@@ -46,8 +46,7 @@ elif authentication_status == True:
     TEMPO_MAXIMO = 300  # 5 minutos em segundos
 
     if 'ultima_atividade' in st.session_state:
-        tempo_decorrido = agora - st.session_state['ultima_atividade']
-        if tempo_decorrido > TEMPO_MAXIMO:
+        if agora - st.session_state['ultima_atividade'] > TEMPO_MAXIMO:
             st.session_state['logout'] = True
             st.session_state['authentication_status'] = None
             st.session_state['sessao_expirada'] = True
@@ -70,6 +69,27 @@ elif authentication_status == True:
     except Exception:
         st.error("⚠️ ERRO CRÍTICO: Chaves do Supabase ausentes nos Secrets.")
         st.stop()
+
+    # --- FUNÇÕES DE CACHE PARA ACELERAR O SISTEMA ---
+    @st.cache_data(ttl=30)
+    def carregar_honorarios():
+        res = supabase.table("honorarios").select("*").execute()
+        return res.data if res.data else []
+
+    @st.cache_data(ttl=30)
+    def carregar_pericias():
+        res = supabase.table("pericias").select("*").execute()
+        return res.data if res.data else []
+
+    @st.cache_data(ttl=30)
+    def carregar_expedientes():
+        res = supabase.table("expedientes").select("*").execute()
+        return res.data if res.data else []
+
+    @st.cache_data(ttl=30)
+    def carregar_pendencias():
+        res = supabase.table("pendencias").select("*").execute()
+        return res.data if res.data else []
 
     with st.sidebar:
         st.write(f"Logado como: **{name}**")
@@ -111,26 +131,25 @@ elif authentication_status == True:
 
     st.markdown("---")
 
+    # --- CENTRAL DE ALERTAS OTIMIZADA ---
     try:
-        res_p = supabase.table("pericias").select("*").eq("status", "Pendente").execute()
-        res_e = supabase.table("expedientes").select("*").eq("status", "Pendente").execute()
+        lista_per = carregar_pericias()
+        lista_exp = carregar_expedientes()
         hoje = date.today()
         alertas = []
         
-        if res_p.data:
-            for p in res_p.data:
-                if p.get('data_indicacao'):
-                    dt = datetime.strptime(p['data_indicacao'], "%Y-%m-%d").date()
-                    dias = (dt - hoje).days
-                    alertas.append((dias, f"🔬 Perícia | Cliente: {p['cliente']} | Tipo: {p['tipo_pericia']} | Data: {dt.strftime('%d/%m/%Y')}"))
-                    
-        if res_e.data:
-            for e in res_e.data:
-                if e.get('data_manifestacao'):
-                    dt = datetime.strptime(e['data_manifestacao'], "%Y-%m-%d").date()
-                    dias = (dt - hoje).days
-                    alertas.append((dias, f"📂 Expediente | Processo: {e['numero_processo']} | Prazo: {dt.strftime('%d/%m/%Y')} | Resp: {e['responsavel']}"))
-                    
+        for p in lista_per:
+            if p.get('status') == 'Pendente' and p.get('data_indicacao'):
+                dt = datetime.strptime(p['data_indicacao'], "%Y-%m-%d").date()
+                dias = (dt - hoje).days
+                alertas.append((dias, f"🔬 Perícia | Cliente: {p['cliente']} | Tipo: {p['tipo_pericia']} | Data: {dt.strftime('%d/%m/%Y')}"))
+                
+        for e in lista_exp:
+            if e.get('status') == 'Pendente' and e.get('data_manifestacao'):
+                dt = datetime.strptime(e['data_manifestacao'], "%Y-%m-%d").date()
+                dias = (dt - hoje).days
+                alertas.append((dias, f"📂 Expediente | Processo: {e['numero_processo']} | Prazo: {dt.strftime('%d/%m/%Y')} | Resp: {e['responsavel']}"))
+                
         if alertas:
             with st.expander("🚨 **CENTRAL DE ALERTAS DE PRAZOS**", expanded=True):
                 for dias, texto in sorted(alertas, key=lambda x: x[0]):
@@ -163,6 +182,7 @@ elif authentication_status == True:
                                     venc = (data_primeira + relativedelta(months=i)).strftime("%Y-%m-%d")
                                     sp = f"{i+1}/{int(num_parcelas)}"
                                     supabase.table("parcelas").insert({"honorario_id": h_id, "numero_parcela": sp, "valor": float(vp), "vencimento": venc, "status": "Pendente"}).execute()
+                                st.cache_data.clear() # Limpa o cache para atualizar os dados
                                 st.success(f"Sucesso! Honorário de {cliente} cadastrado.")
                             else: st.error("Erro ao retornar dados.")
                         except Exception as e: st.error(f"Erro: {e}")
@@ -171,9 +191,9 @@ elif authentication_status == True:
         elif submenu == "Ver Parcelas":
             st.header("📋 Visualizar Parcelas")
             try:
-                res_h = supabase.table("honorarios").select("*").execute()
-                if res_h.data:
-                    cdict = {f"{h['cliente']} — Serv: {h['servico']}": h['id'] for h in res_h.data}
+                res_h = carregar_honorarios()
+                if res_h:
+                    cdict = {f"{h['cliente']} — Serv: {h['servico']}": h['id'] for h in res_h}
                     cli_sel = st.selectbox("Selecione o Cliente:", options=list(cdict.keys()))
                     if cli_sel:
                         h_id = cdict[cli_sel]
@@ -195,9 +215,9 @@ elif authentication_status == True:
         elif submenu == "Baixar Parcela":
             st.header("🔄 Dar Baixa em Parcela")
             try:
-                res_h = supabase.table("honorarios").select("*").execute()
-                if res_h.data:
-                    cdict = {f"{h['cliente']} — Serv: {h['servico']}": h['id'] for h in res_h.data}
+                res_h = carregar_honorarios()
+                if res_h:
+                    cdict = {f"{h['cliente']} — Serv: {h['servico']}": h['id'] for h in res_h}
                     cli_sel = st.selectbox("Selecione o Cliente:", options=list(cdict.keys()), key="bx_cli")
                     if cli_sel:
                         h_id = cdict[cli_sel]
@@ -215,6 +235,7 @@ elif authentication_status == True:
                             id_bx = st.number_input("ID da Parcela para dar baixa:", min_value=1, step=1)
                             if st.button("Confirmar Baixa (Pago)", type="primary"):
                                 supabase.table("parcelas").update({"status": "Pago"}).eq("id", id_bx).execute()
+                                st.cache_data.clear()
                                 st.success(f"Parcela {id_bx} baixada!")
                                 st.rerun()
                         else: st.info("Sem parcelas.")
@@ -225,9 +246,9 @@ elif authentication_status == True:
             st.header("🗑️ Exclusão de Contratos e Honorários")
             if user_role == 'admin':
                 try:
-                    res_h = supabase.table("honorarios").select("*").execute()
-                    if res_h.data:
-                        cdict = {f"{h['cliente']} — Serv: {h['servico']} (ID: {h['id']})": h['id'] for h in res_h.data}
+                    res_h = carregar_honorarios()
+                    if res_h:
+                        cdict = {f"{h['cliente']} — Serv: {h['servico']} (ID: {h['id']})": h['id'] for h in res_h}
                         cli_sel = st.selectbox("Selecione o Contrato a excluir:", options=list(cdict.keys()))
                         if cli_sel:
                             st.warning("⚠️ Atenção: A exclusão remove permanentemente o contrato e todas as parcelas associadas.")
@@ -235,6 +256,7 @@ elif authentication_status == True:
                             if confirmar_exc:
                                 if st.button("🚨 EXCLUIR DEFINITIVAMENTE", type="primary"):
                                     supabase.table("honorarios").delete().eq("id", cdict[cli_sel]).execute()
+                                    st.cache_data.clear()
                                     st.success("Contrato excluído com sucesso!")
                                     st.rerun()
                     else: st.info("Sem contratos.")
@@ -255,6 +277,7 @@ elif authentication_status == True:
                     if cli_per and tipo_per:
                         try:
                             supabase.table("pericias").insert({"cliente": cli_per, "tipo_pericia": tipo_per, "juizo_vara": juizo, "honorario_pericial": float(val_per), "data_indicacao": dt_per.strftime("%Y-%m-%d"), "status": "Pendente"}).execute()
+                            st.cache_data.clear()
                             st.success("Perícia cadastrada!")
                         except Exception as e: st.error(f"Erro: {e}")
                     else: st.error("Preencha Cliente e Tipo.")
@@ -262,9 +285,9 @@ elif authentication_status == True:
         elif submenu == "Ver Perícias":
             st.header("📋 Lista de Perícias")
             try:
-                res_p = supabase.table("pericias").select("*").execute()
-                if res_p.data:
-                    lista = [{"ID": i['id'], "Cliente": i['cliente'], "Tipo": i['tipo_pericia'], "Juízo": i.get('juizo_vara',''), "Valor": f"R$ {i.get('honorario_pericial',0):.2f}", "Data": datetime.strptime(i['data_indicacao'], "%Y-%m-%d").strftime("%d/%m/%Y"), "Status": i.get('status','Pendente')} for i in res_p.data]
+                res_p = carregar_pericias()
+                if res_p:
+                    lista = [{"ID": i['id'], "Cliente": i['cliente'], "Tipo": i['tipo_pericia'], "Juízo": i.get('juizo_vara',''), "Valor": f"R$ {i.get('honorario_pericial',0):.2f}", "Data": datetime.strptime(i['data_indicacao'], "%Y-%m-%d").strftime("%d/%m/%Y"), "Status": i.get('status','Pendente')} for i in res_p]
                     df_p = pd.DataFrame(lista)
                     def color_p(v):
                         if v in ['Pago', 'Concluído']: return 'color: #28a745; font-weight: bold;'
@@ -278,9 +301,9 @@ elif authentication_status == True:
         elif submenu == "Excluir Perícia":
             st.header("🗑️ Exclusão de Perícias")
             try:
-                res_p = supabase.table("pericias").select("*").execute()
-                if res_p.data:
-                    pdict = {f"ID: {i['id']} | Cliente: {i['cliente']} | Tipo: {i['tipo_pericia']}": i['id'] for i in res_p.data}
+                res_p = carregar_pericias()
+                if res_p:
+                    pdict = {f"ID: {i['id']} | Cliente: {i['cliente']} | Tipo: {i['tipo_pericia']}": i['id'] for i in res_p}
                     p_sel = st.selectbox("Selecione a Perícia a excluir:", options=list(pdict.keys()))
                     if p_sel:
                         st.warning("⚠️ Atenção: A exclusão desta perícia é irreversível.")
@@ -288,6 +311,7 @@ elif authentication_status == True:
                         if conf_p:
                             if st.button("🚨 EXCLUIR PERÍCIA", type="primary"):
                                 supabase.table("pericias").delete().eq("id", pdict[p_sel]).execute()
+                                st.cache_data.clear()
                                 st.success("Perícia excluída com sucesso!")
                                 st.rerun()
                 else: st.info("Nenhuma perícia cadastrada.")
@@ -307,6 +331,7 @@ elif authentication_status == True:
                     if num_proc and cli_exp and resp_exp:
                         try:
                             supabase.table("expedientes").insert({"numero_processo": num_proc, "cliente": cli_exp, "descricao": desc_exp, "data_manifestacao": dt_exp.strftime("%Y-%m-%d"), "responsavel": resp_exp, "status": "Pendente"}).execute()
+                            st.cache_data.clear()
                             st.success("Expediente cadastrado!")
                         except Exception as e: st.error(f"Erro: {e}")
                     else: st.error("Preencha Processo, Cliente e Responsável.")
@@ -314,9 +339,9 @@ elif authentication_status == True:
         elif submenu == "Consultar Expedientes":
             st.header("📋 Consulta de Expedientes")
             try:
-                res_e = supabase.table("expedientes").select("*").execute()
-                if res_e.data:
-                    lista = [{"ID": i['id'], "Processo": i['numero_processo'], "Cliente": i['cliente'], "Prazo": datetime.strptime(i['data_manifestacao'], "%Y-%m-%d").strftime("%d/%m/%Y"), "Status": i.get('status','Pendente')} for i in res_e.data]
+                res_e = carregar_expedientes()
+                if res_e:
+                    lista = [{"ID": i['id'], "Processo": i['numero_processo'], "Cliente": i['cliente'], "Prazo": datetime.strptime(i['data_manifestacao'], "%Y-%m-%d").strftime("%d/%m/%Y"), "Status": i.get('status','Pendente')} for i in res_e]
                     df_e = pd.DataFrame(lista)
                     def color_e(v):
                         if v in ['Protocolado', 'Concluído']: return 'color: #28a745; font-weight: bold;'
@@ -328,6 +353,7 @@ elif authentication_status == True:
                     id_bx_e = st.number_input("ID do Expediente concluído:", min_value=1, step=1)
                     if st.button("Marcar como Protocolado"):
                         supabase.table("expedientes").update({"status": "Protocolado"}).eq("id", id_bx_e).execute()
+                        st.cache_data.clear()
                         st.success("Atualizado!")
                         st.rerun()
                 else: st.info("Nenhum expediente.")
@@ -336,9 +362,9 @@ elif authentication_status == True:
         elif submenu == "Excluir Expediente":
             st.header("🗑️ Exclusão de Expedientes")
             try:
-                res_e = supabase.table("expedientes").select("*").execute()
-                if res_e.data:
-                    edict = {f"ID: {i['id']} | Proc: {i['numero_processo']} | Cliente: {i['cliente']}": i['id'] for i in res_e.data}
+                res_e = carregar_expedientes()
+                if res_e:
+                    edict = {f"ID: {i['id']} | Proc: {i['numero_processo']} | Cliente: {i['cliente']}": i['id'] for i in res_e}
                     e_sel = st.selectbox("Selecione o Expediente a excluir:", options=list(edict.keys()))
                     if e_sel:
                         st.warning("⚠️ Atenção: A exclusão deste expediente é irreversível.")
@@ -346,6 +372,7 @@ elif authentication_status == True:
                         if conf_e:
                             if st.button("🚨 EXCLUIR EXPEDIENTE", type="primary"):
                                 supabase.table("expedientes").delete().eq("id", edict[e_sel]).execute()
+                                st.cache_data.clear()
                                 st.success("Expediente excluído com sucesso!")
                                 st.rerun()
                 else: st.info("Nenhum expediente cadastrado.")
@@ -373,6 +400,7 @@ elif authentication_status == True:
                         if docs:
                             try:
                                 supabase.table("pendencias").insert({"cliente": cli_pen, "processo": proc_pen, "documento_devido": " | ".join(docs), "data_solicitacao": dt_sol.strftime("%Y-%m-%d"), "status": "Pendente"}).execute()
+                                st.cache_data.clear()
                                 st.success("Pendência cadastrada!")
                             except Exception as e: st.error(f"Erro: {e}")
                         else: st.warning("Selecione ao menos um documento.")
@@ -381,9 +409,9 @@ elif authentication_status == True:
         elif submenu == "Consultar Pendências":
             st.header("📂 Consulta de Pendências")
             try:
-                res_pen = supabase.table("pendencias").select("*").execute()
-                if res_pen.data:
-                    lista = [{"ID": i['id'], "Cliente": i['cliente'], "Documento": i['documento_devido'], "Status": i.get('status','Pendente')} for i in res_pen.data]
+                res_pen = carregar_pendencias()
+                if res_pen:
+                    lista = [{"ID": i['id'], "Cliente": i['cliente'], "Documento": i['documento_devido'], "Status": i.get('status','Pendente')} for i in res_pen]
                     df_pen = pd.DataFrame(lista)
                     def color_pen(v):
                         if v == 'Entregue': return 'color: #28a745; font-weight: bold;'
@@ -395,6 +423,7 @@ elif authentication_status == True:
                     id_bx_p = st.number_input("ID da Pendência resolvida:", min_value=1, step=1)
                     if st.button("Marcar como Entregue"):
                         supabase.table("pendencias").update({"status": "Entregue"}).eq("id", id_bx_p).execute()
+                        st.cache_data.clear()
                         st.success("Baixa realizada!")
                         st.rerun()
                 else: st.info("Sem pendências.")
@@ -403,9 +432,9 @@ elif authentication_status == True:
         elif submenu == "Excluir Pendência":
             st.header("🗑️ Exclusão de Pendências")
             try:
-                res_pen = supabase.table("pendencias").select("*").execute()
-                if res_pen.data:
-                    pdict = {f"ID: {i['id']} | Cliente: {i['cliente']} | Doc: {i['documento_devido']}": i['id'] for i in res_pen.data}
+                res_pen = carregar_pendencias()
+                if res_pen:
+                    pdict = {f"ID: {i['id']} | Cliente: {i['cliente']} | Doc: {i['documento_devido']}": i['id'] for i in res_pen}
                     p_sel = st.selectbox("Selecione a Pendência a excluir:", options=list(pdict.keys()))
                     if p_sel:
                         st.warning("⚠️ Atenção: A exclusão desta pendência é irreversível.")
@@ -413,6 +442,7 @@ elif authentication_status == True:
                         if conf_pen:
                             if st.button("🚨 EXCLUIR PENDÊNCIA", type="primary"):
                                 supabase.table("pendencias").delete().eq("id", pdict[p_sel]).execute()
+                                st.cache_data.clear()
                                 st.success("Pendência excluída com sucesso!")
                                 st.rerun()
                 else: st.info("Nenhuma pendência cadastrada.")

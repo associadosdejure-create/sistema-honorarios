@@ -5,7 +5,7 @@ import pandas as pd
 from datetime import datetime
 from dateutil.relativedelta import relativedelta
 
-st.set_page_config(page_title="Controle de Honorários", layout="wide", page_icon="⚖️")
+st.set_page_config(page_title="PAGAMENTOS DEJURE", layout="wide", page_icon="⚖️")
 
 # --- CREDENCIAIS E PERFIS DE ACESSO ---
 # Geramos os hashes seguros de forma nativa para evitar qualquer erro de tipo

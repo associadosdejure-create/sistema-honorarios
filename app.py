@@ -7,19 +7,19 @@ from dateutil.relativedelta import relativedelta
 
 st.set_page_config(page_title="Controle de Honorários", layout="wide", page_icon="⚖️")
 
-# --- CREDENCIAIS DE ACESSO (LOGIN) ---
-# Você pode alterar os nomes de usuário e as senhas (as senhas abaixo estão em texto puro para facilitar, depois podemos criptografar se desejar)
-names = ['Administrador', 'Advogado(a)']
-usernames = ['admin', 'advogado']
-passwords = ['123456', 'senha123'] # Mude para as senhas que preferir
+# --- CREDENCIAIS E PERFIS DE ACESSO ---
+# Definimos os usuários, senhas e seus respectivos perfis (Roles)
+names = ['Sócio Administrador', 'Estagiário(a)']
+usernames = ['socio', 'estagiario']
+passwords = ['mudar123', 'estagiario123'] # Você pode alterar as senhas aqui
+roles = ['admin', 'estagiario']         # Perfil de cada um
 
-# Configuração do sistema de login
 authenticator = stauth.Authenticate(
     names,
     usernames,
     passwords,
     cookie_name='sistema_honorarios_cookie',
-    key='sua_chave_secreta_aqui',
+    key='chave_seguranca_sistema_123',
     cookie_expiry_days=30
 )
 
@@ -32,6 +32,10 @@ elif authentication_status == None:
     st.warning('Por favor, digite seu usuário e senha')
 elif authentication_status == True:
     
+    # Identifica qual é o perfil do usuário logado baseado na posição na lista
+    user_index = usernames.index(username)
+    user_role = roles[user_index]
+
     # --- CONEXÃO COM O SUPABASE ---
     url = st.secrets["SUPABASE_URL"]
     key = st.secrets["SUPABASE_KEY"]
@@ -39,7 +43,8 @@ elif authentication_status == True:
 
     # --- BARRA LATERAL (LOGO, LOGOUT E MENU) ---
     with st.sidebar:
-        st.write(f"Bem-vindo(a), **{name}**")
+        st.write(f"Logado como: **{name}**")
+        st.caption(f"Perfil: {'👑 Sócio (Admin)' if user_role == 'admin' else '🎓 Estagiário'}")
         authenticator.logout('Sair', 'sidebar')
         st.markdown("---")
         
@@ -122,6 +127,7 @@ elif authentication_status == True:
                 
                 st.markdown("---")
                 
+                # --- CONTROLE DE PERMISSÕES NA TELA DE GESTÃO ---
                 col1, col2 = st.columns(2)
                 
                 with col1:
@@ -134,12 +140,16 @@ elif authentication_status == True:
                 
                 with col2:
                     st.subheader("🗑️ Excluir Contrato Inteiro")
-                    st.caption("Remove o contrato e todas as suas parcelas.")
-                    id_excluir = st.number_input("Digite o ID do Honorário a excluir:", min_value=1, step=1, key="input_excluir")
-                    if st.button("Excluir Contrato", type="primary"):
-                        supabase.table("honorarios").delete().eq("id", id_excluir).execute()
-                        st.success("Contrato e parcelas excluídos com sucesso!")
-                        st.rerun()
+                    # Se for estagiário, o botão de exclusão fica bloqueado/oculto
+                    if user_role == 'admin':
+                        st.caption("Remove o contrato e todas as suas parcelas.")
+                        id_excluir = st.number_input("Digite o ID do Honorário a excluir:", min_value=1, step=1, key="input_excluir")
+                        if st.button("Excluir Contrato", type="primary"):
+                            supabase.table("honorarios").delete().eq("id", id_excluir).execute()
+                            st.success("Contrato e parcelas excluídos com sucesso!")
+                            st.rerun()
+                    else:
+                        st.info("🔒 Área restrita aos sócios. Estagiários não possuem permissão para excluir contratos.")
             else:
                 st.info("Nenhuma parcela cadastrada até o momento.")
         except Exception as e:

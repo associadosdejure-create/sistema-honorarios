@@ -7,24 +7,32 @@ from dateutil.relativedelta import relativedelta
 
 st.set_page_config(page_title="Controle de Honorários", layout="wide", page_icon="⚖️")
 
-# --- CREDENCIAIS E PERFIS DE ACESSO ---
-# Definimos os usuários, senhas e seus respectivos perfis (Roles)
-names = ['Sócio Administrador', 'Estagiário(a)']
-usernames = ['administrador', 'estagiario']
-passwords = ['sobnovadirecao', 'cadastrodejure'] # Você pode alterar as senhas aqui
-roles = ['admin', 'estagiario']         # Perfil de cada um
+# --- CREDENCIAIS E PERFIS DE ACESSO (ESTRUTURA CORRETA) ---
+# Dicionário de usuários com senhas e seus perfis (roles)
+credentials = {
+    "usernames": {
+        "socio": {
+            "name": "Sócio Administrador",
+            "password": "sobnovadirecao",  # Senha do sócio
+            "role": "admin"
+        },
+        "estagiario": {
+            "name": "Estagiário(a)",
+            "password": "estagiariodejure",  # Senha do estagiário
+            "role": "estagiario"
+        }
+    }
+}
 
 authenticator = stauth.Authenticate(
-    names,
-    usernames,
-    passwords,
+    credentials,
     cookie_name='sistema_honorarios_cookie',
-    key='chave_seguranca_sistema_123',
+    cookie_key='chave_seguranca_sistema_123',
     cookie_expiry_days=30
 )
 
 # Renderiza a tela de login
-name, authentication_status, username = authenticator.login('Login - Sistema de Honorários', 'main')
+name, authentication_status, username = authenticator.login('Login', 'main')
 
 if authentication_status == False:
     st.error('Usuário ou senha incorretos')
@@ -32,9 +40,8 @@ elif authentication_status == None:
     st.warning('Por favor, digite seu usuário e senha')
 elif authentication_status == True:
     
-    # Identifica qual é o perfil do usuário logado baseado na posição na lista
-    user_index = usernames.index(username)
-    user_role = roles[user_index]
+    # Pega o perfil (role) do usuário logado de dentro do dicionário
+    user_role = credentials["usernames"][username]["role"]
 
     # --- CONEXÃO COM O SUPABASE ---
     url = st.secrets["SUPABASE_URL"]

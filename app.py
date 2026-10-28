@@ -70,6 +70,22 @@ elif authentication_status == True:
         st.error("⚠️ ERRO CRÍTICO: Chaves do Supabase ausentes nos Secrets.")
         st.stop()
 
+    # --- FUNÇÃO DE VALIDAÇÃO DE CPF ---
+    def validar_cpf(cpf):
+        cpf = ''.join(filter(str.isdigit, str(cpf)))
+        if len(cpf) != 11 or cpf == cpf[0] * 11:
+            return False
+        soma = sum(int(cpf[i]) * (10 - i) for i in range(9))
+        digito1 = (soma * 10) % 11
+        if digito1 == 10: digito1 = 0
+        if digito1 != int(cpf[9]): return False
+        
+        soma = sum(int(cpf[i]) * (11 - i) for i in range(10))
+        digito2 = (soma * 10) % 11
+        if digito2 == 10: digito2 = 0
+        if digito2 != int(cpf[10]): return False
+        return True
+
     @st.cache_data(ttl=30)
     def carregar_clientes():
         res = supabase.table("clientes_cadastrados").select("*").execute()
@@ -180,20 +196,26 @@ elif authentication_status == True:
                 c_obs = st.text_area("Observações Importantes")
                 
                 if st.form_submit_button("Salvar Cadastro do Cliente"):
-                    if c_nome:
-                        try:
-                            supabase.table("clientes_cadastrados").insert({"nome": c_nome, "cpf_cnpj": c_doc, "telefone": c_tel, "email": c_email, "endereco": c_end, "cidade": c_cidade, "indicado_por": c_ind, "observacoes": c_obs}).execute()
-                            st.cache_data.clear()
-                            st.success(f"Cliente **{c_nome}** cadastrado com sucesso!")
-                        except Exception as e: st.error(f"Erro ao salvar: {e}")
-                    else: st.error("O campo 'Nome' é obrigatório.")
+                    if not c_nome:
+                        st.error("O campo 'Nome Completo / Razão Social' é obrigatório.")
+                    else:
+                        doc_limpo = ''.join(filter(str.isdigit, str(c_doc)))
+                        # Valida apenas se preencheu 11 dígitos (tratando como CPF)
+                        if len(doc_limpo) == 11 and not validar_cpf(doc_limpo):
+                            st.error("⚠️ O CPF informado é **inválido**! Verifique os números.")
+                        else:
+                            try:
+                                supabase.table("clientes_cadastrados").insert({"nome": c_nome, "cpf_cnpj": c_doc, "telefone": c_tel, "email": c_email, "endereco": c_end, "cidade": c_cidade, "indicado_por": c_ind, "observacoes": c_obs}).execute()
+                                st.cache_data.clear()
+                                st.success(f"Cliente **{c_nome}** cadastrado com sucesso!")
+                            except Exception as e: st.error(f"Erro ao salvar: {e}")
 
         elif submenu == "Consultar Clientes":
             st.header("📋 Base de Clientes Cadastrados")
             try:
                 res_cli = carregar_clientes()
                 if res_cli:
-                    lista_c = [{"ID": c['id'], "Nome": c['nome'], "Telefone": c.get('telefone', ''), "E-mail": c.get('email', ''), "Cidade": c.get('cidade', ''), "Indicado Por": c.get('indicado_por', '')} for c in res_cli]
+                    lista_c = [{"ID": c['id'], "Nome": c['nome'], "CPF/CNPJ": c.get('cpf_cnpj', ''), "Telefone": c.get('telefone', ''), "E-mail": c.get('email', ''), "Cidade": c.get('cidade', ''), "Indicado Por": c.get('indicado_por', '')} for c in res_cli]
                     st.dataframe(pd.DataFrame(lista_c), use_container_width=True)
                 else: st.info("Nenhum cliente cadastrado.")
             except Exception as e: st.error(f"Erro: {e}")
@@ -217,12 +239,16 @@ elif authentication_status == True:
                     e_obs = st.text_area("Observações", value=c_obj.get('observacoes', ''))
                     
                     if st.form_submit_button("Salvar Alterações"):
-                        try:
-                            supabase.table("clientes_cadastrados").update({"nome": e_nome, "cpf_cnpj": e_doc, "telefone": e_tel, "email": e_email, "endereco": e_end, "cidade": e_cidade, "indicado_por": e_ind, "observacoes": e_obs}).eq("id", c_obj['id']).execute()
-                            st.cache_data.clear()
-                            st.success("Cadastro atualizado com sucesso!")
-                            st.rerun()
-                        except Exception as e: st.error(f"Erro ao atualizar: {e}")
+                        doc_limpo = ''.join(filter(str.isdigit, str(e_doc)))
+                        if len(doc_limpo) == 11 and not validar_cpf(doc_limpo):
+                            st.error("⚠️ O CPF informado é **inválido**!")
+                        else:
+                            try:
+                                supabase.table("clientes_cadastrados").update({"nome": e_nome, "cpf_cnpj": e_doc, "telefone": e_tel, "email": e_email, "endereco": e_end, "cidade": e_cidade, "indicado_por": e_ind, "observacoes": e_obs}).eq("id", c_obj['id']).execute()
+                                st.cache_data.clear()
+                                st.success("Cadastro atualizado com sucesso!")
+                                st.rerun()
+                            except Exception as e: st.error(f"Erro ao atualizar: {e}")
             else: st.info("Nenhum cliente disponível.")
 
         elif submenu == "Excluir Cliente":

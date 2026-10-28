@@ -5,10 +5,12 @@ import pandas as pd
 from datetime import datetime
 from dateutil.relativedelta import relativedelta
 
-st.set_page_config(page_title="Honorários DEJURE", layout="wide", page_icon="⚖️")
+st.set_page_config(page_title="Controle de Pagamentos", layout="wide", page_icon="⚖️")
 
-# --- CREDENCIAIS E PERFIS DE ACESSO INDIVIDUAIS ---
-hashed_passwords = stauth.Hasher.hash_list(['mudar123', 'mudar123', 'estagiario123'])
+# --- CREDENCIAIS E PERFIS DE ACESSO ---
+# Gerando hashes automáticos para as senhas de todos os perfis
+# Ordem das senhas: Nelson, Leônidas, Bacharel, Advogado, Estagiário
+hashed_passwords = stauth.Hasher.hash_list(['mudar123', 'mudar123', 'bacharel123', 'advogado123', 'estagiario123'])
 
 credentials = {
     "usernames": {
@@ -22,9 +24,19 @@ credentials = {
             "password": hashed_passwords[1],
             "role": "admin"
         },
+        "bacharel": {
+            "name": "Bacharel(a)",
+            "password": hashed_passwords[2],
+            "role": "bacharel"
+        },
+        "advogado": {
+            "name": "Advogado(a)",
+            "password": hashed_passwords[3],
+            "role": "advogado"
+        },
         "estagiario": {
             "name": "Estagiário(a)",
-            "password": hashed_passwords[2],
+            "password": hashed_passwords[4],
             "role": "estagiario"
         }
     }
@@ -62,7 +74,18 @@ supabase = create_client(url, key)
 # --- BARRA LATERAL (LOGO, LOGOUT E MENU) ---
 with st.sidebar:
     st.write(f"Logado como: **{name}**")
-    st.caption(f"Perfil: {'👑 Sócio' if user_role == 'admin' else '🎓 Estagiário'}")
+    
+    # Exibe o rótulo amigável do perfil na barra lateral
+    if user_role == 'admin':
+        perfil_txt = "👑 Sócio"
+    elif user_role == 'advogado':
+        perfil_txt = "⚖️ Advogado(a)"
+    elif user_role == 'bacharel':
+        perfil_txt = "📜 Bacharel(a)"
+    else:
+        perfil_txt = "🎓 Estagiário"
+        
+    st.caption(f"Perfil: {perfil_txt}")
     authenticator.logout('Sair', 'sidebar')
     st.markdown("---")
     
@@ -72,7 +95,7 @@ with st.sidebar:
         st.write("⚖️ **Dejure Advocacia**")
     
     st.markdown("---")
-    menu = st.radio("Navegação", ["Cadastrar Pagamento", "Ver Parcelas e Baixas"])
+    menu = st.radio("Navegação", ["Cadastrar Cliente", "Ver Parcelas e Baixas"])
 
 # --- MENSAGEM DE BOAS-VINDAS PERSONALIZADA ---
 st.title(f"Seja bem-vindo, {name}!")
@@ -159,6 +182,7 @@ elif menu == "Ver Parcelas e Baixas":
             
             with col2:
                 st.subheader("🗑️ Excluir Contrato Inteiro")
+                # Apenas administradores (sócios) podem excluir. Se quiser que Advogados também excluam, mude para: if user_role in ['admin', 'advogado']:
                 if user_role == 'admin':
                     st.caption("Remove o contrato e todas as suas parcelas.")
                     id_excluir = st.number_input("Digite o ID do Honorário a excluir:", min_value=1, step=1, key="input_excluir")
@@ -167,7 +191,7 @@ elif menu == "Ver Parcelas e Baixas":
                         st.success("Contrato e parcelas excluídos com sucesso!")
                         st.rerun()
                 else:
-                    st.info("🔒 Área restrita aos sócios. Estagiários não possuem permissão para excluir contratos.")
+                    st.info("🔒 Área de exclusão restrita aos sócios administradores.")
         else:
             st.info("Nenhuma parcela cadastrada até o momento.")
     except Exception as e:

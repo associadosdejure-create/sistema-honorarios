@@ -43,7 +43,7 @@ elif authentication_status == None:
 elif authentication_status == True:
     
     agora = time.time()
-    TEMPO_MAXIMO = 300  # 5 minutos em segundos (5 * 60)
+    TEMPO_MAXIMO = 300  # 5 minutos em segundos
 
     if 'ultima_atividade' in st.session_state:
         tempo_decorrido = agora - st.session_state['ultima_atividade']
@@ -57,7 +57,6 @@ elif authentication_status == True:
     st.session_state['sessao_expirada'] = False
     st.session_state['ultima_atividade'] = agora
 
-    # Calcula o tempo restante
     tempo_restante = TEMPO_MAXIMO - (agora - st.session_state['ultima_atividade'])
     minutos_restantes = max(0, int(tempo_restante // 60))
     segundos_restantes = max(0, int(tempo_restante % 60))
@@ -81,7 +80,6 @@ elif authentication_status == True:
             
         st.caption(f"Perfil: {p_txt}")
         
-        # 🕒 Cronômetro regressivo com segundos visíveis
         st.markdown("---")
         st.markdown(f"⏳ **Sessão expira em:**\n### `{minutos_restantes:02d}:{segundos_restantes:02d}`")
         st.caption("*(Atualiza a cada clique / ação)*")
@@ -321,4 +319,38 @@ elif authentication_status == True:
                 d2 = st.checkbox("Comprovante de Residência")
                 d3 = st.checkbox("Laudos / Exames")
                 d4 = st.text_input("Outro Documento")
-                dt_sol =
+                dt_sol = st.date_input("Data", datetime.now())
+                
+                if st.form_submit_button("Salvar Pendência"):
+                    if cli_pen:
+                        docs = []
+                        if d1: docs.append("Procuração/Docs Pessoais")
+                        if d2: docs.append("Comprovante de Residência")
+                        if d3: docs.append("Laudos/Exames")
+                        if d4.strip(): docs.append(d4.strip())
+                        if docs:
+                            try:
+                                supabase.table("pendencias").insert({"cliente": cli_pen, "processo": proc_pen, "documento_devido": " | ".join(docs), "data_solicitacao": dt_sol.strftime("%Y-%m-%d"), "status": "Pendente"}).execute()
+                                st.success("Pendência cadastrada!")
+                            except Exception as e: st.error(f"Erro: {e}")
+                        else: st.warning("Selecione ao menos um documento.")
+                    else: st.error("Preencha o Nome do Cliente.")
+                        
+        elif submenu == "Consultar Pendências":
+            st.header("📂 Consulta de Pendências")
+            try:
+                res_pen = supabase.table("pendencias").select("*").execute()
+                if res_pen.data:
+                    lista = [{"ID": i['id'], "Cliente": i['cliente'], "Documento": i['documento_devido'], "Status": i.get('status','Pendente')} for i in res_pen.data]
+                    df_pen = pd.DataFrame(lista)
+                    def color_pen(v):
+                        if v == 'Entregue': return 'color: #28a745; font-weight: bold;'
+                        if v == 'Pendente': return 'color: #dc3545; font-weight: bold;'
+                        return ''
+                    st.dataframe(df_pen.style.map(color_pen, subset=['Status']), use_container_width=True)
+                    st.markdown("---")
+                    id_bx_p = st.number_input("ID da Pendência resolvida:", min_value=1, step=1)
+                    if st.button("Marcar como Entregue"):
+                        supabase.table("pendencias").update({"status": "Entregue"}).eq("id", id_bx_p).execute()
+                        st.success("Baixa realizada!")
+                        st.rerun

@@ -179,4 +179,4 @@ elif authentication_status == True:
             with st.form("form_honorario"):
                 cliente = st.text_input("Nome do Cliente")
                 servico = st.text_input("Descrição do Serviço / Processo")
-                valor_total = st.number_input("Valor Total
+                valor_total = st.number_input(

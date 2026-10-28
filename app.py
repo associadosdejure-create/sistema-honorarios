@@ -9,7 +9,7 @@ st.set_page_config(page_title="Controle de Honorários", layout="wide", page_ico
 
 # --- CREDENCIAIS E PERFIS DE ACESSO ---
 # Geramos os hashes seguros de forma nativa para evitar qualquer erro de tipo
-hashed_passwords = stauth.Hasher.hash_list(['mudar123', 'estagiario123'])
+hashed_passwords = stauth.Hasher.hash_list(['SOBNOVADIRECAO', 'ESTAGIARIODEJURE'])
 
 credentials = {
     "usernames": {

@@ -11,13 +11,13 @@ st.set_page_config(page_title="Controle de Honorários", layout="wide", page_ico
 credentials = {
     "usernames": {
         "socio": {
-            "name": "Sócio Administrador",
-            "password": "mudar123",  # Senha do sócio
+            "name": "Administrador",
+            "password": "sobnovadirecao",  # Senha do sócio
             "role": "admin"
         },
         "estagiario": {
             "name": "Estagiário(a)",
-            "password": "estagiario123",  # Senha do estagiário
+            "password": "estagiariodejure",  # Senha do estagiário
             "role": "estagiario"
         }
     }
@@ -30,8 +30,13 @@ authenticator = stauth.Authenticate(
     cookie_expiry_days=30
 )
 
-# Renderiza a tela de login (Sintaxe compatível com a versão mais recente)
-name, authentication_status, username = authenticator.login(location='main')
+# Renderiza a tela de login
+authenticator.login('main')
+
+# Obtém os estados de autenticação salvos na sessão pelo authenticator
+authentication_status = st.session_state.get('authentication_status')
+name = st.session_state.get('name')
+username = st.session_state.get('username')
 
 if authentication_status == False:
     st.error('Usuário ou senha incorretos')

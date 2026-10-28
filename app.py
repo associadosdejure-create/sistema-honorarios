@@ -70,7 +70,12 @@ elif authentication_status == True:
         st.error("⚠️ ERRO CRÍTICO: Chaves do Supabase ausentes nos Secrets.")
         st.stop()
 
-    # --- FUNÇÕES DE CACHE PARA ACELERAR O SISTEMA ---
+    # --- FUNÇÕES DE CACHE ---
+    @st.cache_data(ttl=30)
+    def carregar_clientes():
+        res = supabase.table("clientes_cadastrados").select("*").execute()
+        return res.data if res.data else []
+
     @st.cache_data(ttl=30)
     def carregar_honorarios():
         res = supabase.table("honorarios").select("*").execute()
@@ -116,12 +121,14 @@ elif authentication_status == True:
     col1, col2 = st.columns(2)
     
     with col1:
-        menu_principal = st.selectbox("1️⃣ Módulo Principal:", ["Pagamentos", "Perícias", "Expedientes", "Pendências"])
+        menu_principal = st.selectbox("1️⃣ Módulo Principal:", ["Clientes", "Pagamentos", "Perícias", "Expedientes", "Pendências"])
         
     with col2:
         submenu = ""
-        if menu_principal == "Pagamentos":
-            submenu = st.selectbox("2️⃣ Ação:", ["Cadastrar Cliente", "Ver Parcelas", "Baixar Parcela", "Excluir Contrato"])
+        if menu_principal == "Clientes":
+            submenu = st.selectbox("2️⃣ Ação:", ["Cadastrar Cliente", "Consultar Clientes"])
+        elif menu_principal == "Pagamentos":
+            submenu = st.selectbox("2️⃣ Ação:", ["Cadastrar Contrato / Parcelas", "Ver Parcelas", "Baixar Parcela", "Excluir Contrato"])
         elif menu_principal == "Perícias":
             submenu = st.selectbox("2️⃣ Ação:", ["Cadastrar Perícia", "Ver Perícias", "Excluir Perícia"])
         elif menu_principal == "Expedientes":
@@ -131,7 +138,7 @@ elif authentication_status == True:
 
     st.markdown("---")
 
-    # --- CENTRAL DE ALERTAS OTIMIZADA ---
+    # --- CENTRAL DE ALERTAS ---
     try:
         lista_per = carregar_pericias()
         lista_exp = carregar_expedientes()
@@ -161,17 +168,96 @@ elif authentication_status == True:
     except Exception:
         pass
 
-    if menu_principal == "Pagamentos":
+    # ---------------------------------------------------------
+    # MÓDULO CLIENTES
+    # ---------------------------------------------------------
+    if menu_principal == "Clientes":
         if submenu == "Cadastrar Cliente":
-            st.header("📝 Cadastrar Novo Cliente e Contrato")
+            st.header("👤 Cadastro Completo de Cliente")
+            with st.form("form_cad_cliente"):
+                c_nome = st.text_input("Nome Completo / Razão Social *")
+                c_doc = st.text_input("CPF ou CNPJ")
+                c_tel = st.text_input("Telefone / WhatsApp")
+                c_email = st.text_input("E-mail")
+                c_end = st.text_input("Endereço Completo (Rua, Nº, Bairro)")
+                c_cidade = st.text_input("Cidade / UF")
+                c_ind = st.text_input("Quem Indicou? (Ex: Nome de outro cliente, Parceiro, Google...)")
+                c_obs = st.text_area("Observações Importantes")
+                
+                if st.form_submit_button("Salvar Cadastro do Cliente"):
+                    if c_nome:
+                        try:
+                            dados_cliente = {
+                                "nome": c_nome,
+                                "cpf_cnpj": c_doc,
+                                "telefone": c_tel,
+                                "email": c_email,
+                                "endereco": c_end,
+                                "cidade": c_cidade,
+                                "indicado_por": c_ind,
+                                "observacoes": c_obs
+                            }
+                            supabase.table("clientes_cadastrados").insert(dados_cliente).execute()
+                            st.cache_data.clear()
+                            st.success(f"Cliente **{c_nome}** cadastrado com sucesso!")
+                        except Exception as e:
+                            st.error(f"Erro ao salvar cliente: {e}")
+                    else:
+                        st.error("O campo 'Nome Completo / Razão Social' é obrigatório.")
+
+        elif submenu == "Consultar Clientes":
+            st.header("📋 Base de Clientes Cadastrados")
+            try:
+                res_cli = carregar_clientes()
+                if res_cli:
+                    lista_c = []
+                    for c in res_cli:
+                        lista_c.append({
+                            "ID": c['id'],
+                            "Nome": c['nome'],
+                            "Telefone": c.get('telefone', ''),
+                            "E-mail": c.get('email', ''),
+                            "Cidade": c.get('cidade', ''),
+                            "Indicado Por": c.get('indicado_por', ''),
+                            "Cadastro": c.get('criado_em', '')[:10]
+                        })
+                    df_c = pd.DataFrame(lista_c)
+                    st.dataframe(df_c, use_container_width=True)
+                else:
+                    st.info("Nenhum cliente cadastrado na nova base até o momento.")
+            except Exception as e:
+                st.error(f"Erro ao carregar clientes: {e}")
+
+    # ---------------------------------------------------------
+    # MÓDULO PAGAMENTOS
+    # ---------------------------------------------------------
+    elif menu_principal == "Pagamentos":
+        if submenu == "Cadastrar Contrato / Parcelas":
+            st.header("📝 Cadastrar Novo Contrato Parcelado")
+            
+            # Busca clientes cadastrados para facilitar
+            lista_clientes_db = carregar_clientes()
+            nomes_clientes = [c['nome'] for c in lista_clientes_db] if lista_clientes_db else []
+            
             with st.form("form_honorario"):
-                cliente = st.text_input("Nome do Cliente")
+                if nomes_clientes:
+                    cliente_opcao = st.selectbox("Selecionar Cliente Cadastrado:", ["Outro (Digitar manualmente)"] + nomes_clientes)
+                else:
+                    cliente_opcao = "Outro (Digitar manualmente)"
+                
+                if cliente_opcao == "Outro (Digitar manualmente)":
+                    cliente = st.text_input("Nome do Cliente")
+                else:
+                    cliente = cliente_opcao
+
                 servico = st.text_input("Descrição do Serviço / Processo")
                 valor_total = st.number_input("Valor Total (R$)", min_value=0.0, format="%.2f")
                 num_parcelas = st.number_input("Número de Parcelas", min_value=1, max_value=36, value=3)
                 data_primeira = st.date_input("Data do 1º Vencimento", datetime.now())
                 
-                if st.form_submit_button("Cadastrar e Gerar Parcelas"):
+                submitted = st.form_submit_button("Cadastrar e Gerar Parcelas")
+                
+                if submitted:
                     if cliente and servico and valor_total > 0:
                         try:
                             res = supabase.table("honorarios").insert({"cliente": cliente, "servico": servico, "valor_total": float(valor_total)}).execute()
@@ -182,7 +268,7 @@ elif authentication_status == True:
                                     venc = (data_primeira + relativedelta(months=i)).strftime("%Y-%m-%d")
                                     sp = f"{i+1}/{int(num_parcelas)}"
                                     supabase.table("parcelas").insert({"honorario_id": h_id, "numero_parcela": sp, "valor": float(vp), "vencimento": venc, "status": "Pendente"}).execute()
-                                st.cache_data.clear() # Limpa o cache para atualizar os dados
+                                st.cache_data.clear()
                                 st.success(f"Sucesso! Honorário de {cliente} cadastrado.")
                             else: st.error("Erro ao retornar dados.")
                         except Exception as e: st.error(f"Erro: {e}")
@@ -209,7 +295,7 @@ elif authentication_status == True:
                             df_styled = df_p.style.map(color_st, subset=['Status'])
                             st.dataframe(df_styled, use_container_width=True)
                         else: st.info("Sem parcelas.")
-                else: st.info("Nenhum cliente.")
+                else: st.info("Nenhum contrato cadastrado.")
             except Exception as e: st.error(f"Erro: {e}")
                 
         elif submenu == "Baixar Parcela":
@@ -239,7 +325,7 @@ elif authentication_status == True:
                                 st.success(f"Parcela {id_bx} baixada!")
                                 st.rerun()
                         else: st.info("Sem parcelas.")
-                else: st.info("Sem clientes.")
+                else: st.info("Sem contratos.")
             except Exception as e: st.error(f"Erro: {e}")
                 
         elif submenu == "Excluir Contrato":
@@ -263,6 +349,9 @@ elif authentication_status == True:
                 except Exception as e: st.error(f"Erro: {e}")
             else: st.error("🔒 Acesso Restrito aos administradores.")
                 
+    # ---------------------------------------------------------
+    # MÓDULO PERÍCIAS
+    # ---------------------------------------------------------
     elif menu_principal == "Perícias":
         if submenu == "Cadastrar Perícia":
             st.header("🔬 Cadastrar Nova Perícia")
@@ -317,6 +406,9 @@ elif authentication_status == True:
                 else: st.info("Nenhuma perícia cadastrada.")
             except Exception as e: st.error(f"Erro: {e}")
                 
+    # ---------------------------------------------------------
+    # MÓDULO EXPEDIENTES
+    # ---------------------------------------------------------
     elif menu_principal == "Expedientes":
         if submenu == "Cadastrar Expediente":
             st.header("📂 Cadastrar Novo Expediente")
@@ -378,6 +470,9 @@ elif authentication_status == True:
                 else: st.info("Nenhum expediente cadastrado.")
             except Exception as e: st.error(f"Erro: {e}")
                 
+    # ---------------------------------------------------------
+    # MÓDULO PENDÊNCIAS
+    # ---------------------------------------------------------
     elif menu_principal == "Pendências":
         if submenu == "Cadastrar Pendência":
             st.header("📋 Cadastrar Pendência")

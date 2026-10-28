@@ -13,7 +13,6 @@ st.set_page_config(page_title="Controle de Honorários", layout="wide", page_ico
 
 st.title("⚖️ Controle de Honorários do Escritório")
 
-# Menu na barra lateral
 menu = st.sidebar.radio("Navegação", ["Cadastrar Honorário", "Ver Parcelas e Baixas"])
 
 if menu == "Cadastrar Honorário":
@@ -30,58 +29,65 @@ if menu == "Cadastrar Honorário":
         
         if submitted:
             if cliente and servico and valor_total > 0:
-                # 1. Salva no banco o contrato geral
-                res = supabase.table("honorarios").insert({
-                    "cliente": cliente, 
-                    "servico": servico, 
-                    "valor_total": valor_total
-                }).execute()
-                
-                h_id = res.data[0]['id']
-                valor_parcela = valor_total / num_parcelas
-                
-                # 2. Gera e salva cada parcela individualmente
-                for i in range(int(num_parcelas)):
-                    vencimento = data_primeira + relativedelta(months=i)
-                    supabase.table("parcelas").insert({
-                        "honorario_id": h_id,
-                        "numero_parcela": f"{i+1}/{int(num_parcelas)}",
-                        "valor": valor_parcela,
-                        "vencimento": vencimento.strftime("%Y-%m-%d"),
-                        "status": "Pendente"
+                try:
+                    # Tenta inserir na tabela honorarios
+                    res = supabase.table("honorarios").insert({
+                        "cliente": cliente, 
+                        "servico": servico, 
+                        "valor_total": float(valor_total)
                     }).execute()
-                
-                st.success(f"Sucesso! Honorário de {cliente} cadastrado em {int(num_parcelas)}x de R$ {valor_parcela:.2f}")
+                    
+                    if not res.data:
+                        st.error("Erro: O Supabase não retornou os dados inseridos.")
+                    else:
+                        h_id = res.data[0]['id']
+                        valor_parcela = valor_total / num_parcelas
+                        
+                        # Gera e salva cada parcela
+                        for i in range(int(num_parcelas)):
+                            vencimento = data_primeira + relativedelta(months=i)
+                            supabase.table("parcelas").insert({
+                                "honorario_id": h_id,
+                                "numero_parcela": f"{i+1}/{int(num_parcelas)}",
+                                "valor": float(valor_parcela),
+                                "vencimento": vencimento.strftime("%Y-%m-%d"),
+                                "status": "Pendente"
+                            }).execute()
+                        
+                        st.success(f"Sucesso! Honorário de {cliente} cadastrado em {int(num_parcelas)}x de R$ {valor_parcela:.2f}")
+                except Exception as e:
+                    st.error(f"Erro detalhado ao salvar no banco: {e}")
             else:
                 st.error("Por favor, preencha todos os campos corretamente.")
 
 elif menu == "Ver Parcelas e Baixas":
     st.header("📋 Gestão de Parcelas")
-    
-    # Busca todas as parcelas e os dados do cliente
-    res = supabase.table("parcelas").select("*, honorarios(cliente, servico)").execute()
-    
-    if res.data:
-        lista_dados = []
-        for item in res.data:
-            lista_dados.append({
-                "ID": item['id'],
-                "Cliente": item['honorarios']['cliente'],
-                "Serviço": item['honorarios']['servico'],
-                "Parcela": item['numero_parcela'],
-                "Valor (R$)": f"R$ {item['valor']:.2f}",
-                "Vencimento": datetime.strptime(item['vencimento'], "%Y-%m-%d").strftime("%d/%m/%Y"),
-                "Status": item['status']
-            })
-        
-        df = pd.DataFrame(lista_dados)
-        st.dataframe(df, use_container_width=True)
-        
-        st.subheader("🔄 Dar baixa em parcela")
-        id_baixa = st.number_input("Digite o ID da parcela paga:", min_value=1, step=1)
-        if st.button("Marcar como Pago"):
-            supabase.table("parcelas").update({"status": "Pago"}).eq("id", id_baixa).execute()
-            st.success("Status atualizado com sucesso!")
-            st.rerun()
-    else:
-        st.info("Nenhuma parcela cadastrada até o momento.")
+    try:
+        res = supabase.table("parcelas").select("*, honorarios(cliente, servico)").execute()
+        if res.data:
+            lista_dados = []
+            for item in res.data:
+                cli = item.get('honorarios') or {}
+                lista_dados.append({
+                    "ID": item['id'],
+                    "Cliente": cli.get('cliente', 'N/D'),
+                    "Serviço": cli.get('servico', 'N/D'),
+                    "Parcela": item['numero_parcela'],
+                    "Valor (R$)": f"R$ {item['valor']:.2f}",
+                    "Vencimento": datetime.strptime(item['vencimento'], "%Y-%m-%d").strftime("%d/%m/%Y"),
+                    "Status": item['status']
+                })
+            
+            df = pd.DataFrame(lista_dados)
+            st.dataframe(df, use_container_width=True)
+            
+            st.subheader("🔄 Dar baixa em parcela")
+            id_baixa = st.number_input("Digite o ID da parcela paga:", min_value=1, step=1)
+            if st.button("Marcar como Pago"):
+                supabase.table("parcelas").update({"status": "Pago"}).eq("id", id_baixa).execute()
+                st.success("Status atualizado com sucesso!")
+                st.rerun()
+        else:
+            st.info("Nenhuma parcela cadastrada até o momento.")
+    except Exception as e:
+        st.error(f"Erro ao carregar dados: {e}")

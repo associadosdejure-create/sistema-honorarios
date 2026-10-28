@@ -141,7 +141,7 @@ elif authentication_status == True:
     with col2:
         submenu = ""
         if menu_principal == "Clientes":
-            submenu = st.selectbox("2️⃣ Ação:", ["Cadastrar Cliente", "Consultar Clientes", "Editar Cliente", "Excluir Cliente"])
+            submenu = st.selectbox("2️⃣ Ação:", ["Cadastrar Cliente", "Consultar Clientes", "Editar Cliente", "Excluir Cliente", "Exportar Base (Backup)"])
         elif menu_principal == "Pagamentos":
             submenu = st.selectbox("2️⃣ Ação:", ["Cadastrar Contrato / Parcelas", "Ver Parcelas", "Baixar Parcela", "Editar Contrato", "Excluir Contrato"])
         elif menu_principal == "Perícias":
@@ -200,7 +200,6 @@ elif authentication_status == True:
                         st.error("O campo 'Nome Completo / Razão Social' é obrigatório.")
                     else:
                         doc_limpo = ''.join(filter(str.isdigit, str(c_doc)))
-                        # Se digitou 11 dígitos, tratamos como CPF e fazemos a verificação matemática rigorosa
                         if len(doc_limpo) == 11 and not validar_cpf(doc_limpo):
                             st.error("⚠️ **CPF INVÁLIDO!** O número digitado não corresponde a um CPF válido. Verifique os dígitos.")
                         else:
@@ -271,6 +270,26 @@ elif authentication_status == True:
                     else: st.info("Nenhum cliente cadastrado.")
                 except Exception as e: st.error(f"Erro: {e}")
             else: st.error("🔒 Acesso Restrito aos administradores.")
+
+        elif submenu == "Exportar Base (Backup)":
+            st.header("📥 Exportar Base de Dados de Clientes")
+            st.write("Clique no botão abaixo para baixar todos os clientes cadastrados em formato de planilha (CSV):")
+            try:
+                res_cli = carregar_clientes()
+                if res_cli:
+                    df_export = pd.DataFrame(res_cli)
+                    csv_data = df_export.to_csv(index=False).encode('utf-8')
+                    st.download_button(
+                        label="📥 Baixar Planilha de Clientes (CSV)",
+                        data=csv_data,
+                        file_name=f"clientes_dejure_{date.today().strftime('%Y-%m-%d')}.csv",
+                        mime="text/csv",
+                        type="primary"
+                    )
+                else:
+                    st.info("Nenhum cliente cadastrado para exportar.")
+            except Exception as e:
+                st.error(f"Erro ao gerar exportação: {e}")
 
     elif menu_principal == "Pagamentos":
         if submenu == "Cadastrar Contrato / Parcelas":

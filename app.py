@@ -192,6 +192,7 @@ elif authentication_status == True:
                 c_email = st.text_input("E-mail")
                 c_end = st.text_input("Endereço Completo (Rua, Nº, Bairro)")
                 c_cidade = st.text_input("Cidade / UF")
+                c_gov = st.text_input("Senha Gov.br")
                 c_ind = st.text_input("Quem Indicou?")
                 c_obs = st.text_area("Observações Importantes")
                 
@@ -204,7 +205,11 @@ elif authentication_status == True:
                             st.error("⚠️ **CPF INVÁLIDO!** O número digitado não corresponde a um CPF válido. Verifique os dígitos.")
                         else:
                             try:
-                                supabase.table("clientes_cadastrados").insert({"nome": c_nome, "cpf_cnpj": c_doc, "telefone": c_tel, "email": c_email, "endereco": c_end, "cidade": c_cidade, "indicado_por": c_ind, "observacoes": c_obs}).execute()
+                                supabase.table("clientes_cadastrados").insert({
+                                    "nome": c_nome, "cpf_cnpj": c_doc, "telefone": c_tel, 
+                                    "email": c_email, "endereco": c_end, "cidade": c_cidade, 
+                                    "senha_gov": c_gov, "indicado_por": c_ind, "observacoes": c_obs
+                                }).execute()
                                 st.cache_data.clear()
                                 st.success(f"Cliente **{c_nome}** cadastrado com sucesso!")
                             except Exception as e: st.error(f"Erro ao salvar: {e}")
@@ -214,7 +219,12 @@ elif authentication_status == True:
             try:
                 res_cli = carregar_clientes()
                 if res_cli:
-                    lista_c = [{"ID": c['id'], "Nome": c['nome'], "CPF/CNPJ": c.get('cpf_cnpj', ''), "Telefone": c.get('telefone', ''), "E-mail": c.get('email', ''), "Cidade": c.get('cidade', ''), "Indicado Por": c.get('indicado_por', '')} for c in res_cli]
+                    lista_c = [{
+                        "ID": c['id'], "Nome": c['nome'], "CPF/CNPJ": c.get('cpf_cnpj', ''), 
+                        "Telefone": c.get('telefone', ''), "E-mail": c.get('email', ''), 
+                        "Cidade": c.get('cidade', ''), "Senha Gov": c.get('senha_gov', ''), 
+                        "Indicado Por": c.get('indicado_por', '')
+                    } for c in res_cli]
                     st.dataframe(pd.DataFrame(lista_c), use_container_width=True)
                 else: st.info("Nenhum cliente cadastrado.")
             except Exception as e: st.error(f"Erro: {e}")
@@ -234,6 +244,7 @@ elif authentication_status == True:
                     e_email = st.text_input("E-mail", value=c_obj.get('email', ''))
                     e_end = st.text_input("Endereço Completo", value=c_obj.get('endereco', ''))
                     e_cidade = st.text_input("Cidade / UF", value=c_obj.get('cidade', ''))
+                    e_gov = st.text_input("Senha Gov.br", value=c_obj.get('senha_gov', ''))
                     e_ind = st.text_input("Quem Indicou?", value=c_obj.get('indicado_por', ''))
                     e_obs = st.text_area("Observações", value=c_obj.get('observacoes', ''))
                     
@@ -243,7 +254,11 @@ elif authentication_status == True:
                             st.error("⚠️ **CPF INVÁLIDO!** O número digitado não corresponde a um CPF válido.")
                         else:
                             try:
-                                supabase.table("clientes_cadastrados").update({"nome": e_nome, "cpf_cnpj": e_doc, "telefone": e_tel, "email": e_email, "endereco": e_end, "cidade": e_cidade, "indicado_por": e_ind, "observacoes": e_obs}).eq("id", c_obj['id']).execute()
+                                supabase.table("clientes_cadastrados").update({
+                                    "nome": e_nome, "cpf_cnpj": e_doc, "telefone": e_tel, 
+                                    "email": e_email, "endereco": e_end, "cidade": e_cidade, 
+                                    "senha_gov": e_gov, "indicado_por": e_ind, "observacoes": e_obs
+                                }).eq("id", c_obj['id']).execute()
                                 st.cache_data.clear()
                                 st.success("Cadastro atualizado com sucesso!")
                                 st.rerun()

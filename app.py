@@ -7,25 +7,25 @@ from dateutil.relativedelta import relativedelta
 
 st.set_page_config(page_title="Controle de Honorários", layout="wide", page_icon="⚖️")
 
-# --- CREDENCIAIS E PERFIS DE ACESSO COM HASH SEGURO ---
-# Senha do sócio ("mudar123") e senha do estagiário ("estagiario123") já convertidas em hash oficial
+# --- CREDENCIAIS E PERFIS DE ACESSO ---
+# Geramos os hashes seguros de forma nativa para evitar qualquer erro de tipo
+hashed_passwords = stauth.Hasher.hash_list(['mudar123', 'estagiario123'])
+
 credentials = {
     "usernames": {
         "socio": {
             "name": "Sócio Administrador",
-            "password": "$argon2id$v=19$m=65536,t=3,p=4$6a85N1YyS2F2YjBsc3ZtYQ$H8sY7J7t2z9z3x1v5b7n9m2k4j6h8g1f3d5s7a9p0oI", 
+            "password": hashed_passwords[0],  # Senha: mudar123
             "role": "admin"
         },
         "estagiario": {
             "name": "Estagiário(a)",
-            "password": "$argon2id$v=19$m=65536,t=3,p=4$Z2hqa2x6eHR5cmV3cXRleQ$K9lO0pI8uY7tR6eW5qQ4aS3dF2gH1jK0lZ8xM5cN2bV1", 
+            "password": hashed_passwords[1],  # Senha: estagiario123
             "role": "estagiario"
         }
     }
 }
 
-# Se preferir cadastrar senhas limpas na hora, vamos usar uma validação customizada mais simples e direta para evitar qualquer erro de hash:
-# Mas para usar o authenticator padrão com as senhas acima:
 authenticator = stauth.Authenticate(
     credentials,
     cookie_name='sistema_honorarios_cookie',

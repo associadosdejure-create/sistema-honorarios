@@ -7,18 +7,17 @@ from dateutil.relativedelta import relativedelta
 
 st.set_page_config(page_title="Controle de Honorários", layout="wide", page_icon="⚖️")
 
-# --- CREDENCIAIS E PERFIS DE ACESSO (ESTRUTURA CORRETA) ---
-# Dicionário de usuários com senhas e seus perfis (roles)
+# --- CREDENCIAIS E PERFIS DE ACESSO ---
 credentials = {
     "usernames": {
         "socio": {
             "name": "Sócio Administrador",
-            "password": "sobnovadirecao",  # Senha do sócio
+            "password": "mudar123",  # Senha do sócio
             "role": "admin"
         },
         "estagiario": {
             "name": "Estagiário(a)",
-            "password": "estagiariodejure",  # Senha do estagiário
+            "password": "estagiario123",  # Senha do estagiário
             "role": "estagiario"
         }
     }
@@ -31,8 +30,8 @@ authenticator = stauth.Authenticate(
     cookie_expiry_days=30
 )
 
-# Renderiza a tela de login
-name, authentication_status, username = authenticator.login('Login', 'main')
+# Renderiza a tela de login (Sintaxe compatível com a versão mais recente)
+name, authentication_status, username = authenticator.login(location='main')
 
 if authentication_status == False:
     st.error('Usuário ou senha incorretos')
@@ -147,7 +146,6 @@ elif authentication_status == True:
                 
                 with col2:
                     st.subheader("🗑️ Excluir Contrato Inteiro")
-                    # Se for estagiário, o botão de exclusão fica bloqueado/oculto
                     if user_role == 'admin':
                         st.caption("Remove o contrato e todas as suas parcelas.")
                         id_excluir = st.number_input("Digite o ID do Honorário a excluir:", min_value=1, step=1, key="input_excluir")

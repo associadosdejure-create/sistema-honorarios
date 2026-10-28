@@ -236,4 +236,64 @@ elif authentication_status == True:
                                     "ID Parcela": item['id'],
                                     "Parcela": item['numero_parcela'],
                                     "Valor (R$)": f"R$ {item['valor']:.2f}",
-                                    "Vencimento": datetime.
+                                    "Vencimento": datetime.strptime(item['vencimento'], "%Y-%m-%d").strftime("%d/%m/%Y"),
+                                    "Status": item['status']
+                                })
+                            
+                            df_p = pd.DataFrame(lista_parcelas)
+                            
+                            def colorir_status(val):
+                                if val == 'Pago':
+                                    return 'color: #28a745; font-weight: bold;'
+                                elif val == 'Pendente':
+                                    return 'color: #dc3545; font-weight: bold;'
+                                return ''
+
+                            df_estilizado = df_p.style.map(colorir_status, subset=['Status'])
+                            st.dataframe(df_estilizado, use_container_width=True)
+                        else:
+                            st.info("Este contrato não possui parcelas cadastradas.")
+                else:
+                    st.info("Nenhum cliente cadastrado até o momento.")
+            except Exception as e:
+                st.error(f"Erro ao carregar dados: {e}")
+
+        elif submenu == "Baixar Parcela":
+            st.header("🔄 Dar Baixa em Parcela (Marcar como Paga)")
+            
+            try:
+                res_honorarios = supabase.table("honorarios").select("*").execute()
+                
+                if res_honorarios.data:
+                    clientes_dict = {f"{h['cliente']} — Serviço: {h['servico']} (ID Contrato: {h['id']})": h['id'] for h in res_honorarios.data}
+                    cliente_selecionado_txt = st.selectbox("Selecione o Cliente:", options=list(clientes_dict.keys()), key="select_baixa_cli")
+                    
+                    if cliente_selecionado_txt:
+                        contrato_id_escolhido = clientes_dict[cliente_selecionado_txt]
+                        res_parcelas = supabase.table("parcelas").select("*").eq("honorario_id", contrato_id_escolhido).execute()
+                        
+                        if res_parcelas.data:
+                            lista_parcelas = []
+                            for item in res_parcelas.data:
+                                lista_parcelas.append({
+                                    "ID Parcela": item['id'],
+                                    "Parcela": item['numero_parcela'],
+                                    "Valor (R$)": f"R$ {item['valor']:.2f}",
+                                    "Vencimento": datetime.strptime(item['vencimento'], "%Y-%m-%d").strftime("%d/%m/%Y"),
+                                    "Status": item['status']
+                                })
+                            
+                            df_p = pd.DataFrame(lista_parcelas)
+                            def colorir_status(val):
+                                if val == 'Pago':
+                                    return 'color: #28a745; font-weight: bold;'
+                                elif val == 'Pendente':
+                                    return 'color: #dc3545; font-weight: bold;'
+                                return ''
+                            
+                            st.dataframe(df_p.style.map(colorir_status, subset=['Status']), use_container_width=True)
+                            st.markdown("---")
+                            
+                            id_baixa = st.number_input("Digite o **ID da Parcela** que deseja dar baixa:", min_value=1, step=1)
+                            if st.button("Confirmar Baixa (Marcar como Pago)", type="primary"):
+                                supabase.table("

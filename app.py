@@ -141,7 +141,6 @@ elif authentication_status == True:
                     elif dias_restantes == 7:
                         alertas_7d.append(info_p)
 
-            # Exibe os alertas de forma destacada no topo
             if alertas_vencidas or alertas_1d or alertas_3d or alertas_7d:
                 with st.expander("🚨 **CENTRAL DE ALERTAS DE PERÍCIAS PRÓXIMAS**", expanded=True):
                     if alertas_vencidas:
@@ -165,7 +164,7 @@ elif authentication_status == True:
                             st.markdown(f"- {item}")
                 st.markdown("---")
     except Exception as e:
-        pass # Caso haja erro na consulta de alertas, não interrompe o app
+        pass
 
     # ==========================================
     # SEÇÃO: PAGAMENTOS
@@ -306,3 +305,25 @@ elif authentication_status == True:
                             st.info("Este contrato não possui parcelas.")
                 else:
                     st.info("Nenhum cliente cadastrado.")
+            except Exception as e:
+                st.error(f"Erro ao carregar dados: {e}")
+
+        elif submenu == "Excluir Contrato":
+            st.header("🗑️ Exclusão de Contratos")
+            
+            if user_role == 'admin':
+                try:
+                    res_honorarios = supabase.table("honorarios").select("*").execute()
+                    
+                    if res_honorarios.data:
+                        clientes_dict = {f"{h['cliente']} — Serviço: {h['servico']} (ID Contrato: {h['id']})": h['id'] for h in res_honorarios.data}
+                        cliente_selecionado_txt = st.selectbox("Selecione o Contrato a excluir:", options=list(clientes_dict.keys()), key="select_excluir_cli")
+                        
+                        if cliente_selecionado_txt:
+                            contrato_id_escolhido = clientes_dict[cliente_selecionado_txt]
+                            
+                            st.warning("⚠️ Atenção: A exclusão de um contrato remove permanentemente o registro e todas as suas parcelas associadas.")
+                            
+                            if st.button("Excluir Definitivamente", type="primary"):
+                                supabase.table("honorarios").delete().eq("id", contrato_id_escolhido).execute()
+                                st.success

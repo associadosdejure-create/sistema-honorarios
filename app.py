@@ -99,7 +99,7 @@ elif authentication_status == True:
     st.title(f"Seja bem-vindo, {name}!")
     st.markdown("---")
 
-    if menu == "Cadastrar Honorário":
+    if menu == "Cadastrar Cliente":
         st.header("📝 Cadastrar Novo Pagamento Parcelado")
         
         with st.form("form_honorario"):

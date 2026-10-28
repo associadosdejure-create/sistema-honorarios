@@ -313,42 +313,4 @@ elif authentication_status == True:
                             df_p = pd.DataFrame(lista)
                             def color_st(v):
                                 if v == 'Pago': return 'color: #28a745; font-weight: bold;'
-                                if v == 'Pendente': return 'color: #dc3545; font-weight: bold;'
-                                return ''
-                            st.dataframe(df_p.style.map(color_st, subset=['Status']), use_container_width=True)
-                            st.markdown("---")
-                            id_bx = st.number_input("ID da Parcela para dar baixa:", min_value=1, step=1)
-                            if st.button("Confirmar Baixa (Pago)", type="primary"):
-                                supabase.table("parcelas").update({"status": "Pago"}).eq("id", id_bx).execute()
-                                st.cache_data.clear()
-                                st.success(f"Parcela {id_bx} baixada!")
-                                st.rerun()
-                        else: st.info("Sem parcelas.")
-                else: st.info("Sem contratos.")
-            except Exception as e: st.error(f"Erro: {e}")
-
-        elif submenu == "Editar Contrato":
-            st.header("✏️ Editar Contrato / Honorário")
-            res_h = carregar_honorarios()
-            if res_h:
-                hdict = {f"ID: {h['id']} | Cliente: {h['cliente']} — Serv: {h['servico']}": h for h in res_h}
-                h_sel = st.selectbox("Selecione o Contrato para Editar:", options=list(hdict.keys()))
-                h_obj = hdict[h_sel]
-                
-                with st.form("form_edit_honorario"):
-                    eh_cli = st.text_input("Nome do Cliente", value=h_obj.get('cliente', ''))
-                    eh_serv = st.text_input("Descrição do Serviço", value=h_obj.get('servico', ''))
-                    eh_val = st.number_input("Valor Total (R$)", min_value=0.0, value=float(h_obj.get('valor_total', 0.0)), format="%.2f")
-                    
-                    if st.form_submit_button("Salvar Alterações"):
-                        try:
-                            supabase.table("honorarios").update({"cliente": eh_cli, "servico": eh_serv, "valor_total": float(eh_val)}).eq("id", h_obj['id']).execute()
-                            st.cache_data.clear()
-                            st.success("Contrato atualizado com sucesso!")
-                            st.rerun()
-                        except Exception as e: st.error(f"Erro ao atualizar: {e}")
-            else: st.info("Nenhum contrato cadastrado.")
-                
-        elif submenu == "Excluir Contrato":
-            st.header("🗑️ Exclusão de Contratos e Honorários")
-            if user_role == 'admin
+                                if v == 'Pendente': return 'color: #dc354

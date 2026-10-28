@@ -30,7 +30,6 @@ if menu == "Cadastrar Honorário":
         if submitted:
             if cliente and servico and valor_total > 0:
                 try:
-                    # Tenta inserir na tabela honorarios
                     res = supabase.table("honorarios").insert({
                         "cliente": cliente, 
                         "servico": servico, 
@@ -43,7 +42,6 @@ if menu == "Cadastrar Honorário":
                         h_id = res.data[0]['id']
                         valor_parcela = valor_total / num_parcelas
                         
-                        # Gera e salva cada parcela
                         for i in range(int(num_parcelas)):
                             vencimento = data_primeira + relativedelta(months=i)
                             supabase.table("parcelas").insert({
@@ -61,15 +59,17 @@ if menu == "Cadastrar Honorário":
                 st.error("Por favor, preencha todos os campos corretamente.")
 
 elif menu == "Ver Parcelas e Baixas":
-    st.header("📋 Gestão de Parcelas")
+    st.header("📋 Gestão de Parcelas e Contratos")
+    
     try:
-        res = supabase.table("parcelas").select("*, honorarios(cliente, servico)").execute()
+        res = supabase.table("parcelas").select("*, honorarios(id, cliente, servico)").execute()
         if res.data:
             lista_dados = []
             for item in res.data:
                 cli = item.get('honorarios') or {}
                 lista_dados.append({
-                    "ID": item['id'],
+                    "ID Parcela": item['id'],
+                    "ID Honorário": cli.get('id'),
                     "Cliente": cli.get('cliente', 'N/D'),
                     "Serviço": cli.get('servico', 'N/D'),
                     "Parcela": item['numero_parcela'],
@@ -81,12 +81,26 @@ elif menu == "Ver Parcelas e Baixas":
             df = pd.DataFrame(lista_dados)
             st.dataframe(df, use_container_width=True)
             
-            st.subheader("🔄 Dar baixa em parcela")
-            id_baixa = st.number_input("Digite o ID da parcela paga:", min_value=1, step=1)
-            if st.button("Marcar como Pago"):
-                supabase.table("parcelas").update({"status": "Pago"}).eq("id", id_baixa).execute()
-                st.success("Status atualizado com sucesso!")
-                st.rerun()
+            st.markdown("---")
+            
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                st.subheader("🔄 Dar baixa em parcela")
+                id_baixa = st.number_input("Digite o ID da parcela paga:", min_value=1, step=1, key="input_baixa")
+                if st.button("Marcar como Pago"):
+                    supabase.table("parcelas").update({"status": "Pago"}).eq("id", id_baixa).execute()
+                    st.success("Status atualizado com sucesso!")
+                    st.rerun()
+            
+            with col2:
+                st.subheader("🗑️ Excluir Contrato Inteiro")
+                st.caption("Remove o contrato e todas as suas parcelas.")
+                id_excluir = st.number_input("Digite o ID do Honorário a excluir:", min_value=1, step=1, key="input_excluir")
+                if st.button("Excluir Contrato", type="primary"):
+                    supabase.table("honorarios").delete().eq("id", id_excluir).execute()
+                    st.success("Contrato e parcelas excluídos com sucesso!")
+                    st.rerun()
         else:
             st.info("Nenhuma parcela cadastrada até o momento.")
     except Exception as e:

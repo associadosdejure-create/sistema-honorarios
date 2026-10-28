@@ -43,8 +43,11 @@ elif authentication_status == None:
 elif authentication_status == True:
     
     agora = time.time()
+    TEMPO_MAXIMO = 600  # 10 minutos em segundos
+
     if 'ultima_atividade' in st.session_state:
-        if agora - st.session_state['ultima_atividade'] > 600:
+        tempo_decorrido = agora - st.session_state['ultima_atividade']
+        if tempo_decorrido > TEMPO_MAXIMO:
             st.session_state['logout'] = True
             st.session_state['authentication_status'] = None
             st.session_state['sessao_expirada'] = True
@@ -53,6 +56,11 @@ elif authentication_status == True:
             
     st.session_state['sessao_expirada'] = False
     st.session_state['ultima_atividade'] = agora
+
+    # Calcula o tempo restante para exibir na tela
+    tempo_restante = TEMPO_MAXIMO - (agora - st.session_state['ultima_atividade'])
+    minutos_restantes = max(0, int(tempo_restante // 60))
+    segundos_restantes = max(0, int(tempo_restante % 60))
 
     user_role = credentials["usernames"].get(username, {}).get("role", "estagiario")
     
@@ -72,6 +80,13 @@ elif authentication_status == True:
         else: p_txt = "🎓 Estagiário"
             
         st.caption(f"Perfil: {p_txt}")
+        
+        # 🕒 Exibe o cronômetro regressivo na barra lateral
+        st.markdown("---")
+        st.markdown(f"⏳ **Sessão expira em:**\n### `{minutos_restantes:02d}:{segundos_restantes:02d}`")
+        st.caption("*(Renova a cada clique)*")
+        st.markdown("---")
+
         authenticator.logout('Sair', 'sidebar')
         st.markdown("---")
         try: st.image("logo.png", use_container_width=True)

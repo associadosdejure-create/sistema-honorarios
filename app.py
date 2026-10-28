@@ -12,28 +12,30 @@ credentials = {
     "usernames": {
         "socio": {
             "name": "Administrador",
-            "password": "sobnovadirecao",  # Senha do sócio
+            "password": "mudar123",  # Senha do sócio
             "role": "admin"
         },
         "estagiario": {
-            "name": "Estagiário(a)",
-            "password": "estagiariodejure",  # Senha do estagiário
+            "name": "Estagiário",
+            "password": "estagiario123",  # Senha do estagiário
             "role": "estagiario"
         }
     }
 }
 
+# O parâmetro auto_hash=True faz o tratamento automático das senhas em texto puro
 authenticator = stauth.Authenticate(
     credentials,
     cookie_name='sistema_honorarios_cookie',
     cookie_key='chave_seguranca_sistema_123',
-    cookie_expiry_days=30
+    cookie_expiry_days=30,
+    auto_hash=True
 )
 
 # Renderiza a tela de login
 authenticator.login('main')
 
-# Obtém os estados de autenticação salvos na sessão pelo authenticator
+# Obtém os estados de autenticação
 authentication_status = st.session_state.get('authentication_status')
 name = st.session_state.get('name')
 username = st.session_state.get('username')
@@ -44,7 +46,7 @@ elif authentication_status == None:
     st.warning('Por favor, digite seu usuário e senha')
 elif authentication_status == True:
     
-    # Pega o perfil (role) do usuário logado de dentro do dicionário
+    # Pega o perfil (role) do usuário logado
     user_role = credentials["usernames"][username]["role"]
 
     # --- CONEXÃO COM O SUPABASE ---

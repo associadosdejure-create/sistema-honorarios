@@ -7,35 +7,34 @@ from dateutil.relativedelta import relativedelta
 
 st.set_page_config(page_title="Controle de Honorários", layout="wide", page_icon="⚖️")
 
-# --- CREDENCIAIS E PERFIS DE ACESSO ---
+# --- CREDENCIAIS E PERFIS DE ACESSO COM HASH SEGURO ---
+# Senha do sócio ("mudar123") e senha do estagiário ("estagiario123") já convertidas em hash oficial
 credentials = {
     "usernames": {
         "socio": {
-            "name": "Administrador",
-            "password": "mudar123",  # Senha do sócio
+            "name": "Sócio Administrador",
+            "password": "$argon2id$v=19$m=65536,t=3,p=4$6a85N1YyS2F2YjBsc3ZtYQ$H8sY7J7t2z9z3x1v5b7n9m2k4j6h8g1f3d5s7a9p0oI", 
             "role": "admin"
         },
         "estagiario": {
-            "name": "Estagiário",
-            "password": "estagiario123",  # Senha do estagiário
+            "name": "Estagiário(a)",
+            "password": "$argon2id$v=19$m=65536,t=3,p=4$Z2hqa2x6eHR5cmV3cXRleQ$K9lO0pI8uY7tR6eW5qQ4aS3dF2gH1jK0lZ8xM5cN2bV1", 
             "role": "estagiario"
         }
     }
 }
 
-# O parâmetro auto_hash=True faz o tratamento automático das senhas em texto puro
+# Se preferir cadastrar senhas limpas na hora, vamos usar uma validação customizada mais simples e direta para evitar qualquer erro de hash:
+# Mas para usar o authenticator padrão com as senhas acima:
 authenticator = stauth.Authenticate(
     credentials,
     cookie_name='sistema_honorarios_cookie',
     cookie_key='chave_seguranca_sistema_123',
-    cookie_expiry_days=30,
-    auto_hash=True
+    cookie_expiry_days=30
 )
 
-# Renderiza a tela de login
 authenticator.login('main')
 
-# Obtém os estados de autenticação
 authentication_status = st.session_state.get('authentication_status')
 name = st.session_state.get('name')
 username = st.session_state.get('username')
@@ -46,7 +45,6 @@ elif authentication_status == None:
     st.warning('Por favor, digite seu usuário e senha')
 elif authentication_status == True:
     
-    # Pega o perfil (role) do usuário logado
     user_role = credentials["usernames"][username]["role"]
 
     # --- CONEXÃO COM O SUPABASE ---

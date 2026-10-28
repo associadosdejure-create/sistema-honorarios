@@ -47,8 +47,8 @@ authenticator = stauth.Authenticate(
     cookie_expiry_days=30
 )
 
-# Renderiza o login na tela principal
-authenticator.login(location='main')
+# Renderiza o login na tela principal com o nome personalizado
+authenticator.login(name='DEJURE ADVOCACIA', location='main')
 
 authentication_status = st.session_state.get('authentication_status')
 name = st.session_state.get('name')
@@ -145,11 +145,9 @@ elif authentication_status == True:
         st.header("📋 Gestão de Clientes e Parcelas")
         
         try:
-            # Busca todos os contratos de honorários cadastrados
             res_honorarios = supabase.table("honorarios").select("*").execute()
             
             if res_honorarios.data:
-                # Cria um dicionário/opções para o selectbox com o nome do cliente e ID do contrato
                 clientes_dict = {f"{h['cliente']} — Serviço: {h['servico']} (ID Contrato: {h['id']})": h['id'] for h in res_honorarios.data}
                 
                 cliente_selecionado_txt = st.selectbox("Selecione o Cliente para ver as parcelas:", options=list(clientes_dict.keys()))
@@ -160,7 +158,6 @@ elif authentication_status == True:
                     st.markdown("---")
                     st.subheader(f"Parcelas do Contrato Selecionado")
                     
-                    # Busca apenas as parcelas vinculadas ao contrato escolhido
                     res_parcelas = supabase.table("parcelas").select("*").eq("honorario_id", contrato_id_escolhido).execute()
                     
                     if res_parcelas.data:
@@ -176,7 +173,6 @@ elif authentication_status == True:
                         
                         df_p = pd.DataFrame(lista_parcelas)
                         
-                        # Função de estilo para a tabela (Verde para Pago, Vermelho para Pendente)
                         def colorir_status(val):
                             if val == 'Pago':
                                 return 'color: #28a745; font-weight: bold;'
@@ -189,7 +185,6 @@ elif authentication_status == True:
                         
                         st.markdown("---")
                         
-                        # --- CONTROLE DE PERMISSÕES E AÇÕES (BAIXA E EXCLUSÃO) ---
                         col1, col2 = st.columns(2)
                         
                         with col1:

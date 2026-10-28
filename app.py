@@ -69,17 +69,17 @@ with st.sidebar:
     try:
         st.image("logo.png", use_container_width=True)
     except:
-        st.write("⚖️ **Escritório de Advocacia**")
+        st.write("⚖️ **Dejure Advocacia**")
     
     st.markdown("---")
-    menu = st.radio("Navegação", ["Cadastrar Honorário", "Ver Parcelas e Baixas"])
+    menu = st.radio("Navegação", ["Cadastrar Pagamento", "Ver Parcelas e Baixas"])
 
 # --- MENSAGEM DE BOAS-VINDAS PERSONALIZADA ---
 st.title(f"Seja bem-vindo, {name}!")
 st.markdown("---")
 
 if menu == "Cadastrar Honorário":
-    st.header("📝 Cadastrar Novo Contrato Parcelado")
+    st.header("📝 Cadastrar Novo Pagamento Parcelado")
     
     with st.form("form_honorario"):
         cliente = st.text_input("Nome do Cliente")

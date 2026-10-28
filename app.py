@@ -326,4 +326,84 @@ elif authentication_status == True:
                             
                             if st.button("Excluir Definitivamente", type="primary"):
                                 supabase.table("honorarios").delete().eq("id", contrato_id_escolhido).execute()
-                                st.success
+                                st.success("Contrato e parcelas excluídos com sucesso!")
+                                st.rerun()
+                    else:
+                        st.info("Nenhum contrato cadastrado para exclusão.")
+                except Exception as e:
+                    st.error(f"Erro ao carregar dados: {e}")
+            else:
+                st.error("🔒 Acesso Restrito. Apenas os sócios administradores possuem permissão para excluir contratos.")
+
+    # ==========================================
+    # SEÇÃO: PERÍCIAS
+    # ==========================================
+    elif menu_principal == "Perícias":
+        
+        if submenu == "Cadastrar Perícia":
+            st.header("🔬 Cadastrar Nova Perícia")
+            
+            with st.form("form_pericia"):
+                cli_pericia = st.text_input("Nome do Parte / Cliente")
+                tipo_pericia = st.text_input("Tipo de Perícia (Ex: Médica, Engenharia, Contábil)")
+                juizo_vara = st.text_input("Juízo / Vara / Processo")
+                honorario_pericial = st.number_input("Valor do Honorário Pericial (R$)", min_value=0.0, format="%.2f")
+                data_indicacao = st.date_input("Data da Perícia / Audiência", datetime.now())
+                
+                submitted_pericia = st.form_submit_button("Salvar Perícia")
+                
+                if submitted_pericia:
+                    if cli_pericia and tipo_pericia:
+                        try:
+                            res_p = supabase.table("pericias").insert({
+                                "cliente": cli_pericia,
+                                "tipo_pericia": tipo_pericia,
+                                "juizo_vara": juizo_vara,
+                                "honorario_pericial": float(honorario_pericial),
+                                "data_indicacao": data_indicacao.strftime("%Y-%m-%d"),
+                                "status": "Pendente"
+                            }).execute()
+                            
+                            if res_p.data:
+                                st.success(f"Perícia de {cli_pericia} cadastrada com sucesso!")
+                            else:
+                                st.error("Erro ao salvar perícia no Supabase.")
+                        except Exception as e:
+                            st.error(f"Erro detalhado: {e}")
+                    else:
+                        st.error("Por favor, preencha pelo menos o Cliente e o Tipo de Perícia.")
+
+        elif submenu == "Ver Perícias":
+            st.header("📋 Lista de Perícias Cadastradas")
+            
+            try:
+                res_pericias = supabase.table("pericias").select("*").execute()
+                
+                if res_pericias.data:
+                    lista_pericias = []
+                    for item in res_pericias.data:
+                        lista_pericias.append({
+                            "ID": item['id'],
+                            "Cliente": item['cliente'],
+                            "Tipo": item['tipo_pericia'],
+                            "Juízo/Vara": item.get('juizo_vara', 'N/D'),
+                            "Honorário (R$)": f"R$ {item.get('honorario_pericial', 0):.2f}",
+                            "Data da Perícia": datetime.strptime(item['data_indicacao'], "%Y-%m-%d").strftime("%d/%m/%Y") if item.get('data_indicacao') else 'N/D',
+                            "Status": item.get('status', 'Pendente')
+                        })
+                    
+                    df_pericias = pd.DataFrame(lista_pericias)
+                    
+                    def colorir_status_pericia(val):
+                        if val == 'Pago' or val == 'Concluído':
+                            return 'color: #28a745; font-weight: bold;'
+                        elif val == 'Pendente':
+                            return 'color: #dc3545; font-weight: bold;'
+                        return ''
+
+                    df_p_estilizado = df_pericias.style.map(colorir_status_pericia, subset=['Status'])
+                    st.dataframe(df_p_estilizado, use_container_width=True)
+                else:
+                    st.info("Nenhuma perícia cadastrada até o momento.")
+            except Exception as e:
+                st.error(f"Erro ao carregar dados das perícias: {e}")

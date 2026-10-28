@@ -174,4 +174,66 @@ elif authentication_status == True:
             
             with st.form("form_honorario"):
                 cliente = st.text_input("Nome do Cliente")
-                servico = st.text_input("Descrição do Serviço
+                servico = st.text_input("Descrição do Serviço / Processo")
+                valor_total = st.number_input("Valor Total (R$)", min_value=0.0, format="%.2f")
+                num_parcelas = st.number_input("Número de Parcelas", min_value=1, max_value=36, value=3)
+                data_primeira = st.date_input("Data do 1º Vencimento", datetime.now())
+                
+                submitted = st.form_submit_button("Cadastrar e Gerar Parcelas")
+                
+                if submitted:
+                    if cliente and servico and valor_total > 0:
+                        try:
+                            res = supabase.table("honorarios").insert({
+                                "cliente": cliente, 
+                                "servico": servico, 
+                                "valor_total": float(valor_total)
+                            }).execute()
+                            
+                            if not res.data:
+                                st.error("Erro: O Supabase não retornou os dados inseridos.")
+                            else:
+                                h_id = res.data[0]['id']
+                                valor_parcela = valor_total / num_parcelas
+                                
+                                for i in range(int(num_parcelas)):
+                                    vencimento = data_primeira + relativedelta(months=i)
+                                    supabase.table("parcelas").insert({
+                                        "honorario_id": h_id,
+                                        "numero_parcela": f"{i+1}/{int(num_parcelas)}",
+                                        "valor": float(valor_parcela),
+                                        "vencimento": vencimento.strftime("%Y-%m-%d"),
+                                        "status": "Pendente"
+                                    }).execute()
+                                
+                                st.success(f"Sucesso! Honorário de {cliente} cadastrado em {int(num_parcelas)}x de R$ {valor_parcela:.2f}")
+                        except Exception as e:
+                            st.error(f"Erro detalhado ao salvar no banco: {e}")
+                    else:
+                        st.error("Por favor, preencha todos os campos corretamente.")
+
+        elif submenu == "Ver Parcelas":
+            st.header("📋 Visualizar Parcelas por Cliente")
+            
+            try:
+                res_honorarios = supabase.table("honorarios").select("*").execute()
+                
+                if res_honorarios.data:
+                    clientes_dict = {f"{h['cliente']} — Serviço: {h['servico']} (ID Contrato: {h['id']})": h['id'] for h in res_honorarios.data}
+                    
+                    cliente_selecionado_txt = st.selectbox("Selecione o Cliente:", options=list(clientes_dict.keys()))
+                    
+                    if cliente_selecionado_txt:
+                        contrato_id_escolhido = clientes_dict[cliente_selecionado_txt]
+                        
+                        st.markdown("---")
+                        res_parcelas = supabase.table("parcelas").select("*").eq("honorario_id", contrato_id_escolhido).execute()
+                        
+                        if res_parcelas.data:
+                            lista_parcelas = []
+                            for item in res_parcelas.data:
+                                lista_parcelas.append({
+                                    "ID Parcela": item['id'],
+                                    "Parcela": item['numero_parcela'],
+                                    "Valor (R$)": f"R$ {item['valor']:.2f}",
+                                    "Vencimento": datetime.

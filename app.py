@@ -93,13 +93,13 @@ elif authentication_status == True:
             st.write("⚖️ **Dejure Advocacia**")
         
         st.markdown("---")
-        menu = st.radio("Navegação", ["Cadastrar Cliente", "Ver Parcelas e Baixas"])
+        menu = st.radio("Navegação", ["Cadastrar Honorário", "Ver Parcelas e Baixas"])
 
     # --- TELA PRINCIPAL ---
     st.title(f"Seja bem-vindo, {name}!")
     st.markdown("---")
 
-    if menu == "Cadastrar Cliente":
+    if menu == "Cadastrar Honorário":
         st.header("📝 Cadastrar Novo Pagamento Parcelado")
         
         with st.form("form_honorario"):
@@ -163,7 +163,20 @@ elif authentication_status == True:
                     })
                 
                 df = pd.DataFrame(lista_dados)
-                st.dataframe(df, use_container_width=True)
+                
+                # --- FUNÇÃO DE ESTILO PARA A TABELA ---
+                def colorir_status(val):
+                    if val == 'Pago':
+                        return 'color: #28a745; font-weight: bold;'  # Verde
+                    elif val == 'Pendente':
+                        return 'color: #dc3545; font-weight: bold;'  # Vermelho
+                    return ''
+
+                # Aplica o estilo na coluna 'Status'
+                df_estilizado = df.style.map(colorir_status, subset=['Status'])
+                
+                # Exibe a tabela formatada
+                st.dataframe(df_estilizado, use_container_width=True)
                 
                 st.markdown("---")
                 

@@ -12,31 +12,11 @@ hashed_passwords = stauth.Hasher.hash_list(['mudar123', 'mudar123', 'bacharel123
 
 credentials = {
     "usernames": {
-        "nelson": {
-            "name": "Nelson Freire Machado",
-            "password": hashed_passwords[0],
-            "role": "admin"
-        },
-        "leonidas": {
-            "name": "Leônidas da Paz e Silva",
-            "password": hashed_passwords[1],
-            "role": "admin"
-        },
-        "bacharel": {
-            "name": "Bacharel(a)",
-            "password": hashed_passwords[2],
-            "role": "bacharel"
-        },
-        "advogado": {
-            "name": "Advogado(a)",
-            "password": hashed_passwords[3],
-            "role": "advogado"
-        },
-        "estagiario": {
-            "name": "Estagiário(a)",
-            "password": hashed_passwords[4],
-            "role": "estagiario"
-        }
+        "nelson": {"name": "Nelson Freire Machado", "password": hashed_passwords[0], "role": "admin"},
+        "leonidas": {"name": "Leônidas da Paz e Silva", "password": hashed_passwords[1], "role": "admin"},
+        "bacharel": {"name": "Bacharel(a)", "password": hashed_passwords[2], "role": "bacharel"},
+        "advogado": {"name": "Advogado(a)", "password": hashed_passwords[3], "role": "advogado"},
+        "estagiario": {"name": "Estagiário(a)", "password": hashed_passwords[4], "role": "estagiario"}
     }
 }
 
@@ -47,10 +27,7 @@ authenticator = stauth.Authenticate(
     cookie_expiry_days=30
 )
 
-authenticator.login(
-    location='main', 
-    fields={'Form name': 'DEJURE ADVOCACIA'}
-)
+authenticator.login(location='main', fields={'Form name': 'DEJURE ADVOCACIA'})
 
 authentication_status = st.session_state.get('authentication_status')
 name = st.session_state.get('name')
@@ -101,36 +78,20 @@ elif authentication_status == True:
         submenu = "" 
         
         if menu_principal == "Pagamentos":
-            submenu = st.radio(
-                "Opções de Pagamentos", 
-                ["Cadastrar Cliente", "Ver Parcelas", "Baixar Parcela", "Excluir Contrato"],
-                key="sub_pagamentos"
-            )
+            submenu = st.radio("Opções de Pagamentos", ["Cadastrar Cliente", "Ver Parcelas", "Baixar Parcela", "Excluir Contrato"], key="sub_pagamentos")
         elif menu_principal == "Perícias":
-            submenu = st.radio(
-                "Opções de Perícias", 
-                ["Cadastrar Perícia", "Ver Perícias"],
-                key="sub_pericias"
-            )
+            submenu = st.radio("Opções de Perícias", ["Cadastrar Perícia", "Ver Perícias"], key="sub_pericias")
         elif menu_principal == "Expedientes":
-            submenu = st.radio(
-                "Opções de Expedientes", 
-                ["Cadastrar Expediente", "Consultar Expedientes"],
-                key="sub_expedientes"
-            )
+            submenu = st.radio("Opções de Expedientes", ["Cadastrar Expediente", "Consultar Expedientes"], key="sub_expedientes")
         elif menu_principal == "Pendências":
-            submenu = st.radio(
-                "Opções de Pendências", 
-                ["Cadastrar Pendência", "Consultar Pendências"],
-                key="sub_pendencias"
-            )
+            submenu = st.radio("Opções de Pendências", ["Cadastrar Pendência", "Consultar Pendências"], key="sub_pendencias")
 
     # --- TELA PRINCIPAL ---
     st.title(f"Seja bem-vindo, {name}!")
     st.markdown("---")
 
     # ==========================================
-    # VERIFICAÇÃO AUTOMÁTICA DE ALERTAS (PERÍCIAS E EXPEDIENTES)
+    # VERIFICAÇÃO AUTOMÁTICA DE ALERTAS
     # ==========================================
     try:
         res_alertas_p = supabase.table("pericias").select("*").eq("status", "Pendente").execute()
@@ -138,45 +99,3 @@ elif authentication_status == True:
         
         hoje = date.today()
         alertas_total = []
-
-        if res_alertas_p.data:
-            for p in res_alertas_p.data:
-                if p.get('data_indicacao'):
-                    dt = datetime.strptime(p['data_indicacao'], "%Y-%m-%d").date()
-                    dias = (dt - hoje).days
-                    alertas_total.append((dias, f"🔬 **Perícia** | **Cliente:** {p['cliente']} | **Tipo:** {p['tipo_pericia']} | **Data:** {dt.strftime('%d/%m/%Y')}"))
-
-        if res_alertas_e.data:
-            for e in res_alertas_e.data:
-                if e.get('data_manifestacao'):
-                    dt = datetime.strptime(e['data_manifestacao'], "%Y-%m-%d").date()
-                    dias = (dt - hoje).days
-                    alertas_total.append((dias, f"📂 **Expediente** | **Processo:** {e['numero_processo']} | **Cliente:** {e['cliente']} | **Prazo:** {dt.strftime('%d/%m/%Y')} | **Resp:** {e['responsavel']}"))
-
-        if alertas_total:
-            with st.expander("🚨 **CENTRAL DE ALERTAS DE PRAZOS (PERÍCIAS E EXPEDIENTES)**", expanded=True):
-                for dias, texto in sorted(alertas_total, key=lambda x: x[0]):
-                    if dias < 0:
-                        st.error(f"⚠️ **VENCIDO ({abs(dias)} dias em atraso):** {texto}")
-                    elif dias == 1:
-                        st.error(f"🚨 **CRÍTICO (Falta 1 dia):** {texto}")
-                    elif dias <= 3:
-                        st.warning(f"⚠️ **URGENTE (Faltam {dias} dias):** {texto}")
-                    elif dias <= 7:
-                        st.info(f"📅 **LEMBRETE (Faltam {dias} dias):** {texto}")
-            st.markdown("---")
-    except Exception as e:
-        pass
-
-    # ==========================================
-    # SEÇÃO: PAGAMENTOS
-    # ==========================================
-    if menu_principal == "Pagamentos":
-        
-        if submenu == "Cadastrar Cliente":
-            st.header("📝 Cadastrar Novo Cliente e Contrato Parcelado")
-            
-            with st.form("form_honorario"):
-                cliente = st.text_input("Nome do Cliente")
-                servico = st.text_input("Descrição do Serviço / Processo")
-                valor_total = st.number_input(

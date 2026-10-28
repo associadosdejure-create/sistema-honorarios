@@ -125,7 +125,7 @@ elif authentication_status == True:
     with col2:
         submenu = ""
         if menu_principal == "Clientes":
-            submenu = st.selectbox("2️⃣ Ação:", ["Cadastrar Cliente", "Consultar Clientes", "Editar Cliente"])
+            submenu = st.selectbox("2️⃣ Ação:", ["Cadastrar Cliente", "Consultar Clientes", "Editar Cliente", "Excluir Cliente"])
         elif menu_principal == "Pagamentos":
             submenu = st.selectbox("2️⃣ Ação:", ["Cadastrar Contrato / Parcelas", "Ver Parcelas", "Baixar Parcela", "Editar Contrato", "Excluir Contrato"])
         elif menu_principal == "Perícias":
@@ -225,8 +225,130 @@ elif authentication_status == True:
                         except Exception as e: st.error(f"Erro ao atualizar: {e}")
             else: st.info("Nenhum cliente disponível.")
 
+        elif submenu == "Excluir Cliente":
+            st.header("🗑️ Exclusão de Clientes")
+            if user_role == 'admin':
+                try:
+                    res_cli = carregar_clientes()
+                    if res_cli:
+                        cdict = {f"ID: {c['id']} — {c['nome']}": c['id'] for c in res_cli}
+                        c_sel = st.selectbox("Selecione o Cliente a excluir:", options=list(cdict.keys()))
+                        if c_sel:
+                            st.warning("⚠️ Atenção: A exclusão deste cliente do cadastro geral é irreversível.")
+                            conf_cli = st.checkbox("Confirmo que desejo excluir permanentemente este cliente.")
+                            if conf_cli:
+                                if st.button("🚨 EXCLUIR CLIENTE", type="primary"):
+                                    supabase.table("clientes_cadastrados").delete().eq("id", cdict[c_sel]).execute()
+                                    st.cache_data.clear()
+                                    st.success("Cliente excluído com sucesso!")
+                                    st.rerun()
+                    else: st.info("Nenhum cliente cadastrado.")
+                except Exception as e: st.error(f"Erro: {e}")
+            else: st.error("🔒 Acesso Restrito aos administradores.")
+
     elif menu_principal == "Pagamentos":
         if submenu == "Cadastrar Contrato / Parcelas":
             st.header("📝 Cadastrar Novo Contrato Parcelado")
             lista_clientes_db = carregar_clientes()
             nomes_clientes = [c['nome'] for c in lista_clientes_db] if lista_clientes_db else []
+            
+            with st.form("form_honorario"):
+                cliente_opcao = st.selectbox("Cliente:", ["Outro (Digitar manualmente)"] + nomes_clientes) if nomes_clientes else "Outro (Digitar manualmente)"
+                cliente = st.text_input("Nome do Cliente") if cliente_opcao == "Outro (Digitar manualmente)" else cliente_opcao
+                servico = st.text_input("Descrição do Serviço / Processo")
+                valor_total = st.number_input("Valor Total (R$)", min_value=0.0, format="%.2f")
+                num_parcelas = st.number_input("Número de Parcelas", min_value=1, max_value=36, value=3)
+                data_primeira = st.date_input("Data do 1º Vencimento", datetime.now())
+                
+                if st.form_submit_button("Cadastrar e Gerar Parcelas"):
+                    if cliente and servico and valor_total > 0:
+                        try:
+                            res = supabase.table("honorarios").insert({"cliente": cliente, "servico": servico, "valor_total": float(valor_total)}).execute()
+                            if res.data:
+                                h_id = res.data[0]['id']
+                                vp = valor_total / num_parcelas
+                                for i in range(int(num_parcelas)):
+                                    venc = (data_primeira + relativedelta(months=i)).strftime("%Y-%m-%d")
+                                    supabase.table("parcelas").insert({"honorario_id": h_id, "numero_parcela": f"{i+1}/{int(num_parcelas)}", "valor": float(vp), "vencimento": venc, "status": "Pendente"}).execute()
+                                st.cache_data.clear()
+                                st.success(f"Contrato de {cliente} cadastrado!")
+                        except Exception as e: st.error(f"Erro: {e}")
+                    else: st.error("Preencha todos os campos.")
+                        
+        elif submenu == "Ver Parcelas":
+            st.header("📋 Visualizar Parcelas")
+            try:
+                res_h = carregar_honorarios()
+                if res_h:
+                    cdict = {f"{h['cliente']} — Serv: {h['servico']}": h['id'] for h in res_h}
+                    cli_sel = st.selectbox("Selecione o Cliente:", options=list(cdict.keys()))
+                    if cli_sel:
+                        h_id = cdict[cli_sel]
+                        st.markdown("---")
+                        res_p = supabase.table("parcelas").select("*").eq("honorario_id", h_id).execute()
+                        if res_p.data:
+                            lista = [{"ID Parcela": p['id'], "Parcela": p['numero_parcela'], "Valor (R$)": f"R$ {p['valor']:.2f}", "Vencimento": datetime.strptime(p['vencimento'], "%Y-%m-%d").strftime("%d/%m/%Y"), "Status": p['status']} for p in res_p.data]
+                            df_p = pd.DataFrame(lista)
+                            def color_st(v):
+                                if v == 'Pago': return 'color: #28a745; font-weight: bold;'
+                                if v == 'Pendente': return 'color: #dc3545; font-weight: bold;'
+                                return ''
+                            st.dataframe(df_p.style.map(color_st, subset=['Status']), use_container_width=True)
+                        else: st.info("Sem parcelas.")
+                else: st.info("Nenhum contrato.")
+            except Exception as e: st.error(f"Erro: {e}")
+                
+        elif submenu == "Baixar Parcela":
+            st.header("🔄 Dar Baixa em Parcela")
+            try:
+                res_h = carregar_honorarios()
+                if res_h:
+                    cdict = {f"{h['cliente']} — Serv: {h['servico']}": h['id'] for h in res_h}
+                    cli_sel = st.selectbox("Selecione o Cliente:", options=list(cdict.keys()), key="bx_cli")
+                    if cli_sel:
+                        h_id = cdict[cli_sel]
+                        res_p = supabase.table("parcelas").select("*").eq("honorario_id", h_id).execute()
+                        if res_p.data:
+                            lista = [{"ID Parcela": p['id'], "Parcela": p['numero_parcela'], "Valor (R$)": f"R$ {p['valor']:.2f}", "Vencimento": datetime.strptime(p['vencimento'], "%Y-%m-%d").strftime("%d/%m/%Y"), "Status": p['status']} for p in res_p.data]
+                            df_p = pd.DataFrame(lista)
+                            def color_st(v):
+                                if v == 'Pago': return 'color: #28a745; font-weight: bold;'
+                                if v == 'Pendente': return 'color: #dc3545; font-weight: bold;'
+                                return ''
+                            st.dataframe(df_p.style.map(color_st, subset=['Status']), use_container_width=True)
+                            st.markdown("---")
+                            id_bx = st.number_input("ID da Parcela para dar baixa:", min_value=1, step=1)
+                            if st.button("Confirmar Baixa (Pago)", type="primary"):
+                                supabase.table("parcelas").update({"status": "Pago"}).eq("id", id_bx).execute()
+                                st.cache_data.clear()
+                                st.success(f"Parcela {id_bx} baixada!")
+                                st.rerun()
+                        else: st.info("Sem parcelas.")
+                else: st.info("Sem contratos.")
+            except Exception as e: st.error(f"Erro: {e}")
+
+        elif submenu == "Editar Contrato":
+            st.header("✏️ Editar Contrato / Honorário")
+            res_h = carregar_honorarios()
+            if res_h:
+                hdict = {f"ID: {h['id']} | Cliente: {h['cliente']} — Serv: {h['servico']}": h for h in res_h}
+                h_sel = st.selectbox("Selecione o Contrato para Editar:", options=list(hdict.keys()))
+                h_obj = hdict[h_sel]
+                
+                with st.form("form_edit_honorario"):
+                    eh_cli = st.text_input("Nome do Cliente", value=h_obj.get('cliente', ''))
+                    eh_serv = st.text_input("Descrição do Serviço", value=h_obj.get('servico', ''))
+                    eh_val = st.number_input("Valor Total (R$)", min_value=0.0, value=float(h_obj.get('valor_total', 0.0)), format="%.2f")
+                    
+                    if st.form_submit_button("Salvar Alterações"):
+                        try:
+                            supabase.table("honorarios").update({"cliente": eh_cli, "servico": eh_serv, "valor_total": float(eh_val)}).eq("id", h_obj['id']).execute()
+                            st.cache_data.clear()
+                            st.success("Contrato atualizado com sucesso!")
+                            st.rerun()
+                        except Exception as e: st.error(f"Erro ao atualizar: {e}")
+            else: st.info("Nenhum contrato cadastrado.")
+                
+        elif submenu == "Excluir Contrato":
+            st.header("🗑️ Exclusão de Contratos e Honorários")
+            if user_role == 'admin

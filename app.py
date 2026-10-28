@@ -5,7 +5,7 @@ import pandas as pd
 from datetime import datetime, date
 from dateutil.relativedelta import relativedelta
 
-st.set_page_config(page_title="Controle de Honorários e Perícias", layout="wide", page_icon="⚖️")
+st.set_page_config(page_title="Controle DEJURE ADVOCACIA", layout="wide", page_icon="⚖️")
 
 # --- CREDENCIAIS E PERFIS DE ACESSO ---
 hashed_passwords = stauth.Hasher.hash_list(['mudar123', 'mudar123', 'bacharel123', 'advogado123', 'estagiario123'])
@@ -96,7 +96,7 @@ elif authentication_status == True:
         st.markdown("---")
         
         # --- ESTRUTURA DE MENUS E SUBMENUS ---
-        menu_principal = st.selectbox("Menu Principal", ["Pagamentos", "Perícias"])
+        menu_principal = st.selectbox("Menu Principal", ["Pagamentos", "Perícias", "Expedientes", "Pendências"])
         
         if menu_principal == "Pagamentos":
             submenu = st.radio(
@@ -108,61 +108,57 @@ elif authentication_status == True:
                 "Opções de Perícias", 
                 ["Cadastrar Perícia", "Ver Perícias"]
             )
+        elif menu_principal == "Expedientes":
+            submenu = st.radio(
+                "Opções de Expedientes", 
+                ["Cadastrar Expediente", "Consultar Expedientes"]
+            )
+        elif menu_principal == "Pendências":
+            submenu = st.radio(
+                "Opções de Pendências", 
+                ["Cadastrar Pendência", "Consultar Pendências"]
+            )
 
     # --- TELA PRINCIPAL ---
     st.title(f"Seja bem-vindo, {name}!")
     st.markdown("---")
 
     # ==========================================
-    # VERIFICAÇÃO AUTOMÁTICA DE ALERTAS DE PERÍCIAS
+    # VERIFICAÇÃO AUTOMÁTICA DE ALERTAS (PERÍCIAS E EXPEDIENTES)
     # ==========================================
     try:
-        res_alertas = supabase.table("pericias").select("*").eq("status", "Pendente").execute()
-        if res_alertas.data:
-            hoje = date.today()
-            alertas_7d = []
-            alertas_3d = []
-            alertas_1d = []
-            alertas_vencidas = []
+        res_alertas_p = supabase.table("pericias").select("*").eq("status", "Pendente").execute()
+        res_alertas_e = supabase.table("expedientes").select("*").eq("status", "Pendente").execute()
+        
+        hoje = date.today()
+        alertas_total = []
 
-            for p in res_alertas.data:
+        if res_alertas_p.data:
+            for p in res_alertas_p.data:
                 if p.get('data_indicacao'):
-                    data_pericia = datetime.strptime(p['data_indicacao'], "%Y-%m-%d").date()
-                    dias_restantes = (data_pericia - hoje).days
+                    dt = datetime.strptime(p['data_indicacao'], "%Y-%m-%d").date()
+                    dias = (dt - hoje).days
+                    alertas_total.append((dias, f"🔬 **Perícia** | **Cliente:** {p['cliente']} | **Tipo:** {p['tipo_pericia']} | **Data:** {dt.strftime('%d/%m/%Y')}"))
 
-                    info_p = f"**Cliente:** {p['cliente']} | **Tipo:** {p['tipo_pericia']} | **Data:** {data_pericia.strftime('%d/%m/%Y')} | **Vara:** {p.get('juizo_vara', 'N/D')}"
+        if res_alertas_e.data:
+            for e in res_alertas_e.data:
+                if e.get('data_manifestacao'):
+                    dt = datetime.strptime(e['data_manifestacao'], "%Y-%m-%d").date()
+                    dias = (dt - hoje).days
+                    alertas_total.append((dias, f"📂 **Expediente** | **Processo:** {e['numero_processo']} | **Cliente:** {e['cliente']} | **Prazo:** {dt.strftime('%d/%m/%Y')} | **Resp:** {e['responsavel']}"))
 
-                    if dias_restantes < 0:
-                        alertas_vencidas.append(info_p)
-                    elif dias_restantes == 1:
-                        alertas_1d.append(info_p)
-                    elif dias_restantes == 3:
-                        alertas_3d.append(info_p)
-                    elif dias_restantes == 7:
-                        alertas_7d.append(info_p)
-
-            if alertas_vencidas or alertas_1d or alertas_3d or alertas_7d:
-                with st.expander("🚨 **CENTRAL DE ALERTAS DE PERÍCIAS PRÓXIMAS**", expanded=True):
-                    if alertas_vencidas:
-                        st.error("⚠️ **ATENÇÃO: Perícias com data vencida ou em atraso:**")
-                        for item in alertas_vencidas:
-                            st.markdown(f"- {item}")
-                    
-                    if alertas_1d:
-                        st.error("🚨 **ALERTA CRÍTICO (Falta 1 dia para a Perícia!):**")
-                        for item in alertas_1d:
-                            st.markdown(f"- {item}")
-                            
-                    if alertas_3d:
-                        st.warning("⚠️ **AVISO IMPORTANTE (Faltam 3 dias para a Perícia):**")
-                        for item in alertas_3d:
-                            st.markdown(f"- {item}")
-                            
-                    if alertas_7d:
-                        st.info("📅 **LEMBRETE (Faltam 7 dias para a Perícia):**")
-                        for item in alertas_7d:
-                            st.markdown(f"- {item}")
-                st.markdown("---")
+        if alertas_total:
+            with st.expander("🚨 **CENTRAL DE ALERTAS DE PRAZOS (PERÍCIAS E EXPEDIENTES)**", expanded=True):
+                for dias, texto in sorted(alertas_total, key=lambda x: x[0]):
+                    if dias < 0:
+                        st.error(f"⚠️ **VENCIDO ({abs(dias)} dias em atraso):** {texto}")
+                    elif dias == 1:
+                        st.error(f"🚨 **CRÍTICO (Falta 1 dia):** {texto}")
+                    elif dias <= 3:
+                        st.warning(f"⚠️ **URGENTE (Faltam {dias} dias):** {texto}")
+                    elif dias <= 7:
+                        st.info(f"📅 **LEMBRETE (Faltam {dias} dias):** {texto}")
+            st.markdown("---")
     except Exception as e:
         pass
 
@@ -407,3 +403,162 @@ elif authentication_status == True:
                     st.info("Nenhuma perícia cadastrada até o momento.")
             except Exception as e:
                 st.error(f"Erro ao carregar dados das perícias: {e}")
+
+    # ==========================================
+    # SEÇÃO: EXPEDIENTES
+    # ==========================================
+    elif menu_principal == "Expedientes":
+        
+        if submenu == "Cadastrar Expediente":
+            st.header("📂 Cadastrar Novo Expediente / Prazo")
+            
+            with st.form("form_expediente"):
+                num_processo = st.text_input("Número do Processo")
+                cliente_exp = st.text_input("Nome do Cliente")
+                descricao_exp = st.text_input("Descrição / Objeto (Ex: Contestação, Apelação)")
+                data_manifestacao = st.date_input("Data da Manifestação / Prazo Limite", datetime.now())
+                responsavel_exp = st.text_input("Responsável (Ex: Dr. Nelson, Dr. Leônidas)")
+                
+                submitted_exp = st.form_submit_button("Cadastrar Expediente")
+                
+                if submitted_exp:
+                    if num_processo and cliente_exp and responsavel_exp:
+                        try:
+                            res_e = supabase.table("expedientes").insert({
+                                "numero_processo": num_processo,
+                                "cliente": cliente_exp,
+                                "descricao": descricao_exp,
+                                "data_manifestacao": data_manifestacao.strftime("%Y-%m-%d"),
+                                "responsavel": responsavel_exp,
+                                "status": "Pendente"
+                            }).execute()
+                            
+                            if res_e.data:
+                                st.success(f"Expediente do processo {num_processo} cadastrado com sucesso!")
+                            else:
+                                st.error("Erro ao salvar expediente no Supabase.")
+                        except Exception as e:
+                            st.error(f"Erro detalhado: {e}")
+                    else:
+                        st.error("Por favor, preencha pelo menos o Número do Processo, o Cliente e o Responsável.")
+
+        elif submenu == "Consultar Expedientes":
+            st.header("📋 Consulta de Expedientes e Prazos")
+            
+            try:
+                res_expedientes = supabase.table("expedientes").select("*").execute()
+                
+                if res_expedientes.data:
+                    lista_exp = []
+                    for item in res_expedientes.data:
+                        lista_exp.append({
+                            "ID": item['id'],
+                            "Processo": item['numero_processo'],
+                            "Cliente": item['cliente'],
+                            "Descrição": item.get('descricao', 'N/D'),
+                            "Data Manifestação": datetime.strptime(item['data_manifestacao'], "%Y-%m-%d").strftime("%d/%m/%Y") if item.get('data_manifestacao') else 'N/D',
+                            "Responsável": item['responsavel'],
+                            "Status": item.get('status', 'Pendente')
+                        })
+                    
+                    df_exp = pd.DataFrame(lista_exp)
+                    
+                    def colorir_status_exp(val):
+                        if val == 'Protocolado' or val == 'Concluído':
+                            return 'color: #28a745; font-weight: bold;'
+                        elif val == 'Pendente':
+                            return 'color: #dc3545; font-weight: bold;'
+                        return ''
+
+                    df_e_estilizado = df_exp.style.map(colorir_status_exp, subset=['Status'])
+                    st.dataframe(df_e_estilizado, use_container_width=True)
+                    
+                    st.markdown("---")
+                    st.subheader("🔄 Dar Baixa / Concluir Expediente")
+                    id_baixa_exp = st.number_input("Digite o ID do Expediente protocolado/concluído:", min_value=1, step=1, key="input_baixa_exp")
+                    if st.button("Marcar como Protocolado / Concluído"):
+                        supabase.table("expedientes").update({"status": "Protocolado"}).eq("id", id_baixa_exp).execute()
+                        st.success(f"Expediente ID {id_baixa_exp} atualizado para **Protocolado** com sucesso!")
+                        st.rerun()
+                else:
+                    st.info("Nenhum expediente cadastrado até o momento.")
+            except Exception as e:
+                st.error(f"Erro ao carregar dados dos expedientes: {e}")
+
+    # ==========================================
+    # SEÇÃO: PENDÊNCIAS DE CLIENTES
+    # ==========================================
+    elif menu_principal == "Pendências":
+        
+        if submenu == "Cadastrar Pendência":
+            st.header("📋 Cadastrar Pendência de Documentação")
+            
+            with st.form("form_pendencia"):
+                cliente_pend = st.text_input("Nome do Cliente")
+                processo_pend = st.text_input("Número do Processo (Opcional)")
+                documento_devido = st.text_input("Documento Devido (Ex: Procuração assinada, RG/CPF, Comprovante de Residência, Laudo Médico)")
+                data_solicitacao = st.date_input("Data da Solicitação", datetime.now())
+                
+                submitted_pend = st.form_submit_button("Salvar Pendência")
+                
+                if submitted_pend:
+                    if cliente_pend and documento_devido:
+                        try:
+                            res_pen = supabase.table("pendencias").insert({
+                                "cliente": cliente_pend,
+                                "processo": processo_pend,
+                                "documento_devido": documento_devido,
+                                "data_solicitacao": data_solicitacao.strftime("%Y-%m-%d"),
+                                "status": "Pendente"
+                            }).execute()
+                            
+                            if res_pen.data:
+                                st.success(f"Pendência de documento cadastrada para o cliente {cliente_pend}!")
+                            else:
+                                st.error("Erro ao salvar pendência no Supabase.")
+                        except Exception as e:
+                            st.error(f"Erro detalhado: {e}")
+                    else:
+                        st.error("Por favor, preencha pelo menos o Nome do Cliente e o Documento Devido.")
+
+        elif submenu == "Consultar Pendências":
+            st.header("📂 Consulta de Pendências de Documentação")
+            
+            try:
+                res_pendencias = supabase.table("pendencias").select("*").execute()
+                
+                if res_pendencias.data:
+                    lista_pend = []
+                    for item in res_pendencias.data:
+                        lista_pend.append({
+                            "ID": item['id'],
+                            "Cliente": item['cliente'],
+                            "Processo": item.get('processo', 'N/D'),
+                            "Documento Devido": item['documento_devido'],
+                            "Solicitação": datetime.strptime(item['data_solicitacao'], "%Y-%m-%d").strftime("%d/%m/%Y") if item.get('data_solicitacao') else 'N/D',
+                            "Status": item.get('status', 'Pendente')
+                        })
+                    
+                    df_pend = pd.DataFrame(lista_pend)
+                    
+                    def colorir_status_pend(val):
+                        if val == 'Entregue' or val == 'Concluído':
+                            return 'color: #28a745; font-weight: bold;'
+                        elif val == 'Pendente':
+                            return 'color: #dc3545; font-weight: bold;'
+                        return ''
+
+                    df_pen_estilizado = df_pend.style.map(colorir_status_pend, subset=['Status'])
+                    st.dataframe(df_pen_estilizado, use_container_width=True)
+                    
+                    st.markdown("---")
+                    st.subheader("✅ Dar Baixa em Documento Entregue")
+                    id_baixa_pen = st.number_input("Digite o ID da Pendência resolvida:", min_value=1, step=1, key="input_baixa_pen")
+                    if st.button("Marcar como Entregue"):
+                        supabase.table("pendencias").update({"status": "Entregue"}.eq("id", id_baixa_pen).execute()
+                        st.success(f"Pendência ID {id_baixa_pen} atualizada para **Entregue** com sucesso!")
+                        st.rerun()
+                else:
+                    st.info("Nenhuma pendência de documento cadastrada até o momento.")
+            except Exception as e:
+                st.error(f"Erro ao carregar dados das pendências: {e}")

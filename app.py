@@ -200,9 +200,9 @@ elif authentication_status == True:
                         st.error("O campo 'Nome Completo / Razão Social' é obrigatório.")
                     else:
                         doc_limpo = ''.join(filter(str.isdigit, str(c_doc)))
-                        # Valida apenas se preencheu 11 dígitos (tratando como CPF)
+                        # Se digitou 11 dígitos, tratamos como CPF e fazemos a verificação matemática rigorosa
                         if len(doc_limpo) == 11 and not validar_cpf(doc_limpo):
-                            st.error("⚠️ O CPF informado é **inválido**! Verifique os números.")
+                            st.error("⚠️ **CPF INVÁLIDO!** O número digitado não corresponde a um CPF válido. Verifique os dígitos.")
                         else:
                             try:
                                 supabase.table("clientes_cadastrados").insert({"nome": c_nome, "cpf_cnpj": c_doc, "telefone": c_tel, "email": c_email, "endereco": c_end, "cidade": c_cidade, "indicado_por": c_ind, "observacoes": c_obs}).execute()
@@ -241,7 +241,7 @@ elif authentication_status == True:
                     if st.form_submit_button("Salvar Alterações"):
                         doc_limpo = ''.join(filter(str.isdigit, str(e_doc)))
                         if len(doc_limpo) == 11 and not validar_cpf(doc_limpo):
-                            st.error("⚠️ O CPF informado é **inválido**!")
+                            st.error("⚠️ **CPF INVÁLIDO!** O número digitado não corresponde a um CPF válido.")
                         else:
                             try:
                                 supabase.table("clientes_cadastrados").update({"nome": e_nome, "cpf_cnpj": e_doc, "telefone": e_tel, "email": e_email, "endereco": e_end, "cidade": e_cidade, "indicado_por": e_ind, "observacoes": e_obs}).eq("id", c_obj['id']).execute()

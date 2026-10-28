@@ -83,7 +83,6 @@ elif authentication_status == True:
             
         st.caption(f"Perfil: {perfil_txt}")
         
-        # Botão de logout oficial da biblioteca
         authenticator.logout('Sair', 'sidebar')
         st.markdown("---")
         
@@ -143,66 +142,77 @@ elif authentication_status == True:
                     st.error("Por favor, preencha todos os campos corretamente.")
 
     elif menu == "Ver Parcelas e Baixas":
-        st.header("📋 Gestão de Parcelas e Contratos")
+        st.header("📋 Gestão de Clientes e Parcelas")
         
         try:
-            res = supabase.table("parcelas").select("*, honorarios(id, cliente, servico)").execute()
-            if res.data:
-                lista_dados = []
-                for item in res.data:
-                    cli = item.get('honorarios') or {}
-                    lista_dados.append({
-                        "ID Parcela": item['id'],
-                        "ID Honorário": cli.get('id'),
-                        "Cliente": cli.get('cliente', 'N/D'),
-                        "Serviço": cli.get('servico', 'N/D'),
-                        "Parcela": item['numero_parcela'],
-                        "Valor (R$)": f"R$ {item['valor']:.2f}",
-                        "Vencimento": datetime.strptime(item['vencimento'], "%Y-%m-%d").strftime("%d/%m/%Y"),
-                        "Status": item['status']
-                    })
+            # Busca todos os contratos de honorários cadastrados
+            res_honorarios = supabase.table("honorarios").select("*").execute()
+            
+            if res_honorarios.data:
+                # Cria um dicionário/opções para o selectbox com o nome do cliente e ID do contrato
+                clientes_dict = {f"{h['cliente']} — Serviço: {h['servico']} (ID Contrato: {h['id']})": h['id'] for h in res_honorarios.data}
                 
-                df = pd.DataFrame(lista_dados)
+                cliente_selecionado_txt = st.selectbox("Selecione o Cliente para ver as parcelas:", options=list(clientes_dict.keys()))
                 
-                # --- FUNÇÃO DE ESTILO PARA A TABELA ---
-                def colorir_status(val):
-                    if val == 'Pago':
-                        return 'color: #28a745; font-weight: bold;'  # Verde
-                    elif val == 'Pendente':
-                        return 'color: #dc3545; font-weight: bold;'  # Vermelho
-                    return ''
+                if cliente_selecionado_txt:
+                    contrato_id_escolhido = clientes_dict[cliente_selecionado_txt]
+                    
+                    st.markdown("---")
+                    st.subheader(f"Parcelas do Contrato Selecionado")
+                    
+                    # Busca apenas as parcelas vinculadas ao contrato escolhido
+                    res_parcelas = supabase.table("parcelas").select("*").eq("honorario_id", contrato_id_escolhido).execute()
+                    
+                    if res_parcelas.data:
+                        lista_parcelas = []
+                        for item in res_parcelas.data:
+                            lista_parcelas.append({
+                                "ID Parcela": item['id'],
+                                "Parcela": item['numero_parcela'],
+                                "Valor (R$)": f"R$ {item['valor']:.2f}",
+                                "Vencimento": datetime.strptime(item['vencimento'], "%Y-%m-%d").strftime("%d/%m/%Y"),
+                                "Status": item['status']
+                            })
+                        
+                        df_p = pd.DataFrame(lista_parcelas)
+                        
+                        # Função de estilo para a tabela (Verde para Pago, Vermelho para Pendente)
+                        def colorir_status(val):
+                            if val == 'Pago':
+                                return 'color: #28a745; font-weight: bold;'
+                            elif val == 'Pendente':
+                                return 'color: #dc3545; font-weight: bold;'
+                            return ''
 
-                # Aplica o estilo na coluna 'Status'
-                df_estilizado = df.style.map(colorir_status, subset=['Status'])
-                
-                # Exibe a tabela formatada
-                st.dataframe(df_estilizado, use_container_width=True)
-                
-                st.markdown("---")
-                
-                # --- CONTROLE DE PERMISSÕES NA TELA DE GESTÃO ---
-                col1, col2 = st.columns(2)
-                
-                with col1:
-                    st.subheader("🔄 Dar baixa em parcela")
-                    id_baixa = st.number_input("Digite o ID da parcela paga:", min_value=1, step=1, key="input_baixa")
-                    if st.button("Marcar como Pago"):
-                        supabase.table("parcelas").update({"status": "Pago"}).eq("id", id_baixa).execute()
-                        st.success("Status atualizado com sucesso!")
-                        st.rerun()
-                
-                with col2:
-                    st.subheader("🗑️ Excluir Contrato Inteiro")
-                    if user_role == 'admin':
-                        st.caption("Remove o contrato e todas as suas parcelas.")
-                        id_excluir = st.number_input("Digite o ID do Honorário a excluir:", min_value=1, step=1, key="input_excluir")
-                        if st.button("Excluir Contrato", type="primary"):
-                            supabase.table("honorarios").delete().eq("id", id_excluir).execute()
-                            st.success("Contrato e parcelas excluídos com sucesso!")
-                            st.rerun()
+                        df_estilizado = df_p.style.map(colorir_status, subset=['Status'])
+                        st.dataframe(df_estilizado, use_container_width=True)
+                        
+                        st.markdown("---")
+                        
+                        # --- CONTROLE DE PERMISSÕES E AÇÕES (BAIXA E EXCLUSÃO) ---
+                        col1, col2 = st.columns(2)
+                        
+                        with col1:
+                            st.subheader("🔄 Dar baixa em parcela")
+                            id_baixa = st.number_input("Digite o ID da parcela paga:", min_value=1, step=1, key="input_baixa")
+                            if st.button("Marcar como Pago"):
+                                supabase.table("parcelas").update({"status": "Pago"}).eq("id", id_baixa).execute()
+                                st.success("Status atualizado com sucesso!")
+                                st.rerun()
+                        
+                        with col2:
+                            st.subheader("🗑️ Excluir Contrato Inteiro")
+                            if user_role == 'admin':
+                                st.caption("Remove este contrato e todas as suas parcelas.")
+                                if st.button("Excluir Contrato Atual", type="primary"):
+                                    supabase.table("honorarios").delete().eq("id", contrato_id_escolhido).execute()
+                                    st.success("Contrato e parcelas excluídos com sucesso!")
+                                    st.rerun()
+                            else:
+                                st.info("🔒 Área de exclusão restrita aos sócios administradores.")
                     else:
-                        st.info("🔒 Área de exclusão restrita aos sócios administradores.")
+                        st.info("Este contrato não possui parcelas cadastradas.")
             else:
-                st.info("Nenhuma parcela cadastrada até o momento.")
+                st.info("Nenhum cliente/honorário cadastrado até o momento.")
         except Exception as e:
             st.error(f"Erro ao carregar dados: {e}")

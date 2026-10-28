@@ -5,22 +5,27 @@ import pandas as pd
 from datetime import datetime
 from dateutil.relativedelta import relativedelta
 
-st.set_page_config(page_title="PAGAMENTOS DEJURE", layout="wide", page_icon="⚖️")
+st.set_page_config(page_title="Controle de Honorários", layout="wide", page_icon="⚖️")
 
-# --- CREDENCIAIS E PERFIS DE ACESSO ---
-# Geramos os hashes seguros de forma nativa para evitar qualquer erro de tipo
-hashed_passwords = stauth.Hasher.hash_list(['SOBNOVADIRECAO', 'ESTAGIARIODEJURE'])
+# --- CREDENCIAIS E PERFIS DE ACESSO INDIVIDUAIS ---
+# Gerando hashes automáticos para as senhas de cada usuário
+hashed_passwords = stauth.Hasher.hash_list(['mudar123', 'mudar123', 'estagiario123'])
 
 credentials = {
     "usernames": {
-        "socio": {
-            "name": "Sócio Administrador",
-            "password": hashed_passwords[0],  # Senha: mudar123
+        "nelson": {
+            "name": "Nelson Freire Machado",
+            "password": hashed_passwords[0],
+            "role": "admin"
+        },
+        "leonidas": {
+            "name": "Leônidas da Paz e Silva",
+            "password": hashed_passwords[1],
             "role": "admin"
         },
         "estagiario": {
             "name": "Estagiário(a)",
-            "password": hashed_passwords[1],  # Senha: estagiario123
+            "password": hashed_passwords[2],
             "role": "estagiario"
         }
     }
@@ -55,7 +60,7 @@ elif authentication_status == True:
     # --- BARRA LATERAL (LOGO, LOGOUT E MENU) ---
     with st.sidebar:
         st.write(f"Logado como: **{name}**")
-        st.caption(f"Perfil: {'👑 Sócio (Admin)' if user_role == 'admin' else '🎓 Estagiário'}")
+        st.caption(f"Perfil: {'👑 Sócio' if user_role == 'admin' else '🎓 Estagiário'}")
         authenticator.logout('Sair', 'sidebar')
         st.markdown("---")
         
@@ -67,8 +72,9 @@ elif authentication_status == True:
         st.markdown("---")
         menu = st.radio("Navegação", ["Cadastrar Honorário", "Ver Parcelas e Baixas"])
 
-    # --- TELA PRINCIPAL ---
-    st.title("⚖️ Controle de Honorários do Escritório")
+    # --- MENSAGEM DE BOAS-VINDAS PERSONALIZADA ---
+    st.title(f"Seja bem-vindo, {name}!")
+    st.markdown("---")
 
     if menu == "Cadastrar Honorário":
         st.header("📝 Cadastrar Novo Contrato Parcelado")

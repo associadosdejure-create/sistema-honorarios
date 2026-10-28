@@ -5,6 +5,7 @@ import pandas as pd
 from datetime import datetime, date
 from dateutil.relativedelta import relativedelta
 import time
+import requests
 
 st.set_page_config(page_title="Controle DEJURE ADVOCACIA", layout="wide", page_icon="⚖️")
 
@@ -136,7 +137,7 @@ elif authentication_status == True:
     col1, col2 = st.columns(2)
     
     with col1:
-        menu_principal = st.selectbox("1️⃣ Módulo Principal:", ["Clientes", "Pagamentos", "Perícias", "Expedientes", "Pendências"])
+        menu_principal = st.selectbox("1️⃣ Módulo Principal:", ["Clientes", "Pagamentos", "Perícias", "Expedientes", "Pendências", "Trello"])
         
     with col2:
         submenu = ""
@@ -150,6 +151,8 @@ elif authentication_status == True:
             submenu = st.selectbox("2️⃣ Ação:", ["Cadastrar Expediente", "Consultar Expedientes", "Editar Expediente", "Excluir Expediente"])
         elif menu_principal == "Pendências":
             submenu = st.selectbox("2️⃣ Ação:", ["Cadastrar Pendência", "Consultar Pendências", "Editar Pendência", "Excluir Pendência"])
+        elif menu_principal == "Trello":
+            submenu = st.selectbox("2️⃣ Ação:", ["Sincronizar Cartões do Trello"])
 
     st.markdown("---")
 
@@ -409,7 +412,7 @@ elif authentication_status == True:
                         cli_sel = st.selectbox("Selecione o Contrato a excluir:", options=list(cdict.keys()))
                         if cli_sel:
                             st.warning("⚠️ Atenção: A exclusão remove permanentemente o contrato e todas as parcelas associadas.")
-                            confirmar_exc = st.checkbox("Confirmo que deseja excluir permanentemente este contrato.")
+                            confirmar_exc = st.checkbox("Confirmo que desejo excluir permanentemente este contrato.")
                             if confirmar_exc:
                                 if st.button("🚨 EXCLUIR DEFINITIVAMENTE", type="primary"):
                                     supabase.table("honorarios").delete().eq("id", cdict[cli_sel]).execute()
@@ -669,3 +672,42 @@ elif authentication_status == True:
                                 st.rerun()
                 else: st.info("Nenhuma pendência cadastrada.")
             except Exception as e: st.error(f"Erro: {e}")
+
+    elif menu_principal == "Trello":
+        if submenu == "Sincronizar Cartões do Trello":
+            st.header("🔄 Sincronização com o Trello")
+            st.write("Esta ferramenta busca os cartões do seu quadro do Trello e os cadastra automaticamente como **Expedientes** no sistema.")
+            
+            if st.button("🚀 Iniciar Sincronização", type="primary"):
+                try:
+                    api_key = st.secrets["TRELLO_API_KEY"]
+                    token = st.secrets["TRELLO_TOKEN"]
+                    board_id = st.secrets["TRELLO_BOARD_ID"]
+                    
+                    url = f"https://api.trello.com/1/boards/{board_id}/cards?key={api_key}&token={token}"
+                    response = requests.get(url)
+                    
+                    if response.status_code == 200:
+                        cartoes = response.json()
+                        contador = 0
+                        
+                        for cartao in cartoes:
+                            nome_cartao = cartao['name']
+                            descricao_cartao = cartao.get('desc', 'Importado do Trello')
+                            
+                            supabase.table("expedientes").insert({
+                                "numero_processo": nome_cartao[:50],
+                                "cliente": "Trello / Geral",
+                                "descricao": descricao_cartao,
+                                "data_manifestacao": str(date.today()),
+                                "responsavel": "Equipe",
+                                "status": "Pendente"
+                            }).execute()
+                            contador += 1
+                            
+                        st.success(f"🎉 Sincronização concluída com sucesso! {contador} cartões foram importados.")
+                        st.cache_data.clear()
+                    else:
+                        st.error(f"Erro ao conectar com o Trello. Código HTTP: {response.status_code}")
+                except Exception as e:
+                    st.error(f"Erro na importação: certifique-se de que os segredos do Trello estão configurados no Streamlit. Detalhe: {e}")

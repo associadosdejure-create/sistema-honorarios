@@ -46,7 +46,8 @@ elif authentication_status == True:
     TEMPO_MAXIMO = 300  # 5 minutos em segundos
 
     if 'ultima_atividade' in st.session_state:
-        if agora - st.session_state['ultima_atividade'] > TEMPO_MAXIMO:
+        tempo_decorrido = agora - st.session_state['ultima_atividade']
+        if tempo_decorrido > TEMPO_MAXIMO:
             st.session_state['logout'] = True
             st.session_state['authentication_status'] = None
             st.session_state['sessao_expirada'] = True
@@ -70,7 +71,6 @@ elif authentication_status == True:
         st.error("⚠️ ERRO CRÍTICO: Chaves do Supabase ausentes nos Secrets.")
         st.stop()
 
-    # --- FUNÇÕES DE CACHE ---
     @st.cache_data(ttl=30)
     def carregar_clientes():
         res = supabase.table("clientes_cadastrados").select("*").execute()
@@ -138,7 +138,6 @@ elif authentication_status == True:
 
     st.markdown("---")
 
-    # --- CENTRAL DE ALERTAS ---
     try:
         lista_per = carregar_pericias()
         lista_exp = carregar_expedientes()
@@ -168,9 +167,6 @@ elif authentication_status == True:
     except Exception:
         pass
 
-    # ---------------------------------------------------------
-    # MÓDULO CLIENTES
-    # ---------------------------------------------------------
     if menu_principal == "Clientes":
         if submenu == "Cadastrar Cliente":
             st.header("👤 Cadastro Completo de Cliente")
@@ -187,11 +183,10 @@ elif authentication_status == True:
                 if st.form_submit_button("Salvar Cadastro do Cliente"):
                     if c_nome:
                         try:
-                            dados_cliente = {
+                            supabase.table("clientes_cadastrados").insert({
                                 "nome": c_nome, "cpf_cnpj": c_doc, "telefone": c_tel, "email": c_email,
                                 "endereco": c_end, "cidade": c_cidade, "indicado_por": c_ind, "observacoes": c_obs
-                            }
-                            supabase.table("clientes_cadastrados").insert(dados_cliente).execute()
+                            }).execute()
                             st.cache_data.clear()
                             st.success(f"Cliente **{c_nome}** cadastrado com sucesso!")
                         except Exception as e: st.error(f"Erro ao salvar: {e}")
@@ -237,9 +232,6 @@ elif authentication_status == True:
                         except Exception as e: st.error(f"Erro ao atualizar: {e}")
             else: st.info("Nenhum cliente disponível para edição.")
 
-    # ---------------------------------------------------------
-    # MÓDULO PAGAMENTOS
-    # ---------------------------------------------------------
     elif menu_principal == "Pagamentos":
         if submenu == "Cadastrar Contrato / Parcelas":
             st.header("📝 Cadastrar Novo Contrato Parcelado")
@@ -366,9 +358,6 @@ elif authentication_status == True:
                 except Exception as e: st.error(f"Erro: {e}")
             else: st.error("🔒 Acesso Restrito aos administradores.")
                 
-    # ---------------------------------------------------------
-    # MÓDULO PERÍCIAS
-    # ---------------------------------------------------------
     elif menu_principal == "Perícias":
         if submenu == "Cadastrar Perícia":
             st.header("🔬 Cadastrar Nova Perícia")
@@ -393,4 +382,10 @@ elif authentication_status == True:
             try:
                 res_p = carregar_pericias()
                 if res_p:
-                    lista = [{"ID": i['id'], "Cliente": i['cliente'], "Tipo": i['tipo_pericia'], "
+                    lista = []
+                    for i in res_p:
+                        dt_fmt = datetime.strptime(i['data_indicacao'], "%Y-%m-%d").strftime("%d/%m/%Y") if i.get('data_indicacao') else ""
+                        lista.append({
+                            "ID": i['id'], 
+                            "Cliente": i['cliente'], 
+                            "Tipo": i['tipo_pericia'],

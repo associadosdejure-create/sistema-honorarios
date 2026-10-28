@@ -10,8 +10,8 @@ st.set_page_config(page_title="Controle de Honorários", layout="wide", page_ico
 # --- CREDENCIAIS E PERFIS DE ACESSO ---
 # Definimos os usuários, senhas e seus respectivos perfis (Roles)
 names = ['Sócio Administrador', 'Estagiário(a)']
-usernames = ['socio', 'estagiario']
-passwords = ['mudar123', 'estagiario123'] # Você pode alterar as senhas aqui
+usernames = ['administrador', 'estagiario']
+passwords = ['sobnovadirecao', 'cadastrodejure'] # Você pode alterar as senhas aqui
 roles = ['admin', 'estagiario']         # Perfil de cada um
 
 authenticator = stauth.Authenticate(

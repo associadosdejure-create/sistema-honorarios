@@ -324,14 +324,4 @@ elif authentication_status == True:
                         if cliente_selecionado_txt:
                             contrato_id_escolhido = clientes_dict[cliente_selecionado_txt]
                             
-                            st.warning("⚠️ Atenção: A exclusão de um contrato remove permanentemente o registro e todas as suas parcelas associadas.")
-                            
-                            if st.button("Excluir Definitivamente", type="primary"):
-                                supabase.table("honorarios").delete().eq("id", contrato_id_escolhido).execute()
-                                st.success("Contrato e parcelas excluídos com sucesso!")
-                                st.rerun()
-                    else:
-                        st.info("Nenhum contrato cadastrado para exclusão.")
-                except Exception as e:
-                    st.error(f"Erro ao carregar dados: {e}")
-            else:
+                            st.warning("⚠️ Atenção

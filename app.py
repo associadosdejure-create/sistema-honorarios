@@ -95,8 +95,10 @@ elif authentication_status == True:
         
         st.markdown("---")
         
-        # --- ESTRUTURA DE MENUS E SUBMENUS ---
+        # --- ESTRUTURA DE MENUS E SUBMENUS CORRIGIDA ---
         menu_principal = st.selectbox("Menu Principal", ["Pagamentos", "Perícias", "Expedientes", "Pendências"])
+        
+        submenu = "" # Inicializa a variável para evitar conflitos
         
         if menu_principal == "Pagamentos":
             submenu = st.radio(
@@ -371,3 +373,25 @@ elif authentication_status == True:
 
         elif submenu == "Ver Perícias":
             st.header("📋 Lista de Perícias Cadastradas")
+            
+            try:
+                res_pericias = supabase.table("pericias").select("*").execute()
+                
+                if res_pericias.data:
+                    lista_pericias = []
+                    for item in res_pericias.data:
+                        lista_pericias.append({
+                            "ID": item['id'],
+                            "Cliente": item['cliente'],
+                            "Tipo": item['tipo_pericia'],
+                            "Juízo/Vara": item.get('juizo_vara', 'N/D'),
+                            "Honorário (R$)": f"R$ {item.get('honorario_pericial', 0):.2f}",
+                            "Data da Perícia": datetime.strptime(item['data_indicacao'], "%Y-%m-%d").strftime("%d/%m/%Y") if item.get('data_indicacao') else 'N/D',
+                            "Status": item.get('status', 'Pendente')
+                        })
+                    
+                    df_pericias = pd.DataFrame(lista_pericias)
+                    
+                    def colorir_status_pericia(val):
+                        if val == 'Pago' or val == 'Concluído':
+                            return 'color: #28a

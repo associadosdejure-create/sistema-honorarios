@@ -8,7 +8,9 @@ import time
 
 st.set_page_config(page_title="Controle DEJURE ADVOCACIA", layout="wide", page_icon="⚖️")
 
-hashed_passwords = stauth.Hasher.hash_list(['mudar123', 'mudar123', 'bacharel123', 'advogado123', 'estagiario123'])
+hashed_passwords = stauth.Hasher.hash_list(
+    ['mudar123', 'mudar123', 'bacharel123', 'advogado123', 'estagiario123']
+)
 
 credentials = {
     "usernames": {
@@ -37,7 +39,7 @@ if authentication_status == False:
     st.error('Usuário ou senha incorretos')
 elif authentication_status == None:
     if st.session_state.get('sessao_expirada'):
-        st.warning('⏱️ Sua sessão expirou por inatividade (10 minutos). Por favor, faça login novamente.')
+        st.warning('⏱️ Sua sessão expirou (10 min inativa). Faça login novamente.')
     else:
         st.warning('Por favor, digite seu usuário e senha para acessar o sistema.')
 elif authentication_status == True:
@@ -64,10 +66,9 @@ elif authentication_status == True:
         key = st.secrets["SUPABASE_KEY"]
         supabase = create_client(url, key)
     except Exception as e:
-        st.error("⚠️ ERRO CRÍTICO: As chaves do Supabase não foram configuradas nos Secrets do Streamlit Cloud.")
+        st.error("⚠️ ERRO CRÍTICO: Chaves do Supabase ausentes nos Secrets.")
         st.stop()
 
-    # Barra lateral apenas para o Perfil e botão de Sair
     with st.sidebar:
         st.write(f"Logado como: **{name}**")
         if user_role == 'admin':
@@ -79,30 +80,4 @@ elif authentication_status == True:
         else:
             perfil_txt = "🎓 Estagiário"
             
-        st.caption(f"Perfil: {perfil_txt}")
-        authenticator.logout('Sair', 'sidebar')
-        st.markdown("---")
-        try:
-            st.image("logo.png", use_container_width=True)
-        except Exception:
-            st.write("⚖️ **Dejure Advocacia**")
-
-    st.title(f"Seja bem-vindo, {name}! ⚖️")
-    
-    # ---------------------------------------------------------
-    # MENUS MOVIDOS PARA O CENTRO DA TELA (NUNCA VÃO SUMIR)
-    # ---------------------------------------------------------
-    st.markdown("### 📌 Painel de Navegação")
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        menu_principal = st.selectbox(
-            "1️⃣ Selecione o Módulo Principal:", 
-            ["Pagamentos", "Perícias", "Expedientes", "Pendências"]
-        )
-        
-    with col2:
-        if menu_principal == "Pagamentos":
-            submenu = st.selectbox("2️⃣ Selecione a Ação:", ["Cadastrar Cliente", "Ver Parcelas", "Baixar Parcela", "Excluir Contrato"])
-        elif menu_principal == "Perícias":
-            submenu = st.selectbox("2️⃣ Selecione a
+        st.caption(f"Perfil: {perfil_

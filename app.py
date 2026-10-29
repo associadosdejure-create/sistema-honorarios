@@ -70,6 +70,10 @@ elif authentication_status == True:
         st.error("⚠️ ERRO CRÍTICO: Chaves do Supabase ausentes nos Secrets.")
         st.stop()
 
+    # --- INICIALIZAÇÃO DA PÁGINA ATUAL NO SESSION_STATE ---
+    if 'pagina_atual' not in st.session_state:
+        st.session_state['pagina_atual'] = "🏠 Página Inicial"
+
     # --- FUNÇÃO DE VALIDAÇÃO DE CPF ---
     def validar_cpf(cpf):
         cpf = ''.join(filter(str.isdigit, str(cpf)))
@@ -122,12 +126,27 @@ elif authentication_status == True:
         
         st.markdown("---")
         
-        # --- MENU DE NAVEGAÇÃO NA SIDEBAR ---
+        # --- MENU DE NAVEGAÇÃO EM FORMATO DE LINKS (BOTÕES ESTILIZADOS) ---
         st.subheader("🧭 Navegação")
-        menu_escolha = st.radio(
-            "Ir para:",
-            ["🏠 Página Inicial", "👥 Clientes", "💰 Pagamentos", "🔬 Perícias", "📂 Expedientes", "📋 Pendências"]
-        )
+        
+        if st.button("🏠 Página Inicial", use_container_width=True):
+            st.session_state['pagina_atual'] = "🏠 Página Inicial"
+            st.rerun()
+        if st.button("👥 Clientes", use_container_width=True):
+            st.session_state['pagina_atual'] = "Clientes"
+            st.rerun()
+        if st.button("💰 Pagamentos", use_container_width=True):
+            st.session_state['pagina_atual'] = "Pagamentos"
+            st.rerun()
+        if st.button("🔬 Perícias", use_container_width=True):
+            st.session_state['pagina_atual'] = "Perícias"
+            st.rerun()
+        if st.button("📂 Expedientes", use_container_width=True):
+            st.session_state['pagina_atual'] = "Expedientes"
+            st.rerun()
+        if st.button("📋 Pendências", use_container_width=True):
+            st.session_state['pagina_atual'] = "Pendências"
+            st.rerun()
         
         st.markdown("---")
         st.markdown(f"⏳ **Sessão expira em:**\n### `{minutos_restantes:02d}:{segundos_restantes:02d}`")
@@ -138,6 +157,8 @@ elif authentication_status == True:
         st.markdown("---")
         try: st.image("logo.png", use_container_width=True)
         except Exception: st.write("⚖️ **Dejure Advocacia**")
+
+    menu_escolha = st.session_state['pagina_atual']
 
     # ==========================================
     # PÁGINA INICIAL (DASHBOARD ANTECEDENTE)
@@ -211,14 +232,13 @@ elif authentication_status == True:
             pass
 
         st.markdown("---")
-        st.info("💡 **Dica:** Utilize o menu lateral esquerdo para acessar os módulos de Clientes, Pagamentos, Perícias, Expedientes e Pendências.")
+        st.info("💡 **Dica:** Utilize os botões do menu lateral esquerdo para navegar entre os módulos de Clientes, Pagamentos, Perícias, Expedientes e Pendências.")
 
     # ==========================================
     # MÓDULOS DE NAVEGAÇÃO PRINCIPAL
     # ==========================================
     else:
-        # Mapeia a escolha do rádio da sidebar para o antigo nome de menu principal
-        menu_principal = menu_escolha.replace("👥 ", "").replace("💰 ", "").replace("🔬 ", "").replace("📂 ", "").replace("📋 ", "")
+        menu_principal = menu_escolha
 
         st.title(f"Módulo: {menu_principal} ⚖️")
 

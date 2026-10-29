@@ -127,7 +127,7 @@ elif authentication_status == None:
     if st.session_state.get('sessao_expirada'):
         st.warning('⏱️ Sua sessão expirou (5 min inativa). Faça login novamente.')
     else:
-        pass  # Mensagem padrão removida conforme solicitado
+        pass  
 elif authentication_status == True:
     
     agora = time.time()
@@ -269,9 +269,9 @@ elif authentication_status == True:
             hoje = date.today()
             alertas = []
             for p in per:
-                if p.get('status') == 'Pendente' and p.get('data'):
-                    dt = datetime.strptime(p['data'], "%Y-%m-%d").date()
-                    alertas.append(((dt - hoje).days, f"🔬 Perícia | Nome: {p.get('nome', 'N/D')} | Data: {dt.strftime('%d/%m/%Y')}", p['id'], 'pericia'))
+                if p.get('status') == 'Pendente' and p.get('data_pm'):
+                    dt = datetime.strptime(p['data_pm'], "%Y-%m-%d").date()
+                    alertas.append(((dt - hoje).days, f"🔬 Perícia Médica | Nome: {p.get('nome', 'N/D')} | Data: {dt.strftime('%d/%m/%Y')}", p['id'], 'pericia'))
             for e in exp:
                 if e.get('status') == 'Pendente' and e.get('data_manifestacao'):
                     dt = datetime.strptime(e['data_manifestacao'], "%Y-%m-%d").date()
@@ -592,7 +592,7 @@ elif authentication_status == True:
                 res_h = carregar_dados("honorarios")
                 if res_h:
                     hdict = {f"{h['cliente']} — {h['servico']}": h['id'] for h in res_h}
-                    sel = st.selectbox("Contrato:", list(hdict.keys()))
+                    sel = st.selectbox("Contrato:", list(cdict.keys()))
                     if st.checkbox("Confirmo exclusão do contrato selecionado.") and st.button("EXCLUIR SELECIONADO", type="primary"):
                         supabase.table("honorarios").delete().eq("id", hdict[sel]).execute()
                         registrar_auditoria(username, "Excluir Contrato", "Pagamentos", f"ID: {hdict[sel]}")
@@ -613,11 +613,13 @@ elif authentication_status == True:
                 st.header("🔬 Nova Perícia")
                 with st.form("fc_per"):
                     cpf = st.text_input("CPF")
-                    nome = st.text_input("Nome")
-                    p_social = st.text_input("Perícia Social")
-                    p_medica = st.text_input("Perícia Médica")
-                    dt = st.date_input("Data", datetime.now())
-                    hora = st.text_input("Hora (ex: 14:30)")
+                    nome = st.text_input("Nome *")
+                    local_pm = st.text_input("Local PM")
+                    dt_pm = st.date_input("Data PM", datetime.now())
+                    hora_pm = st.text_input("Hora PM (ex: 14:30)")
+                    local_ps = st.text_input("Local PS")
+                    dt_ps = st.date_input("Data PS", datetime.now())
+                    hora_ps = st.text_input("Hora PS (ex: 15:30)")
                     senha_inss = st.text_input("Senha INSS")
                     elaborador = st.text_input("Elaborador")
                     
@@ -628,10 +630,12 @@ elif authentication_status == True:
                             supabase.table("pericias").insert({
                                 "cpf": cpf,
                                 "nome": nome,
-                                "pericia_social": p_social,
-                                "pericia_medica": p_medica,
-                                "data": dt.strftime("%Y-%m-%d"),
-                                "hora": hora,
+                                "local_pm": local_pm,
+                                "data_pm": dt_pm.strftime("%Y-%m-%d"),
+                                "hora_pm": hora_pm,
+                                "local_ps": local_ps,
+                                "data_ps": dt_ps.strftime("%Y-%m-%d"),
+                                "hora_ps": hora_ps,
                                 "senha_inss": senha_inss,
                                 "elaborador": elaborador,
                                 "status": "Pendente"
@@ -642,7 +646,7 @@ elif authentication_status == True:
 
             elif sub == "Importar Excel":
                 st.header("📥 Importar Perícias via Excel")
-                st.caption("O arquivo deve conter exatamente as colunas: cpf, nome, pericia_social, pericia_medica, data, hora, senha_inss, elaborador, status")
+                st.caption("O arquivo deve conter exatamente as colunas: cpf, nome, local_pm, data_pm, hora_pm, local_ps, data_ps, hora_ps, senha_inss, elaborador, status")
                 file_up = st.file_uploader("Envie a planilha (.xlsx ou .csv)", type=["xlsx", "csv"], key="up_per")
                 if file_up and st.button("Confirmar Importação", type="primary"):
                     importar_excel_para_supabase("pericias", file_up)
@@ -652,6 +656,12 @@ elif authentication_status == True:
                 res = carregar_dados("pericias")
                 if res: 
                     df_per = pd.DataFrame(res)
+                    # Organização exata na ordem desejada
+                    ordem_desejada = ['cpf', 'nome', 'local_pm', 'data_pm', 'hora_pm', 'local_ps', 'data_ps', 'hora_ps', 'senha_inss', 'elaborador', 'status']
+                    colunas_existentes = [c for c in ordem_desejada if c in df_per.columns]
+                    outras_colunas = [c for c in df_per.columns if c not in ordem_desejada and c != 'id']
+                    df_per = df_per[['id'] + colunas_existentes + outras_colunas]
+
                     if 'status' in df_per.columns:
                         st.dataframe(df_per.style.map(colorir_status, subset=['status']), use_container_width=True, hide_index=True)
                     else:
@@ -669,18 +679,27 @@ elif authentication_status == True:
                     with st.form("fe_per"):
                         ecpf = st.text_input("CPF", value=obj.get('cpf',''))
                         enome = st.text_input("Nome", value=obj.get('nome',''))
-                        eps = st.text_input("Perícia Social", value=obj.get('pericia_social',''))
-                        epm = st.text_input("Perícia Médica", value=obj.get('pericia_medica',''))
+                        elocal_pm = st.text_input("Local PM", value=obj.get('local_pm',''))
                         
-                        dt_val = datetime.now().date()
-                        if obj.get('data'):
+                        dt_pm_val = datetime.now().date()
+                        if obj.get('data_pm'):
                             try:
-                                dt_val = datetime.strptime(obj.get('data'), "%Y-%m-%d").date()
+                                dt_pm_val = datetime.strptime(obj.get('data_pm'), "%Y-%m-%d").date()
                             except:
                                 pass
-                        edt = st.date_input("Data", value=dt_val)
-                        
-                        ehora = st.text_input("Hora", value=obj.get('hora',''))
+                        edt_pm = st.date_input("Data PM", value=dt_pm_val)
+                        ehora_pm = st.text_input("Hora PM", value=obj.get('hora_pm',''))
+
+                        elocal_ps = st.text_input("Local PS", value=obj.get('local_ps',''))
+                        dt_ps_val = datetime.now().date()
+                        if obj.get('data_ps'):
+                            try:
+                                dt_ps_val = datetime.strptime(obj.get('data_ps'), "%Y-%m-%d").date()
+                            except:
+                                pass
+                        edt_ps = st.date_input("Data PS", value=dt_ps_val)
+                        ehora_ps = st.text_input("Hora PS", value=obj.get('hora_ps',''))
+
                         esenhainss = st.text_input("Senha INSS", value=obj.get('senha_inss',''))
                         eelab = st.text_input("Elaborador", value=obj.get('elaborador',''))
                         est_op = st.selectbox("Status", ["Pendente", "Em Andamento", "Concluído", "Pago"], index=["Pendente", "Em Andamento", "Concluído", "Pago"].index(obj.get('status', 'Pendente')) if obj.get('status', 'Pendente') in ["Pendente", "Em Andamento", "Concluído", "Pago"] else 0)
@@ -689,10 +708,12 @@ elif authentication_status == True:
                             supabase.table("pericias").update({
                                 "cpf": ecpf,
                                 "nome": enome,
-                                "pericia_social": eps,
-                                "pericia_medica": epm,
-                                "data": edt.strftime("%Y-%m-%d"),
-                                "hora": ehora,
+                                "local_pm": elocal_pm,
+                                "data_pm": edt_pm.strftime("%Y-%m-%d"),
+                                "hora_pm": ehora_pm,
+                                "local_ps": elocal_ps,
+                                "data_ps": edt_ps.strftime("%Y-%m-%d"),
+                                "hora_ps": ehora_ps,
                                 "senha_inss": esenhainss,
                                 "elaborador": eelab,
                                 "status": est_op

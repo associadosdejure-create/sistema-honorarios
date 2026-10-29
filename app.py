@@ -47,18 +47,18 @@ def registrar_auditoria(usuario, acao, modulo, detalhes=""):
     except Exception:
         pass
 
-# Carregamento de usuários direto do Supabase (sem cache para evitar falhas de sincronização)
+# Carregamento de usuários direto do Supabase com as colunas corretas
 def carregar_usuarios_db():
     try:
-        res = supabase.table("usuarios_sistema").select("*").eq("ativo", True).execute()
+        res = supabase.table("usuarios_sistema").select("*").execute()
         if res.data:
             cred_dict = {"usernames": {}}
             for u in res.data:
                 uname = str(u["username"]).strip().lower()
                 cred_dict["usernames"][uname] = {
-                    "name": u["nome_completo"],
-                    "password": str(u["senha_hash"]).strip(),
-                    "role": u["role"]
+                    "name": u.get("name", ""),
+                    "password": u.get("password", ""),
+                    "role": u.get("role", "estagiario")
                 }
             return cred_dict
     except Exception:
@@ -76,8 +76,8 @@ credentials = carregar_usuarios_db()
 
 authenticator = stauth.Authenticate(
     credentials, 
-    cookie_name='sistema_dejure_cookie_v4', 
-    cookie_key='chave_seguranca_dejure_2026_v4', 
+    cookie_name='sistema_dejure_cookie_v5', 
+    cookie_key='chave_seguranca_dejure_2026_v5', 
     cookie_expiry_days=30
 )
 
@@ -335,7 +335,7 @@ elif authentication_status == True:
                         else:
                             novo_hash = stauth.Hasher([nova_senha]).generate()[0]
                             try:
-                                supabase.table("usuarios_sistema").update({"senha_hash": novo_hash}).eq("username", username).execute()
+                                supabase.table("usuarios_sistema").update({"password": novo_hash}).eq("username", username).execute()
                                 registrar_auditoria(username, "Alterar Senha", "Segurança", f"Usuário {username} alterou a própria senha.")
                                 st.cache_data.clear()
                                 st.success("✅ Senha alterada com sucesso na nuvem! Faça login novamente com a nova senha.")
@@ -366,10 +366,9 @@ elif authentication_status == True:
                             try:
                                 supabase.table("usuarios_sistema").insert({
                                     "username": new_user.strip().lower(),
-                                    "nome_completo": new_name,
-                                    "senha_hash": senha_hash,
-                                    "role": new_role,
-                                    "ativo": True
+                                    "name": new_name,
+                                    "password": senha_hash,
+                                    "role": new_role
                                 }).execute()
                                 registrar_auditoria(username, "Cadastrar Usuário", "Segurança", f"Novo usuário criado: {new_user} ({new_role})")
                                 st.cache_data.clear()
@@ -380,14 +379,14 @@ elif authentication_status == True:
             elif sub == "Gerenciar Usuários" and user_role == 'admin':
                 st.header("🛡️ Gerenciamento de Usuários Ativos")
                 try:
-                    res_users = supabase.table("usuarios_sistema").select("id, username, nome_completo, role, ativo").execute()
+                    res_users = supabase.table("usuarios_sistema").select("id, username, name, role").execute()
                     if res_users.data:
                         df_u = pd.DataFrame(res_users.data)
                         st.dataframe(df_u, use_container_width=True, hide_index=True)
                         
                         st.markdown("---")
                         st.subheader("🗑️ Excluir Usuário")
-                        udict = {f"{u['username']} — {u['nome_completo']} (ID: {u['id']})": u['id'] for u in res_users.data if u['username'] != username}
+                        udict = {f"{u['username']} — {u['name']} (ID: {u['id']})": u['id'] for u in res_users.data if u['username'] != username}
                         if udict:
                             sel_del = st.selectbox("Selecione o usuário:", list(udict.keys()))
                             if st.checkbox("Confirmo a exclusão permanente deste usuário.") and st.button("EXCLUIR USUÁRIO SELECIONADO", type="primary"):

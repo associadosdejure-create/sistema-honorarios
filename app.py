@@ -111,7 +111,22 @@ elif authentication_status == True:
                 df = pd.read_csv(arquivo)
             else:
                 df = pd.read_excel(arquivo)
+            
+            # Converte valores vazios/nulos para string vazia
             df = df.fillna("")
+            
+            # Converte automaticamente qualquer coluna de data/timestamp para texto YYYY-MM-DD
+            for col in df.columns:
+                if pd.api.types.is_datetime64_any_dtype(df[col]) or 'data' in col.lower():
+                    df[col] = pd.to_datetime(df[col], errors='ignore')
+                    # Se após a conversão ainda for datetime, converte para string YYYY-MM-DD
+                    if pd.api.types.is_datetime64_any_dtype(df[col]):
+                        df[col] = df[col].dt.strftime('%Y-%m-%d')
+                    else:
+                        df[col] = df[col].astype(str).str.split(' ').str[0]
+                    # Substitui 'NaT' ou 'nan' gerados por vazio
+                    df[col] = df[col].replace(['NaT', 'nan', 'NAT', 'NaN'], '')
+
             dados = df.to_dict(orient="records")
             supabase.table(tabela).insert(dados).execute()
             st.cache_data.clear()
@@ -593,8 +608,8 @@ elif authentication_status == True:
 
                     st.markdown("---")
                     st.warning("⚠️ **ÁREA CRÍTICA:** Exclusão em massa de TODAS as pendências.")
-                    if st.checkbox("Confirmo a exclusão de TODAS as pendências cadastradas."):
-                        if st.button("🔥 EXCLUIR TODAS AS PENDÊNCIAS", type="primary"):
+                    if st.checkbox("Confirmo a exclusão de TODOS as pendências cadastradas."):
+                        if st.button("🔥 EXCLUIR TODOS AS PENDÊNCIAS", type="primary"):
                             supabase.table("pendencias").delete().neq("id", 0).execute()
                             st.cache_data.clear(); st.success("Todas as pendências foram excluídas!"); st.rerun()
                 else: st.info("Sem pendências cadastradas.")

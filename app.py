@@ -173,7 +173,6 @@ elif authentication_status == True:
             df = df.dropna(how='all', axis=1)
             df.columns = df.columns.str.strip().str.lower()
             
-            # Limpa valores nulos / NaN
             df = df.where(pd.notnull(df), "")
             df = df.fillna("")
             
@@ -262,55 +261,84 @@ elif authentication_status == True:
         
         try:
             cli, hon, per, exp, exp_trf, pen = carregar_dados("clientes_cadastrados"), carregar_dados("honorarios"), carregar_dados("pericias"), carregar_dados("expedientes"), carregar_dados("expedientes_trf"), carregar_dados("pendencias")
+            parcelas_db = carregar_dados("parcelas")
             c1, c2, c3, c4, c5, c6 = st.columns(6)
             c1.metric("Clientes", len(cli))
             c2.metric("Contratos", len(hon))
             c3.metric("Perícias Pend.", len([p for p in per if p.get('status') == 'Pendente']))
             c4.metric("Expedientes Pend.", len([e for e in exp if e.get('status') == 'Pendente']))
             c5.metric("Exp. TRF Pend.", len([et for et in exp_trf if et.get('status') == 'Pendente']))
-            c6.metric("Pendências Doc.", len([pn for pn in pen if pn.get('status') == 'Pendente']))
+            c6.metric("Parcelas Pend.", len([pc for pc in parcelas_db if pc.get('status') == 'Pendente']))
         except Exception: pass
 
         st.markdown("---")
         try:
             hoje = date.today()
-            alertas = []
+            alertas_pericias = []
+            alertas_expedientes = []
+            alertas_expedientes_trf = []
+            alertas_pagamentos = []
+
+            # Perícias
             for p in per:
-                if p.get('status') == 'Pendente' and p.get('data_pm'):
-                    dt = datetime.strptime(p['data_pm'], "%Y-%m-%d").date()
-                    alertas.append(((dt - hoje).days, f"🔬 Perícia Médica | Nome: {p.get('nome', 'N/D')} | Data: {dt.strftime('%d/%m/%Y')}", p['id'], 'pericia'))
+                if p.get('status') == 'Pendente':
+                    if p.get('data_pm'):
+                        dt = datetime.strptime(p['data_pm'], "%Y-%m-%d").date()
+                        alertas_pericias.append(((dt - hoje).days, f"🔬 Perícia Médica | Nome: {p.get('nome', 'N/D')} | Data PM: {dt.strftime('%d/%m/%Y')}", p['id'], 'pericia'))
+                    if p.get('data_ps'):
+                        dt = datetime.strptime(p['data_ps'], "%Y-%m-%d").date()
+                        alertas_pericias.append(((dt - hoje).days, f"🔬 Perícia Social | Nome: {p.get('nome', 'N/D')} | Data PS: {dt.strftime('%d/%m/%Y')}", p['id'], 'pericia'))
+
+            # Expedientes
             for e in exp:
                 if e.get('status') == 'Pendente' and e.get('data_manifestacao'):
                     dt = datetime.strptime(e['data_manifestacao'], "%Y-%m-%d").date()
-                    alertas.append(((dt - hoje).days, f"📂 Expediente | Processo: {e['numero_processo']} | Prazo: {dt.strftime('%d/%m/%Y')} | Resp: {e['responsavel']}", e.get('id', 0), 'expediente'))
+                    alertas_expedientes.append(((dt - hoje).days, f"📂 Processo: {e['numero_processo']} | Cliente: {e.get('cliente', 'N/D')} | Prazo: {dt.strftime('%d/%m/%Y')} | Resp: {e['responsavel']}", e.get('id', 0), 'expediente'))
+
+            # Expedientes TRF
             for et in exp_trf:
                 if et.get('status') == 'Pendente' and et.get('data_manifestacao'):
                     dt = datetime.strptime(et['data_manifestacao'], "%Y-%m-%d").date()
-                    alertas.append(((dt - hoje).days, f"⚖️ Expediente TRF | Processo: {et['numero_processo']} | Prazo: {dt.strftime('%d/%m/%Y')} | Resp: {et['responsavel']}", et.get('id', 0), 'expediente_trf'))
-                    
-            if alertas:
-                col_a1, col_a2 = st.columns([0.80, 0.20])
-                with col_a1: st.subheader("🚨 Central de Alertas de Prazos")
-                with col_a2:
-                    if user_role == 'admin' and st.button("🗑️ Excluir Alertas", type="primary"):
-                        for _, _, i_id, i_tipo in alertas:
-                            if i_tipo == 'pericia': supabase.table("pericias").update({"status": "Concluído"}).eq("id", i_id).execute()
-                            elif i_tipo == 'expediente': supabase.table("expedientes").update({"status": "Manifestado"}).eq("id", i_id).execute()
-                            elif i_tipo == 'expediente_trf': supabase.table("expedientes_trf").update({"status": "Manifestado"}).eq("id", i_id).execute()
-                        registrar_auditoria(username, "Exclusão em Lote Alertas", "Home", "Alertas de prazos atualizados em lote.")
-                        st.cache_data.clear()
-                        st.success("Alertas atualizados!")
-                        st.rerun()
+                    alertas_expedientes_trf.append(((dt - hoje).days, f"⚖️ Processo: {et['numero_processo']} | Cliente: {et.get('cliente', 'N/D')} | Prazo: {dt.strftime('%d/%m/%Y')} | Resp: {et['responsavel']}", et.get('id', 0), 'expediente_trf'))
 
-                with st.expander("📌 **Ver Lista de Alertas Ativos**", expanded=True):
-                    for dias, texto, _, _ in sorted(alertas, key=lambda x: x[0]):
+            # Pagamentos (Parcelas)
+            for pc in parcelas_db:
+                if pc.get('status') == 'Pendente' and pc.get('vencimento'):
+                    dt = datetime.strptime(pc['vencimento'], "%Y-%m-%d").date()
+                    # Buscar nome do contrato/cliente correspondente se possível
+                    h_nome = "Contrato ID " + str(pc.get('honorario_id'))
+                    alertas_pagamentos.append(((dt - hoje).days, f"💰 Parcela {pc.get('numero_parcela')} | Vencimento: {dt.strftime('%d/%m/%Y')} | Valor: R$ {pc.get('valor', 0):.2f}", pc.get('id', 0), 'pagamento'))
+
+            total_alertas = len(alertas_pericias) + len(alertas_expedientes) + len(alertas_expedientes_trf) + len(alertas_pagamentos)
+
+            if total_alertas > 0:
+                st.subheader("🚨 Central de Alertas de Prazos e Vencimentos")
+                
+                # Criação das Abas Separadas por Módulo
+                tab_per, tab_exp, tab_trf, tab_pag = st.tabs(["🔬 Perícias", "📂 Expedientes", "⚖️ Expedientes TRF", "💰 Pagamentos"])
+
+                def renderizar_lista_alerta(lista_alertas):
+                    if not lista_alertas:
+                        st.info("Nenhum alerta pendente nesta categoria.")
+                        return
+                    for dias, texto, _, _ in sorted(lista_alertas, key=lambda x: x[0]):
                         if dias < 0: st.error(f"⚠️ **VENCIDO ({abs(dias)} dias):** {texto}")
                         elif dias == 1: st.error(f"🚨 **CRÍTICO (1 dia):** {texto}")
                         elif dias <= 3: st.warning(f"⚠️ **URGENTE ({dias} dias):** {texto}")
                         else: st.info(f"📅 **LEMBRETE ({dias} dias):** {texto}")
+
+                with tab_per:
+                    renderizar_lista_alerta(alertas_pericias)
+                with tab_exp:
+                    renderizar_lista_alerta(alertas_expedientes)
+                with tab_trf:
+                    renderizar_lista_alerta(alertas_expedientes_trf)
+                with tab_pag:
+                    renderizar_lista_alerta(alertas_pagamentos)
             else:
-                st.info("🎉 Nenhum alerta de prazo pendente para hoje!")
-        except Exception: pass
+                st.info("🎉 Nenhum alerta de prazo ou pagamento pendente para hoje!")
+        except Exception as e: 
+            st.error(f"Erro ao carregar central de alertas: {e}")
     
     elif menu_escolha == "Auditoria" and user_role == 'admin':
         st.title("🛡️ Log de Auditoria do Sistema")
@@ -599,7 +627,7 @@ elif authentication_status == True:
                 res_h = carregar_dados("honorarios")
                 if res_h:
                     hdict = {f"{h['cliente']} — {h['servico']}": h['id'] for h in res_h}
-                    sel = st.selectbox("Contrato:", list(hdict.keys()))
+                    sel = st.selectbox("Contrato:", list(cdict.keys()))
                     if st.checkbox("Confirmo exclusão do contrato selecionado.") and st.button("EXCLUIR SELECIONADO", type="primary"):
                         supabase.table("honorarios").delete().eq("id", hdict[sel]).execute()
                         registrar_auditoria(username, "Excluir Contrato", "Pagamentos", f"ID: {hdict[sel]}")

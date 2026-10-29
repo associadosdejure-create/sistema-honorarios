@@ -118,12 +118,20 @@ elif authentication_status == True:
             "💰 Pagamentos": "Pagamentos",
             "🔬 Perícias": "Perícias",
             "📂 Expedientes": "Expedientes",
+            "⚖️ Expedientes TRF": "Expedientes TRF",
             "📋 Pendências": "Pendências"
         }
         for label, pag in modulos.items():
             if st.button(label, use_container_width=True):
                 st.session_state['pagina_atual'] = pag
-                st.session_state['submenu_atual'] = "" if pag == "🏠 Página Inicial" else {"Clientes": "Consultar Clientes", "Pagamentos": "Ver Parcelas", "Perícias": "Ver Perícias", "Expedientes": "Consultar Expedientes", "Pendências": "Consultar Pendências"}[pag]
+                st.session_state['submenu_atual'] = "" if pag == "🏠 Página Inicial" else {
+                    "Clientes": "Consultar Clientes", 
+                    "Pagamentos": "Ver Parcelas", 
+                    "Perícias": "Ver Perícias", 
+                    "Expedientes": "Consultar Expedientes", 
+                    "Expedientes TRF": "Consultar Expedientes TRF",
+                    "Pendências": "Consultar Pendências"
+                }[pag]
                 st.rerun()
         
         st.markdown("---")
@@ -147,13 +155,14 @@ elif authentication_status == True:
         st.markdown("### 📊 Visão Geral do Escritório")
         
         try:
-            cli, hon, per, exp, pen = carregar_dados("clientes_cadastrados"), carregar_dados("honorarios"), carregar_dados("pericias"), carregar_dados("expedientes"), carregar_dados("pendencias")
-            c1, c2, c3, c4, c5 = st.columns(5)
+            cli, hon, per, exp, exp_trf, pen = carregar_dados("clientes_cadastrados"), carregar_dados("honorarios"), carregar_dados("pericias"), carregar_dados("expedientes"), carregar_dados("expedientes_trf"), carregar_dados("pendencias")
+            c1, c2, c3, c4, c5, c6 = st.columns(6)
             c1.metric("Clientes", len(cli))
             c2.metric("Contratos", len(hon))
             c3.metric("Perícias Pend.", len([p for p in per if p.get('status') == 'Pendente']))
             c4.metric("Expedientes Pend.", len([e for e in exp if e.get('status') == 'Pendente']))
-            c5.metric("Pendências Doc.", len([pn for pn in pen if pn.get('status') == 'Pendente']))
+            c5.metric("Exp. TRF Pend.", len([et for et in exp_trf if et.get('status') == 'Pendente']))
+            c6.metric("Pendências Doc.", len([pn for pn in pen if pn.get('status') == 'Pendente']))
         except Exception: pass
 
         st.markdown("---")
@@ -168,6 +177,10 @@ elif authentication_status == True:
                 if e.get('status') == 'Pendente' and e.get('data_manifestacao'):
                     dt = datetime.strptime(e['data_manifestacao'], "%Y-%m-%d").date()
                     alertas.append(((dt - hoje).days, f"📂 Expediente | Processo: {e['numero_processo']} | Prazo: {dt.strftime('%d/%m/%Y')} | Resp: {e['responsavel']}", e.get('id', 0), 'expediente'))
+            for et in exp_trf:
+                if et.get('status') == 'Pendente' and et.get('data_manifestacao'):
+                    dt = datetime.strptime(et['data_manifestacao'], "%Y-%m-%d").date()
+                    alertas.append(((dt - hoje).days, f"⚖️ Expediente TRF | Processo: {et['numero_processo']} | Prazo: {dt.strftime('%d/%m/%Y')} | Resp: {et['responsavel']}", et.get('id', 0), 'expediente_trf'))
                     
             if alertas:
                 col_a1, col_a2 = st.columns([0.80, 0.20])
@@ -177,6 +190,7 @@ elif authentication_status == True:
                         for _, _, i_id, i_tipo in alertas:
                             if i_tipo == 'pericia': supabase.table("pericias").update({"status": "Concluído"}).eq("id", i_id).execute()
                             elif i_tipo == 'expediente': supabase.table("expedientes").update({"status": "Protocolado"}).eq("id", i_id).execute()
+                            elif i_tipo == 'expediente_trf': supabase.table("expedientes_trf").update({"status": "Protocolado"}).eq("id", i_id).execute()
                         st.cache_data.clear()
                         st.success("Alertas atualizados!")
                         st.rerun()
@@ -199,6 +213,7 @@ elif authentication_status == True:
             "Pagamentos": ["Ver Parcelas", "Cadastrar Contrato / Parcelas", "Baixar Parcela", "Editar Contrato", "Excluir Contrato"],
             "Perícias": ["Ver Perícias", "Cadastrar Perícia", "Editar Perícia", "Excluir Perícia"],
             "Expedientes": ["Consultar Expedientes", "Cadastrar Expediente", "Editar Expediente", "Excluir Expediente"],
+            "Expedientes TRF": ["Consultar Expedientes TRF", "Cadastrar Expediente TRF", "Editar Expediente TRF", "Excluir Expediente TRF"],
             "Pendências": ["Consultar Pendências", "Cadastrar Pendência", "Editar Pendência", "Excluir Pendência"]
         }
         acoes = acoes_dict.get(menu_principal, [])
@@ -436,6 +451,55 @@ elif authentication_status == True:
                             st.cache_data.clear(); st.success("Todos os expedientes foram excluídos!"); st.rerun()
                 else: st.info("Sem expedientes cadastrados.")
 
+        elif menu_principal == "Expedientes TRF":
+            if sub == "Cadastrar Expediente TRF":
+                st.header("⚖️ Novo Expediente TRF")
+                with st.form("fc_exp_trf"):
+                    proc, cli, desc, dt, resp = st.text_input("Processo"), st.text_input("Cliente"), st.text_input("Descrição"), st.date_input("Prazo", datetime.now()), st.text_input("Responsável")
+                    if st.form_submit_button("Salvar"):
+                        supabase.table("expedientes_trf").insert({"numero_processo": proc, "cliente": cli, "descricao": desc, "data_manifestacao": dt.strftime("%Y-%m-%d"), "responsavel": resp, "status": "Pendente"}).execute()
+                        st.cache_data.clear(); st.success("Cadastrado com sucesso!")
+            elif sub == "Consultar Expedientes TRF":
+                st.header("📋 Expedientes TRF")
+                res = carregar_dados("expedientes_trf")
+                if res:
+                    st.dataframe(pd.DataFrame(res), use_container_width=True)
+                    eid = st.number_input("ID para Protocolar (TRF):", min_value=1, step=1)
+                    if st.button("Marcar como Protocolado"):
+                        supabase.table("expedientes_trf").update({"status": "Protocolado"}).eq("id", eid).execute()
+                        st.cache_data.clear(); st.success("Atualizado!"); st.rerun()
+                else: st.info("Sem expedientes TRF cadastrados.")
+            elif sub == "Editar Expediente TRF":
+                st.header("✏️ Editar Expediente TRF")
+                res = carregar_dados("expedientes_trf")
+                if res:
+                    edict = {f"ID: {i['id']} | Proc: {i['numero_processo']}": i for i in res}
+                    sel = st.selectbox("Expediente TRF:", list(edict.keys()))
+                    obj = edict[sel]
+                    with st.form("fe_exp_trf"):
+                        ep, ec, ed, er = st.text_input("Processo", value=obj.get('numero_processo','')), st.text_input("Cliente", value=obj.get('cliente','')), st.text_input("Descrição", value=obj.get('descricao','')), st.text_input("Responsável", value=obj.get('responsavel',''))
+                        if st.form_submit_button("Salvar"):
+                            supabase.table("expedientes_trf").update({"numero_processo": ep, "cliente": ec, "descricao": ed, "responsavel": er}).eq("id", obj['id']).execute()
+                            st.cache_data.clear(); st.success("Atualizado!"); st.rerun()
+                else: st.info("Sem expedientes TRF.")
+            elif sub == "Excluir Expediente TRF":
+                st.header("🗑️ Excluir Expediente TRF")
+                res = carregar_dados("expedientes_trf")
+                if res:
+                    edict = {f"ID: {i['id']} | Proc: {i['numero_processo']}": i['id'] for i in res}
+                    sel = st.selectbox("Expediente TRF:", list(edict.keys()))
+                    if st.checkbox("Confirmo exclusão do expediente TRF selecionado.") and st.button("EXCLUIR SELECIONADO", type="primary"):
+                        supabase.table("expedientes_trf").delete().eq("id", edict[sel]).execute()
+                        st.cache_data.clear(); st.success("Excluído!"); st.rerun()
+
+                    st.markdown("---")
+                    st.warning("⚠️ **ÁREA CRÍTICA:** Exclusão em massa de TODOS os expedientes TRF.")
+                    if st.checkbox("Confirmo a exclusão de TODOS os expedientes TRF cadastrados."):
+                        if st.button("🔥 EXCLUIR TODOS OS EXPEDIENTES TRF", type="primary"):
+                            supabase.table("expedientes_trf").delete().neq("id", 0).execute()
+                            st.cache_data.clear(); st.success("Todos os expedientes TRF foram excluídos!"); st.rerun()
+                else: st.info("Sem expedientes TRF cadastrados.")
+
         elif menu_principal == "Pendências":
             if sub == "Cadastrar Pendência":
                 st.header("📋 Nova Pendência")
@@ -484,7 +548,7 @@ elif authentication_status == True:
 
                     st.markdown("---")
                     st.warning("⚠️ **ÁREA CRÍTICA:** Exclusão em massa de TODAS as pendências.")
-                    if st.checkbox("Confirmo a exclusão de TODAS as pendências cadastradas."):
+                    if st.checkbox("Confirmo a exclusão de TODOS as pendências cadastradas."):
                         if st.button("🔥 EXCLUIR TODAS AS PENDÊNCIAS", type="primary"):
                             supabase.table("pendencias").delete().neq("id", 0).execute()
                             st.cache_data.clear(); st.success("Todas as pendências foram excluídas!"); st.rerun()

@@ -126,6 +126,16 @@ elif authentication_status == True:
         except Exception as e:
             st.error(f"⚠️ Erro ao importar planilha: {e}")
 
+    # Função para colorir status nas tabelas
+    def colorir_status(val):
+        if str(val).lower() == 'pendente':
+            return 'color: #FF4B4B; font-weight: bold;'
+        elif str(val).lower() in ['manifestado', 'concluído', 'pago', 'entregue']:
+            return 'color: #00CC96; font-weight: bold;'
+        elif str(val).lower() == 'em andamento':
+            return 'color: #FFA15A; font-weight: bold;'
+        return ''
+
     with st.sidebar:
         st.write(f"Logado como: **{name}**")
         p_txt = {"admin": "👑 Sócio", "advogado": "⚖️ Advogado(a)", "bacharel": "📜 Bacharel(a)"}.get(user_role, "🎓 Estagiário")
@@ -275,7 +285,9 @@ elif authentication_status == True:
             elif sub == "Consultar Clientes":
                 st.header("📋 Base de Clientes")
                 res = carregar_dados("clientes_cadastrados")
-                if res: st.dataframe(pd.DataFrame(res), use_container_width=True)
+                if res: 
+                    df_cli = pd.DataFrame(res)
+                    st.dataframe(df_cli, use_container_width=True, hide_index=True)
                 else: st.info("Nenhum cliente cadastrado.")
             elif sub == "Editar Cliente":
                 st.header("✏️ Editar Cliente")
@@ -340,7 +352,12 @@ elif authentication_status == True:
                     cdict = {f"{h['cliente']} — {h['servico']}": h['id'] for h in res_h}
                     sel = st.selectbox("Contrato:", list(cdict.keys()))
                     res_p = supabase.table("parcelas").select("*").eq("honorario_id", cdict[sel]).execute()
-                    if res_p.data: st.dataframe(pd.DataFrame(res_p.data), use_container_width=True)
+                    if res_p.data: 
+                        df_p = pd.DataFrame(res_p.data)
+                        if 'status' in df_p.columns:
+                            st.dataframe(df_p.style.applymap(colorir_status, subset=['status']), use_container_width=True, hide_index=True)
+                        else:
+                            st.dataframe(df_p, use_container_width=True, hide_index=True)
                     else: st.info("Sem parcelas.")
                 else: st.info("Sem contratos.")
             elif sub == "Baixar Parcela":
@@ -351,7 +368,11 @@ elif authentication_status == True:
                     sel = st.selectbox("Contrato:", list(cdict.keys()))
                     res_p = supabase.table("parcelas").select("*").eq("honorario_id", cdict[sel]).execute()
                     if res_p.data:
-                        st.dataframe(pd.DataFrame(res_p.data), use_container_width=True)
+                        df_p = pd.DataFrame(res_p.data)
+                        if 'status' in df_p.columns:
+                            st.dataframe(df_p.style.applymap(colorir_status, subset=['status']), use_container_width=True, hide_index=True)
+                        else:
+                            st.dataframe(df_p, use_container_width=True, hide_index=True)
                         pid = st.number_input("ID da Parcela:", min_value=1, step=1)
                         if st.button("Confirmar Baixa", type="primary"):
                             supabase.table("parcelas").update({"status": "Pago"}).eq("id", pid).execute()
@@ -404,7 +425,12 @@ elif authentication_status == True:
             elif sub == "Ver Perícias":
                 st.header("📋 Lista de Perícias")
                 res = carregar_dados("pericias")
-                if res: st.dataframe(pd.DataFrame(res), use_container_width=True)
+                if res: 
+                    df_per = pd.DataFrame(res)
+                    if 'status' in df_per.columns:
+                        st.dataframe(df_per.style.applymap(colorir_status, subset=['status']), use_container_width=True, hide_index=True)
+                    else:
+                        st.dataframe(df_per, use_container_width=True, hide_index=True)
                 else: st.info("Sem perícias.")
             elif sub == "Editar Perícia":
                 st.header("✏️ Editar Perícia")
@@ -454,7 +480,12 @@ elif authentication_status == True:
                 st.header("📋 Expedientes & Gestão Rápida de Status")
                 res = carregar_dados("expedientes")
                 if res:
-                    st.dataframe(pd.DataFrame(res), use_container_width=True)
+                    df_exp = pd.DataFrame(res)
+                    if 'status' in df_exp.columns:
+                        st.dataframe(df_exp.style.applymap(colorir_status, subset=['status']), use_container_width=True, hide_index=True)
+                    else:
+                        st.dataframe(df_exp, use_container_width=True, hide_index=True)
+                    
                     st.markdown("---")
                     st.subheader("⚡ Atualização Rápida de Status")
                     edict = {f"ID: {i['id']} | Proc: {i['numero_processo']} ({i.get('status', 'Pendente')})": i for i in res}
@@ -517,7 +548,12 @@ elif authentication_status == True:
                 st.header("📋 Expedientes TRF & Gestão Rápida de Status")
                 res = carregar_dados("expedientes_trf")
                 if res:
-                    st.dataframe(pd.DataFrame(res), use_container_width=True)
+                    df_trf = pd.DataFrame(res)
+                    if 'status' in df_trf.columns:
+                        st.dataframe(df_trf.style.applymap(colorir_status, subset=['status']), use_container_width=True, hide_index=True)
+                    else:
+                        st.dataframe(df_trf, use_container_width=True, hide_index=True)
+
                     st.markdown("---")
                     st.subheader("⚡ Atualização Rápida de Status")
                     edict = {f"ID: {i['id']} | Proc: {i['numero_processo']} ({i.get('status', 'Pendente')})": i for i in res}
@@ -552,7 +588,7 @@ elif authentication_status == True:
                     edict = {f"ID: {i['id']} | Proc: {i['numero_processo']}": i['id'] for i in res}
                     sel = st.selectbox("Expediente TRF:", list(edict.keys()))
                     if st.checkbox("Confirmo exclusão do expediente TRF selecionado.") and st.button("EXCLUIR SELECIONADO", type="primary"):
-                        supabase.table("expedientes_trf").delete().eq("id", edict[sel]).execute()
+                        supabase.table("expedientes_trf").delete().eq("id",edict[sel]).execute()
                         st.cache_data.clear(); st.success("Excluído!"); st.rerun()
 
                     st.markdown("---")
@@ -587,7 +623,12 @@ elif authentication_status == True:
                 st.header("📂 Pendências")
                 res = carregar_dados("pendencias")
                 if res:
-                    st.dataframe(pd.DataFrame(res), use_container_width=True)
+                    df_pen = pd.DataFrame(res)
+                    if 'status' in df_pen.columns:
+                        st.dataframe(df_pen.style.applymap(colorir_status, subset=['status']), use_container_width=True, hide_index=True)
+                    else:
+                        st.dataframe(df_pen, use_container_width=True, hide_index=True)
+
                     pid = st.number_input("ID da Pendência entregue:", min_value=1, step=1)
                     if st.button("Marcar como Entregue"):
                         supabase.table("pendencias").update({"status": "Entregue"}).eq("id", pid).execute()
@@ -616,9 +657,9 @@ elif authentication_status == True:
                         st.cache_data.clear(); st.success("Excluído!"); st.rerun()
 
                     st.markdown("---")
-                    st.warning("⚠️ **ÁREA CRÍTICA:** Exclusão em massa de TODOS os pendências.")
+                    st.warning("⚠️ **ÁREA CRÍTICA:** Exclusão em massa de TODAS as pendências.")
                     if st.checkbox("Confirmo a exclusão de TODOS as pendências cadastradas."):
                         if st.button("🔥 EXCLUIR TODOS AS PENDÊNCIAS", type="primary"):
                             supabase.table("pendencias").delete().neq("id", 0).execute()
                             st.cache_data.clear(); st.success("Todas as pendências foram excluídas!"); st.rerun()
-                else: st.info("Sem pendências cadastradas.")
+                else: st.info("Sem pendências cadastrados.")

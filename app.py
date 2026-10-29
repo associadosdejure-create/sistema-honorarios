@@ -8,10 +8,25 @@ import time
 
 st.set_page_config(page_title="Controle DEJURE ADVOCACIA", layout="wide", page_icon="⚖️")
 
-# --- ESTILIZAÇÃO CSS (COR AMARELO QUASE DOURADO) ---
+# --- ESTILIZAÇÃO CSS (FUNDO PRETO FECHADO E DETALHES DOURADOS) ---
 st.markdown("""
     <style>
+    /* Fundo geral da aplicação (preto fechado) */
+    .stApp {
+        background-color: #0A0A0A !important;
+    }
+    
+    /* Fundo da barra lateral e containers */
+    [data-testid="stSidebar"], [data-testid="stExpander"], [data-testid="stForm"] {
+        background-color: #121212 !important;
+        border: 1px solid #222222 !important;
+    }
+
     /* Títulos principais e subtítulos em amarelo dourado (#D4AF37) */
+    h1, h2, h3, h4, h5, h6, label, .stMarkdown p {
+        color: #E0E0E0 !important;
+    }
+    
     h1, h2, h3 {
         color: #D4AF37 !important;
     }
@@ -19,7 +34,7 @@ st.markdown("""
     /* Botões primários (ativos) com fundo dourado e texto escuro para contraste */
     .stButton > button[kind="primary"] {
         background-color: #D4AF37 !important;
-        color: #1A1A1A !important;
+        color: #0A0A0A !important;
         font-weight: bold;
         border: none;
     }
@@ -29,9 +44,29 @@ st.markdown("""
         color: #000000 !important;
     }
 
+    /* Botões normais / secundários */
+    .stButton > button {
+        background-color: #1F1F1F !important;
+        color: #E0E0E0 !important;
+        border: 1px solid #333333 !important;
+    }
+    
+    .stButton > button:hover {
+        background-color: #2D2D2D !important;
+        color: #D4AF37 !important;
+        border-color: #D4AF37 !important;
+    }
+
     /* Métricas com valor destacado em dourado */
     [data-testid="stMetricValue"] {
         color: #D4AF37 !important;
+    }
+    
+    /* Inputs de texto e caixas de seleção */
+    input, select, textarea {
+        background-color: #1A1A1A !important;
+        color: #FFFFFF !important;
+        border-color: #333333 !important;
     }
     </style>
 """, unsafe_allow_html=True)
@@ -200,13 +235,17 @@ elif authentication_status == True:
     # PÁGINA INICIAL (DASHBOARD ANTECEDENTE)
     # ==========================================
     if menu_escolha == "🏠 Página Inicial":
-        # --- EXIBIÇÃO DA LOGO NA TELA INICIAL ---
         col_logo1, col_logo2, col_logo3 = st.columns([1, 2, 1])
         with col_logo2:
-            try:
-                st.image("logo.png", use_container_width=True)
-            except Exception:
-                st.markdown("<h2 style='text-align: center;'>⚖️ DEJURE ADVOCACIA</h2>", unsafe_allow_html=True)
+            import os
+            logo_encontrada = False
+            for arquivo_teste in ["logo.png", "logo.jpg", "logo.jpeg", "Logo.png", "Logo.jpg"]:
+                if os.path.exists(arquivo_teste):
+                    st.image(arquivo_teste, use_container_width=True)
+                    logo_encontrada = True
+                    break
+            if not logo_encontrada:
+                st.markdown("<h2 style='text-align: center; color: #D4AF37;'>⚖️ DEJURE ADVOCACIA</h2>", unsafe_allow_html=True)
 
         st.title(f"Seja bem-vindo, {name}! ⚖️")
         st.markdown("### 📊 Visão Geral do Escritório")

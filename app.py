@@ -35,35 +35,29 @@ except Exception:
     st.error("⚠️ ERRO CRÍTICO: Chaves do Supabase ausentes nos Secrets.")
     st.stop()
 
-# --- CARREGA USUÁRIOS DO SUPABASE (COM FALLBACK SE VAZIO) ---
-@st.cache_data(ttl=10)
-def carregar_usuarios_db():
+# Função de Auditoria Automática
+def registrar_auditoria(usuario, acao, modulo, detalhes=""):
     try:
-        res = supabase.table("usuarios_sistema").select("*").execute()
-        if res.data:
-            creds = {"usernames": {}}
-            for u in res.data:
-                creds["usernames"][u["username"]] = {
-                    "name": u["name"],
-                    "password": u["password"],
-                    "role": u["role"]
-                }
-            return creds
+        supabase.table("logs_auditoria").insert({
+            "usuario": usuario,
+            "acao": acao,
+            "modulo": modulo,
+            "detalhes": detalhes
+        }).execute()
     except Exception:
         pass
-    # Padrão inicial caso a tabela esteja vazia
-    hashed_passwords = stauth.Hasher.hash_list(['mudar123', 'mudar123', 'bacharel123', 'advogado123', 'estagiario123'])
-    return {
-        "usernames": {
-            "nelson": {"name": "Nelson Freire Machado", "password": hashed_passwords[0], "role": "admin"},
-            "leonidas": {"name": "Leônidas da Paz e Silva", "password": hashed_passwords[1], "role": "admin"},
-            "bacharel": {"name": "Bacharel(a)", "password": hashed_passwords[2], "role": "bacharel"},
-            "advogado": {"name": "Advogado(a)", "password": hashed_passwords[3], "role": "advogado"},
-            "estagiario": {"name": "Estagiário(a)", "password": hashed_passwords[4], "role": "estagiario"}
-        }
-    }
 
-credentials = carregar_usuarios_db()
+hashed_passwords = stauth.Hasher.hash_list(['mudar123', 'mudar123', 'bacharel123', 'advogado123', 'estagiario123'])
+
+credentials = {
+    "usernames": {
+        "nelson": {"name": "Nelson Freire Machado", "password": hashed_passwords[0], "role": "admin"},
+        "leonidas": {"name": "Leônidas da Paz e Silva", "password": hashed_passwords[1], "role": "admin"},
+        "bacharel": {"name": "Bacharel(a)", "password": hashed_passwords[2], "role": "bacharel"},
+        "advogado": {"name": "Advogado(a)", "password": hashed_passwords[3], "role": "advogado"},
+        "estagiario": {"name": "Estagiário(a)", "password": hashed_passwords[4], "role": "estagiario"}
+    }
+}
 
 authenticator = stauth.Authenticate(
     credentials, cookie_name='sistema_honorarios_cookie', cookie_key='chave_seguranca_sistema_123', cookie_expiry_days=30
@@ -103,6 +97,7 @@ elif authentication_status == True:
     t_rest = TEMPO_MAXIMO - (agora - st.session_state['ultima_atividade'])
     min_res, seg_res = max(0, int(t_rest // 60)), max(0, int(t_rest % 60))
 
+    # Identificação de papel do usuário
     user_role = credentials["usernames"].get(username, {}).get("role", "estagiario")
 
     if 'pagina_atual' not in st.session_state: st.session_state['pagina_atual'] = "🏠 Página Inicial"
@@ -118,10 +113,45 @@ elif authentication_status == True:
         d2 = (soma * 10) % 11; d2 = 0 if d2 == 10 else d2
         return d2 == int(cpf[10])
 
-    @st.cache_data(ttl=30)
+    @st.cache_data(ttl=300)
     def carregar_dados(tabela):
         res = supabase.table(tabela).select("*").execute()
         return res.data if res.data else []
+
+    def importar_excel_para_supabase(tabela, arquivo):
+        try:
+            if arquivo.name.endswith('.csv'):
+                df = pd.read_csv(arquivo)
+            else:
+                df = pd.read_excel(arquivo)
+            
+            df = df.loc[:, ~df.columns.str.contains('^Unnamed', na=False)]
+            df = df.dropna(how='all', axis=1)
+            df.columns = df.columns.str.strip().str.lower()
+            
+            df = df.fillna("")
+            for col in df.columns:
+                if 'data' in col.lower() or 'vencimento' in col.lower():
+                    df[col] = pd.to_datetime(df[col], errors='coerce').dt.strftime('%Y-%m-%d')
+                    df[col] = df[col].replace(['NaT', 'nan', 'NAT', 'NaN', 'None'], '')
+
+            dados = df.to_dict(orient="records")
+            supabase.table(tabela).insert(dados).execute()
+            registrar_auditoria(username, "Importação Excel", tabela, f"{len(dados)} registros importados.")
+            st.cache_data.clear()
+            st.success(f"🎉 {len(dados)} registros importados com sucesso!")
+            st.rerun()
+        except Exception as e:
+            st.error(f"⚠️ Erro ao importar planilha: {e}")
+
+    def colorir_status(val):
+        if str(val).lower() == 'pendente':
+            return 'color: #FF4B4B; font-weight: bold;'
+        elif str(val).lower() in ['manifestado', 'concluído', 'pago', 'entregue']:
+            return 'color: #00CC96; font-weight: bold;'
+        elif str(val).lower() == 'em andamento':
+            return 'color: #FFA15A; font-weight: bold;'
+        return ''
 
     with st.sidebar:
         st.write(f"Logado como: **{name}**")
@@ -136,17 +166,26 @@ elif authentication_status == True:
             "💰 Pagamentos": "Pagamentos",
             "🔬 Perícias": "Perícias",
             "📂 Expedientes": "Expedientes",
+            "⚖️ Expedientes TRF": "Expedientes TRF",
             "📋 Pendências": "Pendências"
         }
         
-        # Adiciona o módulo de segurança apenas para administradores/sócios
+        # Garante a exibição do menu de Auditoria para administradores
         if user_role == 'admin':
-            modulos["🔒 Segurança"] = "Segurança"
+            modulos["🔒 Auditoria"] = "Auditoria"
 
         for label, pag in modulos.items():
             if st.button(label, use_container_width=True):
                 st.session_state['pagina_atual'] = pag
-                st.session_state['submenu_atual'] = "" if pag in ["🏠 Página Inicial", "Segurança"] else {"Clientes": "Consultar Clientes", "Pagamentos": "Ver Parcelas", "Perícias": "Ver Perícias", "Expedientes": "Consultar Expedientes", "Pendências": "Consultar Pendências"}[pag]
+                st.session_state['submenu_atual'] = "" if pag == "🏠 Página Inicial" else {
+                    "Clientes": "Consultar Clientes", 
+                    "Pagamentos": "Ver Parcelas", 
+                    "Perícias": "Ver Perícias", 
+                    "Expedientes": "Consultar Expedientes", 
+                    "Expedientes TRF": "Consultar Expedientes TRF",
+                    "Pendências": "Consultar Pendências",
+                    "Auditoria": "Ver Logs"
+                }.get(pag, "")
                 st.rerun()
         
         st.markdown("---")
@@ -170,13 +209,14 @@ elif authentication_status == True:
         st.markdown("### 📊 Visão Geral do Escritório")
         
         try:
-            cli, hon, per, exp, pen = carregar_dados("clientes_cadastrados"), carregar_dados("honorarios"), carregar_dados("pericias"), carregar_dados("expedientes"), carregar_dados("pendencias")
-            c1, c2, c3, c4, c5 = st.columns(5)
+            cli, hon, per, exp, exp_trf, pen = carregar_dados("clientes_cadastrados"), carregar_dados("honorarios"), carregar_dados("pericias"), carregar_dados("expedientes"), carregar_dados("expedientes_trf"), carregar_dados("pendencias")
+            c1, c2, c3, c4, c5, c6 = st.columns(6)
             c1.metric("Clientes", len(cli))
             c2.metric("Contratos", len(hon))
             c3.metric("Perícias Pend.", len([p for p in per if p.get('status') == 'Pendente']))
             c4.metric("Expedientes Pend.", len([e for e in exp if e.get('status') == 'Pendente']))
-            c5.metric("Pendências Doc.", len([pn for pn in pen if pn.get('status') == 'Pendente']))
+            c5.metric("Exp. TRF Pend.", len([et for et in exp_trf if et.get('status') == 'Pendente']))
+            c6.metric("Pendências Doc.", len([pn for pn in pen if pn.get('status') == 'Pendente']))
         except Exception: pass
 
         st.markdown("---")
@@ -191,6 +231,10 @@ elif authentication_status == True:
                 if e.get('status') == 'Pendente' and e.get('data_manifestacao'):
                     dt = datetime.strptime(e['data_manifestacao'], "%Y-%m-%d").date()
                     alertas.append(((dt - hoje).days, f"📂 Expediente | Processo: {e['numero_processo']} | Prazo: {dt.strftime('%d/%m/%Y')} | Resp: {e['responsavel']}", e.get('id', 0), 'expediente'))
+            for et in exp_trf:
+                if et.get('status') == 'Pendente' and et.get('data_manifestacao'):
+                    dt = datetime.strptime(et['data_manifestacao'], "%Y-%m-%d").date()
+                    alertas.append(((dt - hoje).days, f"⚖️ Expediente TRF | Processo: {et['numero_processo']} | Prazo: {dt.strftime('%d/%m/%Y')} | Resp: {et['responsavel']}", et.get('id', 0), 'expediente_trf'))
                     
             if alertas:
                 col_a1, col_a2 = st.columns([0.80, 0.20])
@@ -199,7 +243,9 @@ elif authentication_status == True:
                     if st.button("🗑️ Excluir Alertas", type="primary"):
                         for _, _, i_id, i_tipo in alertas:
                             if i_tipo == 'pericia': supabase.table("pericias").update({"status": "Concluído"}).eq("id", i_id).execute()
-                            elif i_tipo == 'expediente': supabase.table("expedientes").update({"status": "Protocolado"}).eq("id", i_id).execute()
+                            elif i_tipo == 'expediente': supabase.table("expedientes").update({"status": "Manifestado"}).eq("id", i_id).execute()
+                            elif i_tipo == 'expediente_trf': supabase.table("expedientes_trf").update({"status": "Manifestado"}).eq("id", i_id).execute()
+                        registrar_auditoria(username, "Exclusão em Lote Alertas", "Home", "Alertas de prazos atualizados em lote.")
                         st.cache_data.clear()
                         st.success("Alertas atualizados!")
                         st.rerun()
@@ -213,73 +259,369 @@ elif authentication_status == True:
             else:
                 st.info("🎉 Nenhum alerta de prazo pendente para hoje!")
         except Exception: pass
-
-    elif menu_escolha == "Segurança" and user_role == 'admin':
-        st.title("🔒 Gestão de Segurança e Usuários")
-        
-        tab1, tab2 = st.tabs(["➕ Cadastrar Novo Usuário", "🔑 Alterar Senha de Usuário"])
-        
-        with tab1:
-            st.subheader("Cadastrar Novo Usuário no Sistema")
-            with st.form("form_novo_usuario"):
-                n_user = st.text_input("Nome de Usuário (login sem espaços, ex: carlos)")
-                n_name = st.text_input("Nome Completo (ex: Carlos Eduardo)")
-                n_pass = st.text_input("Senha Inicial", type="password")
-                n_role = st.selectbox("Perfil / Nível de Acesso", ["admin", "advogado", "bacharel", "estagiario"], format_func=lambda x: {"admin": "👑 Sócio (Admin)", "advogado": "⚖️ Advogado(a)", "bacharel": "📜 Bacharel(a)", "estagiario": "🎓 Estagiário"}[x])
-                
-                if st.form_submit_button("Cadastrar Usuário"):
-                    if not n_user or not n_name or not n_pass:
-                        st.error("Preencha todos os campos obrigatórios.")
-                    else:
-                        hashed_p = stauth.Hasher([n_pass]).generate()[0]
-                        try:
-                            # Verifica se já existe
-                            existe = supabase.table("usuarios_sistema").select("*").eq("username", n_user.strip()).execute()
-                            if existe.data:
-                                st.error("⚠️ Este nome de usuário já existe no sistema.")
-                            else:
-                                supabase.table("usuarios_sistema").insert({
-                                    "username": n_user.strip().lower(),
-                                    "name": n_name.strip(),
-                                    "password": hashed_p,
-                                    "role": n_role
-                                }).execute()
-                                st.cache_data.clear()
-                                st.success(f"Usuário **{n_user}** cadastrado com sucesso!")
-                        except Exception as e:
-                            st.error(f"Erro ao cadastrar usuário: {e}")
-
-        with tab2:
-            st.subheader("Alterar Senha de Usuário Existente")
-            lista_usrs = list(credentials["usernames"].keys())
-            with st.form("form_alt_senha"):
-                usr_sel = st.selectbox("Selecione o Usuário:", lista_usrs)
-                nova_senha = st.text_input("Nova Senha", type="password", key="nova_s")
-                
-                if st.form_submit_button("Atualizar Senha"):
-                    if not nova_senha:
-                        st.error("Digite a nova senha.")
-                    else:
-                        hashed_p = stauth.Hasher([nova_senha]).generate()[0]
-                        try:
-                            # Atualiza ou insere caso não esteja na tabela SQL ainda
-                            res_up = supabase.table("usuarios_sistema").update({"password": hashed_p}).eq("username", usr_sel).execute()
-                            if not res_up.data:
-                                # Se não achou na tabela (ex: usuário padrão hardcoded), insere direto
-                                info_u = credentials["usernames"][usr_sel]
-                                supabase.table("usuarios_sistema").insert({
-                                    "username": usr_sel,
-                                    "name": info_u["name"],
-                                    "password": hashed_p,
-                                    "role": info_u["role"]
-                                }).execute()
-                            st.cache_data.clear()
-                            st.success(f"Senha do usuário **{usr_sel}** alterada com sucesso!")
-                        except Exception as e:
-                            st.error(f"Erro ao alterar senha: {e}")
+    
+    elif menu_escolha in ["Auditoria", "🔒 Auditoria"]:
+        if user_role == 'admin':
+            st.title("🔒 Log de Auditoria do Sistema")
+            st.caption("Registro de todas as ações importantes realizadas pelos usuários na plataforma.")
+            try:
+                res_logs = supabase.table("logs_auditoria").select("*").order("data_hora", desc=True).limit(100).execute()
+                if res_logs.data:
+                    df_logs = pd.DataFrame(res_logs.data)
+                    st.dataframe(df_logs, use_container_width=True, hide_index=True)
+                else:
+                    st.info("Nenhum registro de auditoria encontrado.")
+            except Exception as e:
+                st.error(f"Erro ao carregar logs: {e}")
+        else:
+            st.error("⚠️ Acesso restrito aos administradores do sistema.")
 
     else:
-        # Demais módulos (Clientes, Pagamentos, etc. mantidos intactos)
         menu_principal = menu_escolha
         st.title(f"Módulo: {menu_principal} ⚖️")
-        # ... (continua a lógica normal dos outros módulos já otimizados)
+
+        acoes_dict = {
+            "Clientes": ["Consultar Clientes", "Cadastrar Cliente", "Importar Excel", "Editar Cliente", "Excluir Cliente", "Exportar Base (Backup)"],
+            "Pagamentos": ["Ver Parcelas", "Cadastrar Contrato / Parcelas", "Baixar Parcela", "Editar Contrato", "Excluir Contrato"],
+            "Perícias": ["Ver Perícias", "Cadastrar Perícia", "Importar Excel", "Editar Perícia", "Excluir Perícia"],
+            "Expedientes": ["Consultar Expedientes", "Cadastrar Expediente", "Importar Excel", "Editar Expediente", "Excluir Expediente"],
+            "Expedientes TRF": ["Consultar Expedientes TRF", "Cadastrar Expediente TRF", "Importar Excel", "Editar Expediente TRF", "Excluir Expediente TRF"],
+            "Pendências": ["Consultar Pendências", "Cadastrar Pendência", "Importar Excel", "Editar Pendência", "Excluir Pendência"]
+        }
+        acoes = acoes_dict.get(menu_principal, [])
+
+        if not st.session_state['submenu_atual'] or st.session_state['submenu_atual'] not in acoes:
+            st.session_state['submenu_atual'] = acoes[0]
+
+        cols = st.columns(len(acoes))
+        for idx, acao in enumerate(acoes):
+            with cols[idx]:
+                if st.button(acao, use_container_width=True, type="primary" if st.session_state['submenu_atual'] == acao else "secondary"):
+                    st.session_state['submenu_atual'] = acao
+                    st.rerun()
+
+        st.markdown("---")
+        sub = st.session_state['submenu_atual']
+
+        # --- PROCESSAMENTO DOS MÓDULOS ---
+        if menu_principal == "Clientes":
+            if sub == "Cadastrar Cliente":
+                st.header("👤 Cadastro Completo de Cliente")
+                with st.form("fc_cli"):
+                    n, doc, tel, email, end, cid, gov, ind, obs = st.text_input("Nome *"), st.text_input("CPF/CNPJ"), st.text_input("Telefone"), st.text_input("E-mail"), st.text_input("Endereço"), st.text_input("Cidade/UF"), st.text_input("Senha Gov.br"), st.text_input("Indicado Por"), st.text_area("Observações")
+                    if st.form_submit_button("Salvar"):
+                        if not n: st.error("O campo Nome é obrigatório.")
+                        else:
+                            doc_l = ''.join(filter(str.isdigit, str(doc)))
+                            if len(doc_l) == 11 and not validar_cpf(doc_l): st.error("CPF Inválido!")
+                            else:
+                                supabase.table("clientes_cadastrados").insert({"nome": n, "cpf_cnpj": doc, "telefone": tel, "email": email, "endereco": end, "cidade": cid, "senha_gov": gov, "indicado_por": ind, "observacoes": obs}).execute()
+                                registrar_auditoria(username, "Cadastrar Cliente", "Clientes", f"Cliente: {n}")
+                                st.cache_data.clear(); st.success("Cliente cadastrado!")
+            elif sub == "Importar Excel":
+                st.header("📥 Importar Clientes via Planilha Excel")
+                st.caption("O arquivo deve conter as colunas: nome, cpf_cnpj, telefone, email, endereco, cidade, senha_gov, indicado_por, observacoes")
+                file_up = st.file_uploader("Envie a planilha (.xlsx ou .csv)", type=["xlsx", "csv"], key="up_cli")
+                if file_up and st.button("Confirmar Importação", type="primary"):
+                    importar_excel_para_supabase("clientes_cadastrados", file_up)
+            elif sub == "Consultar Clientes":
+                st.header("📋 Base de Clientes")
+                res = carregar_dados("clientes_cadastrados")
+                if res: 
+                    df_cli = pd.DataFrame(res)
+                    st.dataframe(df_cli, use_container_width=True, hide_index=True)
+                else: st.info("Nenhum cliente cadastrado.")
+            elif sub == "Editar Cliente":
+                st.header("✏️ Editar Cliente")
+                res = carregar_dados("clientes_cadastrados")
+                if res:
+                    cdict = {f"ID: {c['id']} — {c['nome']}": c for c in res}
+                    sel = st.selectbox("Cliente:", list(cdict.keys()))
+                    obj = cdict[sel]
+                    with st.form("fe_cli"):
+                        en, edoc, etel, eemail, eend, ecid, egov, eind, eobs = st.text_input("Nome", value=obj.get('nome','')), st.text_input("CPF/CNPJ", value=obj.get('cpf_cnpj','')), st.text_input("Telefone", value=obj.get('telefone','')), st.text_input("E-mail", value=obj.get('email','')), st.text_input("Endereço", value=obj.get('endereco','')), st.text_input("Cidade", value=obj.get('cidade','')), st.text_input("Gov.br", value=obj.get('senha_gov','')), st.text_input("Indicação", value=obj.get('indicado_por','')), st.text_area("Obs", value=obj.get('observacoes',''))
+                        if st.form_submit_button("Atualizar"):
+                            supabase.table("clientes_cadastrados").update({"nome": en, "cpf_cnpj": edoc, "telefone": etel, "email": eemail, "endereco": eend, "cidade": ecid, "senha_gov": egov, "indicado_por": eind, "observacoes": eobs}).eq("id", obj['id']).execute()
+                            registrar_auditoria(username, "Editar Cliente", "Clientes", f"ID: {obj['id']} - {en}")
+                            st.cache_data.clear(); st.success("Atualizado!"); st.rerun()
+                else: st.info("Nenhum cliente.")
+            elif sub == "Excluir Cliente" and user_role == 'admin':
+                st.header("🗑️ Excluir Cliente")
+                res = carregar_dados("clientes_cadastrados")
+                if res:
+                    cdict = {f"ID: {c['id']} — {c['nome']}": c['id'] for c in res}
+                    sel = st.selectbox("Cliente:", list(cdict.keys()))
+                    if st.checkbox("Confirmo exclusão permanente deste cliente.") and st.button("EXCLUIR SELECIONADO", type="primary"):
+                        supabase.table("clientes_cadastrados").delete().eq("id", cdict[sel]).execute()
+                        registrar_auditoria(username, "Excluir Cliente", "Clientes", f"ID: {cdict[sel]}")
+                        st.cache_data.clear(); st.success("Excluído!"); st.rerun()
+                    
+                    st.markdown("---")
+                    st.warning("⚠️ **ÁREA CRÍTICA:** Exclusão em massa de toda a base de clientes.")
+                    if st.checkbox("Confirmo a exclusão de TODOS os registros de clientes do sistema."):
+                        if st.button("🔥 EXCLUIR TODOS OS CLIENTES", type="primary"):
+                            supabase.table("clientes_cadastrados").delete().neq("id", 0).execute()
+                            registrar_auditoria(username, "EXCLUIR TODOS OS CLIENTES", "Clientes", "Exclusão em massa executada.")
+                            st.cache_data.clear(); st.success("Todos os registros foram excluídos com sucesso!"); st.rerun()
+                else: st.info("Nenhum cliente cadastrado.")
+            elif sub == "Exportar Base (Backup)":
+                st.header("📥 Backup de Clientes")
+                res = carregar_dados("clientes_cadastrados")
+                if res:
+                    registrar_auditoria(username, "Backup Clientes", "Clientes", "Download da base realizado.")
+                    st.download_button("Baixar CSV", data=pd.DataFrame(res).to_csv(index=False).encode('utf-8'), file_name=f"clientes_{date.today()}.csv", mime="text/csv", type="primary")
+                else: st.info("Sem dados.")
+
+        elif menu_principal == "Pagamentos":
+            if sub == "Cadastrar Contrato / Parcelas":
+                st.header("📝 Novo Contrato")
+                cli_db = carregar_dados("clientes_cadastrados")
+                nomes = [c['nome'] for c in cli_db]
+                with st.form("fc_hon"):
+                    cli_op = st.selectbox("Cliente:", ["Outro"] + nomes) if nomes else "Outro"
+                    cli = st.text_input("Nome") if cli_op == "Outro" else cli_op
+                    serv, vtot, npar, dt1 = st.text_input("Serviço"), st.number_input("Valor Total", min_value=0.0), st.number_input("Parcelas", min_value=1, max_value=36, value=3), st.date_input("1º Vencimento", datetime.now())
+                    if st.form_submit_button("Gerar"):
+                        if cli and serv and vtot > 0:
+                            res = supabase.table("honorarios").insert({"cliente": cli, "servico": serv, "valor_total": float(vtot)}).execute()
+                            if res.data:
+                                h_id = res.data[0]['id']
+                                vp = vtot / npar
+                                for i in range(int(npar)):
+                                    venc = (dt1 + relativedelta(months=i)).strftime("%Y-%m-%d")
+                                    supabase.table("parcelas").insert({"honorario_id": h_id, "numero_parcela": f"{i+1}/{int(npar)}", "valor": float(vp), "vencimento": venc, "status": "Pendente"}).execute()
+                                registrar_auditoria(username, "Cadastrar Contrato", "Pagamentos", f"Cliente: {cli} - R$ {vtot}")
+                                st.cache_data.clear(); st.success("Contrato cadastrado!")
+            elif sub == "Ver Parcelas":
+                st.header("📋 Visualizar Parcelas")
+                res_h = carregar_dados("honorarios")
+                if res_h:
+                    cdict = {f"{h['cliente']} — {h['servico']}": h['id'] for h in res_h}
+                    sel = st.selectbox("Contrato:", list(cdict.keys()))
+                    res_p = supabase.table("parcelas").select("*").eq("honorario_id", cdict[sel]).execute()
+                    if res_p.data: 
+                        df_p = pd.DataFrame(res_p.data)
+                        if 'status' in df_p.columns:
+                            st.dataframe(df_p.style.map(colorir_status, subset=['status']), use_container_width=True, hide_index=True)
+                        else:
+                            st.dataframe(df_p, use_container_width=True, hide_index=True)
+                    else: st.info("Sem parcelas.")
+                else: st.info("Sem contratos.")
+            elif sub == "Baixar Parcela":
+                st.header("🔄 Baixar Parcela")
+                res_h = carregar_dados("honorarios")
+                if res_h:
+                    cdict = {f"{h['cliente']} — {h['servico']}": h['id'] for h in res_h}
+                    sel = st.selectbox("Contrato:", list(cdict.keys()))
+                    res_p = supabase.table("parcelas").select("*").eq("honorario_id", cdict[sel]).execute()
+                    if res_p.data:
+                        df_p = pd.DataFrame(res_p.data)
+                        if 'status' in df_p.columns:
+                            st.dataframe(df_p.style.map(colorir_status, subset=['status']), use_container_width=True, hide_index=True)
+                        else:
+                            st.dataframe(df_p, use_container_width=True, hide_index=True)
+                        pid = st.number_input("ID da Parcela:", min_value=1, step=1)
+                        if st.button("Confirmar Baixa", type="primary"):
+                            supabase.table("parcelas").update({"status": "Pago"}).eq("id", pid).execute()
+                            registrar_auditoria(username, "Baixar Parcela", "Pagamentos", f"Parcela ID: {pid}")
+                            st.cache_data.clear(); st.success("Baixado!"); st.rerun()
+            elif sub == "Editar Contrato":
+                st.header("✏️ Editar Contrato")
+                res_h = carregar_dados("honorarios")
+                if res_h:
+                    hdict = {f"ID: {h['id']} | {h['cliente']}": h for h in res_h}
+                    sel = st.selectbox("Contrato:", list(hdict.keys()))
+                    obj = hdict[sel]
+                    with st.form("fe_hon"):
+                        ec, es, ev = st.text_input("Cliente", value=obj.get('cliente','')), st.text_input("Serviço", value=obj.get('servico','')), st.number_input("Valor", value=float(obj.get('valor_total',0)))
+                        if st.form_submit_button("Salvar"):
+                            supabase.table("honorarios").update({"cliente": ec, "servico": es, "valor_total": float(ev)}).eq("id", obj['id']).execute()
+                            registrar_auditoria(username, "Editar Contrato", "Pagamentos", f"ID: {obj['id']}")
+                            st.cache_data.clear(); st.success("Atualizado!"); st.rerun()
+            elif sub == "Excluir Contrato" and user_role == 'admin':
+                st.header("🗑️ Excluir Contrato")
+                res_h = carregar_dados("honorarios")
+                if res_h:
+                    hdict = {f"{h['cliente']} — {h['servico']}": h['id'] for h in res_h}
+                    sel = st.selectbox("Contrato:", list(hdict.keys()))
+                    if st.checkbox("Confirmo exclusão do contrato selecionado.") and st.button("EXCLUIR SELECIONADO", type="primary"):
+                        supabase.table("honorarios").delete().eq("id", hdict[sel]).execute()
+                        registrar_auditoria(username, "Excluir Contrato", "Pagamentos", f"ID: {hdict[sel]}")
+                        st.cache_data.clear(); st.success("Excluído!"); st.rerun()
+
+                    st.markdown("---")
+                    st.warning("⚠️ **ÁREA CRÍTICA:** Exclusão em massa de TODOS os contratos e parcelas.")
+                    if st.checkbox("Confirmo a exclusão de TODOS os contratos e parcelas cadastradas."):
+                        if st.button("🔥 EXCLUIR TODOS OS CONTRATOS E PARCELAS", type="primary"):
+                            supabase.table("parcelas").delete().neq("id", 0).execute()
+                            supabase.table("honorarios").delete().neq("id", 0).execute()
+                            registrar_auditoria(username, "EXCLUIR TODOS OS CONTRATOS", "Pagamentos", "Exclusão em massa.")
+                            st.cache_data.clear(); st.success("Todos os contratos e parcelas foram excluídos!"); st.rerun()
+                else: st.info("Sem contratos cadastrados.")
+
+        elif menu_principal == "Perícias":
+            if sub == "Cadastrar Perícia":
+                st.header("🔬 Nova Perícia")
+                with st.form("fc_per"):
+                    cli, tipo, juizo, val, dt = st.text_input("Cliente"), st.text_input("Tipo"), st.text_input("Juízo"), st.number_input("Valor", min_value=0.0), st.date_input("Data", datetime.now())
+                    if st.form_submit_button("Salvar"):
+                        supabase.table("pericias").insert({"cliente": cli, "tipo_pericia": tipo, "juizo_vara": juizo, "honorario_pericial": float(val), "data_indicacao": dt.strftime("%Y-%m-%d"), "status": "Pendente"}).execute()
+                        registrar_auditoria(username, "Cadastrar Perícia", "Perícias", f"Cliente: {cli}")
+                        st.cache_data.clear(); st.success("Cadastrado!")
+            elif sub == "Importar Excel":
+                st.header("📥 Importar Perícias via Excel")
+                st.caption("O arquivo deve conter as colunas: cliente, tipo_pericia, juizo_vara, honorario_pericial, data_indicacao (AAAA-MM-DD), status")
+                file_up = st.file_uploader("Envie a planilha (.xlsx ou .csv)", type=["xlsx", "csv"], key="up_per")
+                if file_up and st.button("Confirmar Importação", type="primary"):
+                    importar_excel_para_supabase("pericias", file_up)
+            elif sub == "Ver Perícias":
+                st.header("📋 Lista de Perícias")
+                res = carregar_dados("pericias")
+                if res: 
+                    df_per = pd.DataFrame(res)
+                    if 'status' in df_per.columns:
+                        st.dataframe(df_per.style.map(colorir_status, subset=['status']), use_container_width=True, hide_index=True)
+                    else:
+                        st.dataframe(df_per, use_container_width=True, hide_index=True)
+                else: st.info("Sem perícias.")
+            elif sub == "Editar Perícia":
+                st.header("✏️ Editar Perícia")
+                res = carregar_dados("pericias")
+                if res:
+                    pdict = {f"ID: {i['id']} | {i['cliente']}": i for i in res}
+                    sel = st.selectbox("Perícia:", list(pdict.keys()))
+                    obj = pdict[sel]
+                    with st.form("fe_per"):
+                        ec, et, ej, ev, st_op = st.text_input("Cliente", value=obj.get('cliente','')), st.text_input("Tipo", value=obj.get('tipo_pericia','')), st.text_input("Juízo", value=obj.get('juizo_vara','')), st.number_input("Valor", value=float(obj.get('honorario_pericial',0))), st.selectbox("Status", ["Pendente", "Em Andamento", "Concluído", "Pago"])
+                        if st.form_submit_button("Salvar"):
+                            supabase.table("pericias").update({"cliente": ec, "tipo_pericia": et, "juizo_vara": ej, "honorario_pericial": float(ev), "status": st_op}).eq("id", obj['id']).execute()
+                            registrar_auditoria(username, "Editar Perícia", "Perícias", f"ID: {obj['id']}")
+                            st.cache_data.clear(); st.success("Atualizado!"); st.rerun()
+            elif sub == "Excluir Perícia":
+                st.header("🗑️ Excluir Perícia")
+                res = carregar_dados("pericias")
+                if res:
+                    pdict = {f"ID: {i['id']} | {i['cliente']}": i['id'] for i in res}
+                    sel = st.selectbox("Perícia:", list(pdict.keys()))
+                    if st.checkbox("Confirmo exclusão da perícia selecionada.") and st.button("EXCLUIR SELECIONADA", type="primary"):
+                        supabase.table("pericias").delete().eq("id", pdict[sel]).execute()
+                        registrar_auditoria(username, "Excluir Perícia", "Perícias", f"ID: {pdict[sel]}")
+                        st.cache_data.clear(); st.success("Excluído!"); st.rerun()
+
+                    st.markdown("---")
+                    st.warning("⚠️ **ÁREA CRÍTICA:** Exclusão em massa de TODAS as perícias.")
+                    if st.checkbox("Confirmo a exclusão de TODAS as perícias cadastradas."):
+                        if st.button("🔥 EXCLUIR TODAS AS PERÍCIAS", type="primary"):
+                            supabase.table("pericias").delete().neq("id", 0).execute()
+                            registrar_auditoria(username, "EXCLUIR TODAS AS PERÍCIAS", "Perícias", "Exclusão em massa.")
+                            st.cache_data.clear(); st.success("Todas as perícias foram excluídas!"); st.rerun()
+                else: st.info("Sem perícias cadastradas.")
+
+        elif menu_principal == "Expedientes":
+            if sub == "Cadastrar Expediente":
+                st.header("📂 Novo Expediente")
+                with st.form("fc_exp"):
+                    proc, cli, desc, dt, resp = st.text_input("Processo"), st.text_input("Cliente"), st.text_input("Descrição"), st.date_input("Prazo", datetime.now()), st.text_input("Responsável")
+                    if st.form_submit_button("Salvar"):
+                        supabase.table("expedientes").insert({"numero_processo": proc, "cliente": cli, "descricao": desc, "data_manifestacao": dt.strftime("%Y-%m-%d"), "responsavel": resp, "status": "Pendente"}).execute()
+                        registrar_auditoria(username, "Cadastrar Expediente", "Expedientes", f"Processo: {proc}")
+                        st.cache_data.clear(); st.success("Cadastrado!")
+            elif sub == "Importar Excel":
+                st.header("📥 Importar Expedientes via Excel")
+                st.caption("O arquivo deve conter as colunas: numero_processo, cliente, descricao, data_manifestacao (AAAA-MM-DD), responsavel, status")
+                file_up = st.file_uploader("Envie a planilha (.xlsx ou .csv)", type=["xlsx", "csv"], key="up_exp")
+                if file_up and st.button("Confirmar Importação", type="primary"):
+                    importar_excel_para_supabase("expedientes", file_up)
+            elif sub == "Consultar Expedientes":
+                st.header("📋 Expedientes & Gestão Rápida de Status")
+                res = carregar_dados("expedientes")
+                if res:
+                    df_exp = pd.DataFrame(res)
+                    if 'status' in df_exp.columns:
+                        st.dataframe(df_exp.style.map(colorir_status, subset=['status']), use_container_width=True, hide_index=True)
+                    else:
+                        st.dataframe(df_exp, use_container_width=True, hide_index=True)
+                    
+                    st.markdown("---")
+                    st.subheader("⚡ Atualização Rápida de Status")
+                    edict = {f"ID: {i['id']} | Proc: {i['numero_processo']} ({i.get('status', 'Pendente')})": i for i in res}
+                    sel_exp = st.selectbox("Selecione o Expediente:", list(edict.keys()), key="sel_up_exp")
+                    obj_exp = edict[sel_exp]
+                    
+                    novo_status_exp = st.selectbox("Novo Status:", ["Pendente", "Em Andamento", "Manifestado"], index=["Pendente", "Em Andamento", "Manifestado"].index(obj_exp.get('status', 'Pendente')) if obj_exp.get('status', 'Pendente') in ["Pendente", "Em Andamento", "Manifestado"] else 0, key="st_exp_val")
+                    
+                    if st.button("Atualizar Status do Expediente", type="primary"):
+                        supabase.table("expedientes").update({"status": novo_status_exp}).eq("id", obj_exp['id']).execute()
+                        registrar_auditoria(username, "Atualizar Status", "Expedientes", f"Processo ID {obj_exp['id']} para {novo_status_exp}")
+                        st.cache_data.clear()
+                        st.success("Status atualizado com sucesso!")
+                        st.rerun()
+                else: st.info("Sem expedientes cadastrados.")
+            elif sub == "Editar Expediente":
+                st.header("✏️ Editar Expediente")
+                res = carregar_dados("expedientes")
+                if res:
+                    edict = {f"ID: {i['id']} | Proc: {i['numero_processo']}": i for i in res}
+                    sel = st.selectbox("Expediente:", list(edict.keys()))
+                    obj = edict[sel]
+                    with st.form("fe_exp"):
+                        ep, ec, ed, er, es = st.text_input("Processo", value=obj.get('numero_processo','')), st.text_input("Cliente", value=obj.get('cliente','')), st.text_input("Descrição", value=obj.get('descricao','')), st.text_input("Responsável", value=obj.get('responsavel','')), st.selectbox("Status", ["Pendente", "Em Andamento", "Manifestado"])
+                        if st.form_submit_button("Salvar"):
+                            supabase.table("expedientes").update({"numero_processo": ep, "cliente": ec, "descricao": ed, "responsavel": er, "status": es}).eq("id", obj['id']).execute()
+                            registrar_auditoria(username, "Editar Expediente", "Expedientes", f"ID: {obj['id']}")
+                            st.cache_data.clear(); st.success("Atualizado!"); st.rerun()
+            elif sub == "Excluir Expediente":
+                st.header("🗑️ Excluir Expediente")
+                res = carregar_dados("expedientes")
+                if res:
+                    edict = {f"ID: {i['id']} | Proc: {i['numero_processo']}": i['id'] for i in res}
+                    sel = st.selectbox("Expediente:", list(edict.keys()))
+                    if st.checkbox("Confirmo exclusão do expediente selecionado.") and st.button("EXCLUIR SELECIONADO", type="primary"):
+                        supabase.table("expedientes").delete().eq("id", edict[sel]).execute()
+                        registrar_auditoria(username, "Excluir Expediente", "Expedientes", f"ID: {edict[sel]}")
+                        st.cache_data.clear(); st.success("Excluído!"); st.rerun()
+
+                    st.markdown("---")
+                    st.warning("⚠️ **ÁREA CRÍTICA:** Exclusão em massa de TODOS os expedientes.")
+                    if st.checkbox("Confirmo a exclusão de TODOS os expedientes cadastrados."):
+                        if st.button("🔥 EXCLUIR TODOS OS EXPEDIENTES", type="primary"):
+                            supabase.table("expedientes").delete().neq("id", 0).execute()
+                            registrar_auditoria(username, "EXCLUIR TODOS OS EXPEDIENTES", "Expedientes", "Exclusão em massa.")
+                            st.cache_data.clear(); st.success("Todos os expedientes foram excluídos!"); st.rerun()
+                else: st.info("Sem expedientes cadastrados.")
+
+        elif menu_principal == "Expedientes TRF":
+            if sub == "Cadastrar Expediente TRF":
+                st.header("⚖️ Novo Expediente TRF")
+                with st.form("fc_exp_trf"):
+                    proc, cli, desc, dt, resp = st.text_input("Processo"), st.text_input("Cliente"), st.text_input("Descrição"), st.date_input("Prazo", datetime.now()), st.text_input("Responsável")
+                    if st.form_submit_button("Salvar"):
+                        supabase.table("expedientes_trf").insert({"numero_processo": proc, "cliente": cli, "descricao": desc, "data_manifestacao": dt.strftime("%Y-%m-%d"), "responsavel": resp, "status": "Pendente"}).execute()
+                        registrar_auditoria(username, "Cadastrar Expediente TRF", "Expedientes TRF", f"Processo: {proc}")
+                        st.cache_data.clear(); st.success("Cadastrado com sucesso!")
+            elif sub == "Importar Excel":
+                st.header("📥 Importar Expedientes TRF via Excel")
+                st.caption("O arquivo deve conter as colunas: numero_processo, cliente, descricao, data_manifestacao (AAAA-MM-DD), responsavel, status")
+                file_up = st.file_uploader("Envie a planilha (.xlsx ou .csv)", type=["xlsx", "csv"], key="up_trf")
+                if file_up and st.button("Confirmar Importação", type="primary"):
+                    importar_excel_para_supabase("expedientes_trf", file_up)
+            elif sub == "Consultar Expedientes TRF":
+                st.header("📋 Expedientes TRF & Gestão Rápida de Status")
+                res = carregar_dados("expedientes_trf")
+                if res:
+                    df_trf = pd.DataFrame(res)
+                    if 'status' in df_trf.columns:
+                        st.dataframe(df_trf.style.map(colorir_status, subset=['status']), use_container_width=True, hide_index=True)
+                    else:
+                        st.dataframe(df_trf, use_container_width=True, hide_index=True)
+
+                    st.markdown("---")
+                    st.subheader("⚡ Atualização Rápida de Status")
+                    edict = {f"ID: {i['id']} | Proc: {i['numero_processo']} ({i.get('status', 'Pendente')})": i for i in res}
+                    sel_trf = st.selectbox("Selecione o Expediente TRF:", list(edict.keys()), key="sel_up_trf")
+                    obj_trf = edict[sel_trf]
+                    
+                    novo_status_trf = st.selectbox("Novo Status:", ["Pendente", "Em Andamento", "Manifestado"], index=["Pendente", "Em Andamento", "Manifestado"].index(obj_trf.get('status', 'Pendente')) if obj_trf.get('status', 'Pendente') in ["Pendente", "Em Andamento", "Manifestado"] else 0, key="st_trf_val")
+                    
+                    if st.button("Atualizar Status do Expediente TRF", type="primary"):
+                        supabase.table("expedientes_trf").update({"status":

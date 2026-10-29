@@ -64,7 +64,7 @@ def carregar_usuarios_db():
     except Exception:
         pass
     
-    # Fallback seguro caso o banco esteja inacessível
+    # Fallback seguro caso a tabela esteja sendo inicializada
     hashed_padrao = stauth.Hasher.hash('mudar123')
     return {
         "usernames": {
@@ -347,7 +347,17 @@ elif authentication_status == True:
                     new_user = st.text_input("Nome de Usuário (login sem espaços, ex: joao)")
                     new_name = st.text_input("Nome Completo")
                     new_pass = st.text_input("Senha Inicial", type="password")
-                    new_role = st.selectbox("Perfil de Acesso", ["estagiario", "bacharel", "advogado", "admin"])
+                    
+                    # Seleção amigável de perfis
+                    perfis_opcoes = {
+                        "👑 Sócio / Administrador": "admin",
+                        "⚖️ Advogado(a)": "advogado",
+                        "📜 Bacharel(a)": "bacharel",
+                        "🎓 Estagiário(a)": "estagiario"
+                    }
+                    sel_perfil_label = st.selectbox("Perfil de Acesso", list(perfis_opcoes.keys()))
+                    new_role = perfis_opcoes[sel_perfil_label]
+                    
                     if st.form_submit_button("Cadastrar Usuário"):
                         if not new_user or not new_name or not new_pass:
                             st.error("Preencha todos os campos obrigatórios.")
@@ -363,7 +373,7 @@ elif authentication_status == True:
                                 }).execute()
                                 registrar_auditoria(username, "Cadastrar Usuário", "Segurança", f"Novo usuário criado: {new_user} ({new_role})")
                                 st.cache_data.clear()
-                                st.success(f"🎉 Usuário '{new_user}' cadastrado com sucesso!")
+                                st.success(f"🎉 Usuário '{new_user}' cadastrado com sucesso com perfil '{sel_perfil_label}'!")
                             except Exception as e:
                                 st.error(f"Erro ao cadastrar usuário (verifique se o login já existe): {e}")
 
@@ -376,8 +386,8 @@ elif authentication_status == True:
                         st.dataframe(df_u, use_container_width=True, hide_index=True)
                         
                         st.markdown("---")
-                        st.subheader("🗑️ Excluir ou Desativar Usuário")
-                        udict = {f"{u['username']} — {u['nome_completo']} (ID: {u['id']})": u['id'] for u in res_users.data if u['username'] != 'nelson'}
+                        st.subheader("🗑️ Excluir Usuário")
+                        udict = {f"{u['username']} — {u['nome_completo']} (ID: {u['id']})": u['id'] for u in res_users.data if u['username'] != username}
                         if udict:
                             sel_del = st.selectbox("Selecione o usuário:", list(udict.keys()))
                             if st.checkbox("Confirmo a exclusão permanente deste usuário.") and st.button("EXCLUIR USUÁRIO SELECIONADO", type="primary"):
@@ -810,7 +820,7 @@ elif authentication_status == True:
                 if res:
                     pdict = {f"ID: {i['id']} | {i['cliente']}": i['id'] for i in res}
                     sel = st.selectbox("Pendência:", list(pdict.keys()))
-                    if st.checkbox("Confirmo exclusão da pendência selecionada.") and st.button("EXCLUIR SELECIONADO", type="primary"):
+                    if st.checkbox("Confirmo exclusão da pendência selecionada.") and st.button("EXCLUIR SELECIONADA", type="primary"):
                         supabase.table("pendencias").delete().eq("id", pdict[sel]).execute()
                         registrar_auditoria(username, "Excluir Pendência", "Pendências", f"ID: {pdict[sel]}")
                         st.cache_data.clear(); st.success("Excluído!"); st.rerun()

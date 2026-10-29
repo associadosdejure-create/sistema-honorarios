@@ -47,50 +47,50 @@ def registrar_auditoria(usuario, acao, modulo, detalhes=""):
     except Exception:
         pass
 
-# Carregamento de usuários direto do Supabase com tratamento inteligente
+# Carregamento de usuários com CHAVE MESTRA IMORTAL
 def carregar_usuarios_db():
+    # 1. Cria a conta mestre que nunca vai falhar, independente do banco de dados
+    hashed_padrao = stauth.Hasher(['mudar123']).generate()[0]
+    cred_dict = {
+        "usernames": {
+            "master": {
+                "name": "Administrador Master",
+                "password": hashed_padrao,
+                "role": "admin"
+            }
+        }
+    }
+    
+    # 2. Tenta puxar os demais usuários do banco
     try:
         res = supabase.table("usuarios_sistema").select("*").execute()
         if res.data:
-            cred_dict = {"usernames": {}}
             for u in res.data:
-                # Verifica se o usuário está inativo (se a coluna existir)
-                if "ativo" in u and not u["ativo"]:
-                    continue
-                    
                 uname = str(u.get("username", "")).strip().lower()
+                if not uname: continue
                 
-                # Pega a senha (aceitando o nome original do seu banco)
                 senha_db = str(u.get("senha_hash", u.get("password", ""))).strip()
                 
-                # MÁGICA: Se a senha foi salva em texto puro no Supabase (não começa com $2 do Hash)
-                # O sistema converte na hora para permitir que você faça o login sem erros!
+                # Criptografa na hora caso a senha esteja em texto puro
                 if senha_db and not senha_db.startswith("$2"):
                     senha_db = stauth.Hasher([senha_db]).generate()[0]
 
                 cred_dict["usernames"][uname] = {
-                    "name": str(u.get("nome_completo", u.get("name", ""))),
+                    "name": str(u.get("nome_completo", u.get("name", "Usuário"))),
                     "password": senha_db,
                     "role": str(u.get("role", "estagiario"))
                 }
-            return cred_dict
     except Exception:
         pass
-    
-    # Fallback seguro caso a tabela ainda esteja vazia ou falhe a conexão
-    hashed_padrao = stauth.Hasher(['mudar123']).generate()[0]
-    return {
-        "usernames": {
-            "nelson": {"name": "Nelson Freire Machado", "password": hashed_padrao, "role": "admin"}
-        }
-    }
+        
+    return cred_dict
 
 credentials = carregar_usuarios_db()
 
 authenticator = stauth.Authenticate(
     credentials, 
-    cookie_name='sistema_dejure_cookie_v6', 
-    cookie_key='chave_seguranca_dejure_2026_v6', 
+    cookie_name='sistema_dejure_cookie_v7', 
+    cookie_key='chave_seguranca_dejure_2026_v7', 
     cookie_expiry_days=30
 )
 
@@ -102,18 +102,21 @@ if authentication_status != True:
         if os.path.exists("logo.png"): st.image("logo.png", use_container_width=True)
         else: st.markdown("<h1 style='text-align: center; color: #D4AF37;'>⚖️ DEJURE ADVOCACIA</h1>", unsafe_allow_html=True)
 
-authenticator.login(location='main', fields={'Form name': 'DEJURE ADVOCACIA'})
+try:
+    authenticator.login(location='main')
+except Exception:
+    authenticator.login('main')
 
 name = st.session_state.get('name')
 username = st.session_state.get('username')
 
 if authentication_status == False:
-    st.error('Usuário ou senha incorretos')
+    st.error('❌ Usuário ou senha incorretos.')
 elif authentication_status == None:
     if st.session_state.get('sessao_expirada'):
         st.warning('⏱️ Sua sessão expirou (5 min inativa). Faça login novamente.')
     else:
-        st.warning('Por favor, digite seu usuário e senha para acessar o sistema.')
+        st.info('Digite **master** no usuário e **mudar123** na senha para acessar.')
 elif authentication_status == True:
     
     agora = time.time()
@@ -214,7 +217,7 @@ elif authentication_status == True:
                     "Expedientes": "Consultar Expedientes", 
                     "Expedientes TRF": "Consultar Expedientes TRF",
                     "Pendências": "Consultar Pendências",
-                    "Segurança": "Alterar Senha",
+                    "Segurança": "Gerenciar Usuários",
                     "Auditoria": "Ver Logs"
                 }.get(pag, "")
                 st.rerun()
@@ -315,7 +318,7 @@ elif authentication_status == True:
             "Expedientes": ["Consultar Expedientes", "Cadastrar Expediente", "Importar Excel", "Editar Expediente", "Excluir Expediente"],
             "Expedientes TRF": ["Consultar Expedientes TRF", "Cadastrar Expediente TRF", "Importar Excel", "Editar Expediente TRF", "Excluir Expediente TRF"],
             "Pendências": ["Consultar Pendências", "Cadastrar Pendência", "Importar Excel", "Editar Pendência", "Excluir Pendência"],
-            "Segurança": ["Alterar Senha"] + (["Cadastrar Novo Usuário", "Gerenciar Usuários"] if user_role == 'admin' else [])
+            "Segurança": (["Gerenciar Usuários", "Cadastrar Novo Usuário"] if user_role == 'admin' else []) + ["Alterar Senha"]
         }
         acoes = acoes_dict.get(menu_principal, [])
 
@@ -345,10 +348,12 @@ elif authentication_status == True:
                     if st.form_submit_button("Atualizar Minha Senha"):
                         if not nova_senha or nova_senha != conf_senha:
                             st.error("As senhas não coincidem ou estão vazias.")
+                        elif username == 'master':
+                            st.error("A conta Master de emergência não pode ser alterada.")
                         else:
                             novo_hash = stauth.Hasher([nova_senha]).generate()[0]
                             try:
-                                supabase.table("usuarios_sistema").update({"senha_hash": novo_hash}).eq("username", username).execute()
+                                supabase.table("usuarios_sistema").update({"senha_hash": novo_hash, "password": novo_hash}).eq("username", username).execute()
                                 registrar_auditoria(username, "Alterar Senha", "Segurança", f"Usuário {username} alterou a própria senha.")
                                 st.cache_data.clear()
                                 st.success("✅ Senha alterada com sucesso na nuvem! Faça login novamente com a nova senha.")
@@ -380,27 +385,29 @@ elif authentication_status == True:
                                 supabase.table("usuarios_sistema").insert({
                                     "username": new_user.strip().lower(),
                                     "nome_completo": new_name,
+                                    "name": new_name,
                                     "senha_hash": senha_hash,
-                                    "role": new_role,
-                                    "ativo": True
+                                    "password": senha_hash,
+                                    "role": new_role
                                 }).execute()
                                 registrar_auditoria(username, "Cadastrar Usuário", "Segurança", f"Novo usuário criado: {new_user} ({new_role})")
                                 st.cache_data.clear()
                                 st.success(f"🎉 Usuário '{new_user}' cadastrado com sucesso com perfil '{sel_perfil_label}'!")
                             except Exception as e:
-                                st.error(f"Erro ao cadastrar usuário (verifique se o login já existe): {e}")
+                                st.error(f"Erro ao cadastrar usuário (verifique se o login já existe na tabela): {e}")
 
             elif sub == "Gerenciar Usuários" and user_role == 'admin':
                 st.header("🛡️ Gerenciamento de Usuários Ativos")
                 try:
-                    res_users = supabase.table("usuarios_sistema").select("id, username, nome_completo, role").execute()
+                    res_users = supabase.table("usuarios_sistema").select("*").execute()
                     if res_users.data:
                         df_u = pd.DataFrame(res_users.data)
-                        st.dataframe(df_u, use_container_width=True, hide_index=True)
+                        colunas_visiveis = [c for c in ['id', 'username', 'nome_completo', 'name', 'role'] if c in df_u.columns]
+                        st.dataframe(df_u[colunas_visiveis], use_container_width=True, hide_index=True)
                         
                         st.markdown("---")
-                        st.subheader("🗑️ Excluir Usuário")
-                        udict = {f"{u['username']} — {u.get('nome_completo','')} (ID: {u['id']})": u['id'] for u in res_users.data if u['username'] != username}
+                        st.subheader("🗑️ Excluir Usuário (Para resetar)")
+                        udict = {f"{u['username']} (ID: {u['id']})": u['id'] for u in res_users.data}
                         if udict:
                             sel_del = st.selectbox("Selecione o usuário:", list(udict.keys()))
                             if st.checkbox("Confirmo a exclusão permanente deste usuário.") and st.button("EXCLUIR USUÁRIO SELECIONADO", type="primary"):
@@ -411,9 +418,9 @@ elif authentication_status == True:
                                 st.success("Usuário excluído com sucesso!")
                                 st.rerun()
                         else:
-                            st.info("Nenhum usuário adicional disponível para exclusão.")
+                            st.info("Nenhum usuário no banco.")
                     else:
-                        st.info("Nenhum usuário encontrado na base.")
+                        st.info("O banco de dados de usuários está vazio. Use a aba 'Cadastrar Novo Usuário' para adicionar seu login oficial.")
                 except Exception as e:
                     st.error(f"Erro ao carregar usuários: {e}")
 

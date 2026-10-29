@@ -170,9 +170,9 @@ elif authentication_status == True:
             "📋 Pendências": "Pendências"
         }
         
-        # Garante a inserção do menu Auditoria para Administradores
+        # Módulo de Auditoria com ícone exclusivo (Escudo) para administradores
         if user_role == 'admin':
-            modulos["🔒 Auditoria"] = "Auditoria"
+            modulos["🛡️ Auditoria"] = "Auditoria"
 
         for label, pag in modulos.items():
             if st.button(label, use_container_width=True):
@@ -261,8 +261,8 @@ elif authentication_status == True:
                 st.info("🎉 Nenhum alerta de prazo pendente para hoje!")
         except Exception: pass
     
-    elif menu_escolha == "Auditoria" and user_role == 'admin':
-        st.title("🔒 Log de Auditoria do Sistema")
+    elif menu_escolha in ["🛡️ Auditoria", "Auditoria"] and user_role == 'admin':
+        st.title("🛡️ Log de Auditoria do Sistema")
         st.caption("Registro de todas as ações importantes realizadas pelos usuários na plataforma.")
         try:
             res_logs = supabase.table("logs_auditoria").select("*").order("data_hora", desc=True).limit(100).execute()
@@ -643,6 +643,7 @@ elif authentication_status == True:
                             supabase.table("expedientes_trf").update({"numero_processo": ep, "cliente": ec, "descricao": ed, "responsavel": er, "status": es}).eq("id", obj['id']).execute()
                             registrar_auditoria(username, "Editar Expediente TRF", "Expedientes TRF", f"ID: {obj['id']}")
                             st.cache_data.clear(); st.success("Atualizado!"); st.rerun()
+                else: st.info("Sem expedientes TRF.")
             elif sub == "Excluir Expediente TRF":
                 st.header("🗑️ Excluir Expediente TRF")
                 res = carregar_dados("expedientes_trf")
@@ -719,13 +720,13 @@ elif authentication_status == True:
                 if res:
                     pdict = {f"ID: {i['id']} | {i['cliente']}": i['id'] for i in res}
                     sel = st.selectbox("Pendência:", list(pdict.keys()))
-                    if st.checkbox("Confirmo exclusão da pendência selecionada.") and st.button("EXCLUIR SELECIONADA", type="primary"):
+                    if st.checkbox("Confirmo exclusão da pendência selecionada.") and st.button("EXCLUIR SELECIONADO", type="primary"):
                         supabase.table("pendencias").delete().eq("id", pdict[sel]).execute()
                         registrar_auditoria(username, "Excluir Pendência", "Pendências", f"ID: {pdict[sel]}")
                         st.cache_data.clear(); st.success("Excluído!"); st.rerun()
 
                     st.markdown("---")
-                    st.warning("⚠️ **ÁREA CRÍTICA:** Exclusão em massa de TODAS as pendências.")
+                    st.warning("⚠️ **ÁREA CRÍTICA:** Exclusão em massa de TODOS as pendências.")
                     if st.checkbox("Confirmo a exclusão de TODOS as pendências cadastradas."):
                         if st.button("🔥 EXCLUIR TODOS AS PENDÊNCIAS", type="primary"):
                             supabase.table("pendencias").delete().neq("id", 0).execute()

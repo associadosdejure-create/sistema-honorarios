@@ -230,7 +230,7 @@ elif authentication_status == True:
             c1, c2, c3, c4, c5, c6 = st.columns(6)
             c1.metric("Clientes", len(cli))
             c2.metric("Contratos", len(hon))
-            c3.metric("Perícias Pend.", len([p for p in per if p.get('status'] == 'Pendente']))
+            c3.metric("Perícias Pend.", len([p for p in per if p.get('status') == 'Pendente']))
             c4.metric("Expedientes Pend.", len([e for e in exp if e.get('status') == 'Pendente']))
             c5.metric("Exp. TRF Pend.", len([et for et in exp_trf if et.get('status') == 'Pendente']))
             c6.metric("Pendências Doc.", len([pn for pn in pen if pn.get('status') == 'Pendente']))
@@ -751,7 +751,7 @@ elif authentication_status == True:
                         if st.button("🔥 EXCLUIR TODOS OS EXPEDIENTES TRF", type="primary"):
                             supabase.table("expedientes_trf").delete().neq("id", 0).execute()
                             registrar_auditoria(username, "EXCLUIR TODOS OS EXPEDIENTES TRF", "Expedientes TRF", "Exclusão em massa.")
-                            st.cache_data.clear(); st.success("Todos os expedientes TRF foram excluídos!"); st.rerun()
+                            st.cache_data.clear(); st.success("Todas as expedientes TRF foram excluídos!"); st.rerun()
                 else: st.info("Sem expedientes TRF cadastrados.")
 
         elif menu_principal == "Pendências":
@@ -810,7 +810,7 @@ elif authentication_status == True:
                 if res:
                     pdict = {f"ID: {i['id']} | {i['cliente']}": i['id'] for i in res}
                     sel = st.selectbox("Pendência:", list(pdict.keys()))
-                    if st.checkbox("Confirmo exclusão da pendência selecionada.") and st.button("EXCLUIR SELECIONADA", type="primary"):
+                    if st.checkbox("Confirmo exclusão da pendência selecionada.") and st.button("EXCLUIR SELECIONADO", type="primary"):
                         supabase.table("pendencias").delete().eq("id", pdict[sel]).execute()
                         registrar_auditoria(username, "Excluir Pendência", "Pendências", f"ID: {pdict[sel]}")
                         st.cache_data.clear(); st.success("Excluído!"); st.rerun()

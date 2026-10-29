@@ -100,7 +100,6 @@ elif authentication_status == True:
         d2 = (soma * 10) % 11; d2 = 0 if d2 == 10 else d2
         return d2 == int(cpf[10])
 
-    # Cache otimizado com TTL maior (300 segundos = 5 minutos) para evitar requisições constantes
     @st.cache_data(ttl=300)
     def carregar_dados(tabela):
         res = supabase.table(tabela).select("*").execute()
@@ -255,10 +254,17 @@ elif authentication_status == True:
                 if res:
                     cdict = {f"ID: {c['id']} — {c['nome']}": c['id'] for c in res}
                     sel = st.selectbox("Cliente:", list(cdict.keys()))
-                    if st.checkbox("Confirmo exclusão permanente.") and st.button("EXCLUIR", type="primary"):
+                    if st.checkbox("Confirmo exclusão permanente deste cliente.") and st.button("EXCLUIR SELECIONADO", type="primary"):
                         supabase.table("clientes_cadastrados").delete().eq("id", cdict[sel]).execute()
                         st.cache_data.clear(); st.success("Excluído!"); st.rerun()
-                else: st.info("Nenhum cliente.")
+                    
+                    st.markdown("---")
+                    st.warning("⚠️ **ÁREA CRÍTICA:** Exclusão em massa de toda a base de clientes.")
+                    if st.checkbox("Confirmo a exclusão de TODOS os registros de clientes do sistema."):
+                        if st.button("🔥 EXCLUIR TODOS OS CLIENTES", type="primary"):
+                            supabase.table("clientes_cadastrados").delete().neq("id", 0).execute()
+                            st.cache_data.clear(); st.success("Todos os registros foram excluídos com sucesso!"); st.rerun()
+                else: st.info("Nenhum cliente cadastrado.")
             elif sub == "Exportar Base (Backup)":
                 st.header("📥 Backup de Clientes")
                 res = carregar_dados("clientes_cadastrados")
@@ -326,9 +332,18 @@ elif authentication_status == True:
                 if res_h:
                     hdict = {f"{h['cliente']} — {h['servico']}": h['id'] for h in res_h}
                     sel = st.selectbox("Contrato:", list(hdict.keys()))
-                    if st.checkbox("Confirmo exclusão.") and st.button("EXCLUIR", type="primary"):
+                    if st.checkbox("Confirmo exclusão do contrato selecionado.") and st.button("EXCLUIR SELECIONADO", type="primary"):
                         supabase.table("honorarios").delete().eq("id", hdict[sel]).execute()
                         st.cache_data.clear(); st.success("Excluído!"); st.rerun()
+
+                    st.markdown("---")
+                    st.warning("⚠️ **ÁREA CRÍTICA:** Exclusão em massa de TODOS os contratos e parcelas.")
+                    if st.checkbox("Confirmo a exclusão de TODOS os contratos e parcelas cadastradas."):
+                        if st.button("🔥 EXCLUIR TODOS OS CONTRATOS E PARCELAS", type="primary"):
+                            supabase.table("parcelas").delete().neq("id", 0).execute()
+                            supabase.table("honorarios").delete().neq("id", 0).execute()
+                            st.cache_data.clear(); st.success("Todos os contratos e parcelas foram excluídos!"); st.rerun()
+                else: st.info("Sem contratos cadastrados.")
 
         elif menu_principal == "Perícias":
             if sub == "Cadastrar Perícia":
@@ -361,9 +376,17 @@ elif authentication_status == True:
                 if res:
                     pdict = {f"ID: {i['id']} | {i['cliente']}": i['id'] for i in res}
                     sel = st.selectbox("Perícia:", list(pdict.keys()))
-                    if st.button("EXCLUIR", type="primary"):
+                    if st.checkbox("Confirmo exclusão da perícia selecionada.") and st.button("EXCLUIR SELECIONADA", type="primary"):
                         supabase.table("pericias").delete().eq("id", pdict[sel]).execute()
                         st.cache_data.clear(); st.success("Excluído!"); st.rerun()
+
+                    st.markdown("---")
+                    st.warning("⚠️ **ÁREA CRÍTICA:** Exclusão em massa de TODAS as perícias.")
+                    if st.checkbox("Confirmo a exclusão de TODAS as perícias cadastradas."):
+                        if st.button("🔥 EXCLUIR TODAS AS PERÍCIAS", type="primary"):
+                            supabase.table("pericias").delete().neq("id", 0).execute()
+                            st.cache_data.clear(); st.success("Todas as perícias foram excluídas!"); st.rerun()
+                else: st.info("Sem perícias cadastradas.")
 
         elif menu_principal == "Expedientes":
             if sub == "Cadastrar Expediente":
@@ -401,9 +424,17 @@ elif authentication_status == True:
                 if res:
                     edict = {f"ID: {i['id']} | Proc: {i['numero_processo']}": i['id'] for i in res}
                     sel = st.selectbox("Expediente:", list(edict.keys()))
-                    if st.button("EXCLUIR", type="primary"):
+                    if st.checkbox("Confirmo exclusão do expediente selecionado.") and st.button("EXCLUIR SELECIONADO", type="primary"):
                         supabase.table("expedientes").delete().eq("id", edict[sel]).execute()
                         st.cache_data.clear(); st.success("Excluído!"); st.rerun()
+
+                    st.markdown("---")
+                    st.warning("⚠️ **ÁREA CRÍTICA:** Exclusão em massa de TODOS os expedientes.")
+                    if st.checkbox("Confirmo a exclusão de TODOS os expedientes cadastrados."):
+                        if st.button("🔥 EXCLUIR TODOS OS EXPEDIENTES", type="primary"):
+                            supabase.table("expedientes").delete().neq("id", 0).execute()
+                            st.cache_data.clear(); st.success("Todos os expedientes foram excluídos!"); st.rerun()
+                else: st.info("Sem expedientes cadastrados.")
 
         elif menu_principal == "Pendências":
             if sub == "Cadastrar Pendência":
@@ -447,6 +478,14 @@ elif authentication_status == True:
                 if res:
                     pdict = {f"ID: {i['id']} | {i['cliente']}": i['id'] for i in res}
                     sel = st.selectbox("Pendência:", list(pdict.keys()))
-                    if st.button("EXCLUIR", type="primary"):
+                    if st.checkbox("Confirmo exclusão da pendência selecionada.") and st.button("EXCLUIR SELECIONADA", type="primary"):
                         supabase.table("pendencias").delete().eq("id", pdict[sel]).execute()
                         st.cache_data.clear(); st.success("Excluído!"); st.rerun()
+
+                    st.markdown("---")
+                    st.warning("⚠️ **ÁREA CRÍTICA:** Exclusão em massa de TODAS as pendências.")
+                    if st.checkbox("Confirmo a exclusão de TODAS as pendências cadastradas."):
+                        if st.button("🔥 EXCLUIR TODAS AS PENDÊNCIAS", type="primary"):
+                            supabase.table("pendencias").delete().neq("id", 0).execute()
+                            st.cache_data.clear(); st.success("Todas as pendências foram excluídas!"); st.rerun()
+                else: st.info("Sem pendências cadastradas.")

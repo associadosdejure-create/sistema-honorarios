@@ -47,25 +47,25 @@ def registrar_auditoria(usuario, acao, modulo, detalhes=""):
     except Exception:
         pass
 
-# Carregamento dinâmico de usuários direto do Supabase
-@st.cache_data(ttl=10)
+# Carregamento de usuários direto do Supabase (sem cache para evitar falhas de sincronização)
 def carregar_usuarios_db():
     try:
         res = supabase.table("usuarios_sistema").select("*").eq("ativo", True).execute()
         if res.data:
             cred_dict = {"usernames": {}}
             for u in res.data:
-                cred_dict["usernames"][u["username"]] = {
+                uname = str(u["username"]).strip().lower()
+                cred_dict["usernames"][uname] = {
                     "name": u["nome_completo"],
-                    "password": u["senha_hash"],
+                    "password": str(u["senha_hash"]).strip(),
                     "role": u["role"]
                 }
             return cred_dict
     except Exception:
         pass
     
-    # Fallback seguro caso a tabela esteja sendo inicializada
-    hashed_padrao = stauth.Hasher.hash('mudar123')
+    # Fallback seguro caso a tabela ainda esteja vazia
+    hashed_padrao = stauth.Hasher(['mudar123']).generate()[0]
     return {
         "usernames": {
             "nelson": {"name": "Nelson Freire Machado", "password": hashed_padrao, "role": "admin"}
@@ -75,7 +75,10 @@ def carregar_usuarios_db():
 credentials = carregar_usuarios_db()
 
 authenticator = stauth.Authenticate(
-    credentials, cookie_name='sistema_honorarios_cookie', cookie_key='chave_seguranca_sistema_123', cookie_expiry_days=30
+    credentials, 
+    cookie_name='sistema_dejure_cookie_v3', 
+    cookie_key='chave_seguranca_dejure_2026_v3', 
+    cookie_expiry_days=30
 )
 
 authentication_status = st.session_state.get('authentication_status')
@@ -185,7 +188,6 @@ elif authentication_status == True:
             "🔒 Segurança": "Segurança"
         }
         
-        # Módulo de Auditoria exclusivo para Administradores
         if user_role == 'admin':
             modulos["🛡️ Auditoria"] = "Auditoria"
 
@@ -212,7 +214,6 @@ elif authentication_status == True:
         if os.path.exists("logo.png"): st.image("logo.png", use_container_width=True)
         else: st.write("⚖️ **Dejure Advocacia**")
 
-    # Tratamento global da página selecionada
     menu_escolha = st.session_state['pagina_atual']
 
     if menu_escolha == "🏠 Página Inicial":
@@ -251,7 +252,7 @@ elif authentication_status == True:
             for et in exp_trf:
                 if et.get('status') == 'Pendente' and et.get('data_manifestacao'):
                     dt = datetime.strptime(et['data_manifestacao'], "%Y-%m-%d").date()
-                    alertas.append(((dt - hoje).days, f"⚖️ Expediente TRF | Processo: {et['numero_processo']} | Prazo: {dt.strftime('%d/%m/%Y')} | Resp: {et['responsavel']}", et.get('id', 0), 'expediente_trf'))
+                    alertas.append(((dt - hoje).days, f"⚖️ Expediente TRF | Processo: {et['numero_processo']} | Prazo: {dt.strftime('%d/%m/%Y')} | Resp: {et['responsavel']}", e.get('id', 0), 'expediente_trf'))
                     
             if alertas:
                 col_a1, col_a2 = st.columns([0.80, 0.20])
@@ -332,7 +333,7 @@ elif authentication_status == True:
                         if not nova_senha or nova_senha != conf_senha:
                             st.error("As senhas não coincidem ou estão vazias.")
                         else:
-                            novo_hash = stauth.Hasher.hash(nova_senha)
+                            novo_hash = stauth.Hasher([nova_senha]).generate()[0]
                             try:
                                 supabase.table("usuarios_sistema").update({"senha_hash": novo_hash}).eq("username", username).execute()
                                 registrar_auditoria(username, "Alterar Senha", "Segurança", f"Usuário {username} alterou a própria senha.")
@@ -348,7 +349,6 @@ elif authentication_status == True:
                     new_name = st.text_input("Nome Completo")
                     new_pass = st.text_input("Senha Inicial", type="password")
                     
-                    # Seleção amigável de perfis
                     perfis_opcoes = {
                         "👑 Sócio / Administrador": "admin",
                         "⚖️ Advogado(a)": "advogado",
@@ -362,7 +362,7 @@ elif authentication_status == True:
                         if not new_user or not new_name or not new_pass:
                             st.error("Preencha todos os campos obrigatórios.")
                         else:
-                            senha_hash = stauth.Hasher.hash(new_pass)
+                            senha_hash = stauth.Hasher([new_pass]).generate()[0]
                             try:
                                 supabase.table("usuarios_sistema").insert({
                                     "username": new_user.strip().lower(),
@@ -820,7 +820,7 @@ elif authentication_status == True:
                 if res:
                     pdict = {f"ID: {i['id']} | {i['cliente']}": i['id'] for i in res}
                     sel = st.selectbox("Pendência:", list(pdict.keys()))
-                    if st.checkbox("Confirmo exclusão da pendência selecionada.") and st.button("EXCLUIR SELECIONADA", type="primary"):
+                    if st.checkbox("Confirmo exclusão da pendência selecionada.") and st.button("EXCLUIR SELECIONADO", type="primary"):
                         supabase.table("pendencias").delete().eq("id", pdict[sel]).execute()
                         registrar_auditoria(username, "Excluir Pendência", "Pendências", f"ID: {pdict[sel]}")
                         st.cache_data.clear(); st.success("Excluído!"); st.rerun()

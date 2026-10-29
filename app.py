@@ -173,7 +173,7 @@ elif authentication_status == True:
             df = df.dropna(how='all', axis=1)
             df.columns = df.columns.str.strip().str.lower()
             
-            # Limpa e substitui NaN para compatibilidade JSON com o Supabase
+            # Limpa valores nulos / NaN
             df = df.where(pd.notnull(df), "")
             df = df.fillna("")
             
@@ -181,6 +181,8 @@ elif authentication_status == True:
                 if 'data' in col.lower() or 'vencimento' in col.lower():
                     df[col] = pd.to_datetime(df[col], errors='coerce').dt.strftime('%Y-%m-%d')
                     df[col] = df[col].replace(['NaT', 'nan', 'NAT', 'NaN', 'None', ''], None)
+                elif 'hora' in col.lower():
+                    df[col] = df[col].apply(lambda x: x.strftime('%H:%M') if hasattr(x, 'strftime') else (str(x) if x != "" else None))
 
             dados = df.to_dict(orient="records")
             dadosLimpos = [{k: (v if pd.notnull(v) and v != "" else None) for k, v in registro.items()} for registro in dados]
@@ -597,7 +599,7 @@ elif authentication_status == True:
                 res_h = carregar_dados("honorarios")
                 if res_h:
                     hdict = {f"{h['cliente']} — {h['servico']}": h['id'] for h in res_h}
-                    sel = st.selectbox("Contrato:", list(cdict.keys()))
+                    sel = st.selectbox("Contrato:", list(hdict.keys()))
                     if st.checkbox("Confirmo exclusão do contrato selecionado.") and st.button("EXCLUIR SELECIONADO", type="primary"):
                         supabase.table("honorarios").delete().eq("id", hdict[sel]).execute()
                         registrar_auditoria(username, "Excluir Contrato", "Pagamentos", f"ID: {hdict[sel]}")
@@ -661,7 +663,6 @@ elif authentication_status == True:
                 res = carregar_dados("pericias")
                 if res: 
                     df_per = pd.DataFrame(res)
-                    # Organização exata na ordem desejada
                     ordem_desejada = ['cpf', 'nome', 'local_pm', 'data_pm', 'hora_pm', 'local_ps', 'data_ps', 'hora_ps', 'senha_inss', 'elaborador', 'status']
                     colunas_existentes = [c for c in ordem_desejada if c in df_per.columns]
                     outras_colunas = [c for c in df_per.columns if c not in ordem_desejada and c != 'id']

@@ -91,17 +91,24 @@ authenticator = stauth.Authenticate(
     cookie_expiry_days=30
 )
 
-# --- TELA DE LOGIN COM A LOGO ---
-# Verifica se o arquivo de logo existe para passá-lo ao autenticador
-caminho_logo = "logo.png" if os.path.exists("logo.png") else None
-
-authenticator.login(
-    location='main', 
-    fields={'Form name': 'DEJURE ADVOCACIA'},
-    logo=caminho_logo
-)
-
+# --- EXIBIÇÃO DA LOGO NA TELA DE LOGIN (CASO NÃO ESTEJA LOGADO) ---
 authentication_status = st.session_state.get('authentication_status')
+
+if authentication_status != True:
+    col_l1, col_l2, col_l3 = st.columns([1, 1, 1])
+    with col_l2:
+        logo_encontrada = False
+        for arquivo_teste in ["logo.png", "logo.jpg", "logo.jpeg", "Logo.png", "Logo.jpg"]:
+            if os.path.exists(arquivo_teste):
+                st.image(arquivo_teste, use_container_width=True)
+                logo_encontrada = True
+                break
+        if not logo_encontrada:
+            st.markdown("<h1 style='text-align: center; color: #D4AF37;'>⚖️ DEJURE ADVOCACIA</h1>", unsafe_allow_html=True)
+
+# Renderiza o formulário de login padrão (sem o argumento 'logo')
+authenticator.login(location='main', fields={'Form name': 'DEJURE ADVOCACIA'})
+
 name = st.session_state.get('name')
 username = st.session_state.get('username')
 
@@ -292,7 +299,7 @@ elif authentication_status == True:
                 if e.get('status') == 'Pendente' and e.get('data_manifestacao'):
                     dt = datetime.strptime(e['data_manifestacao'], "%Y-%m-%d").date()
                     dias = (dt - hoje).days
-                    alertas.append((dias, f"📂 Expediente | Processo: {e['numero_processo']} | Prazo: {dt.strftime('%d/%m/%Y')} | Resp: {e['responsavel']}", e['id'] if 'id' in e else 0, 'expediente'))
+                    alertas.append((dias, f"📂 Expediente | Processo: {e['numero_processo']} | Prazo: {dt.strftime('%d/%m/%Y')} | Resp: {e['responsavel']}", e.get('id', 0), 'expediente'))
                     
             if alertas:
                 col_alerta_1, col_alerta_2 = st.columns([0.80, 0.20])

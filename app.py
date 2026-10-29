@@ -105,6 +105,21 @@ elif authentication_status == True:
         res = supabase.table(tabela).select("*").execute()
         return res.data if res.data else []
 
+    def importar_excel_para_supabase(tabela, arquivo):
+        try:
+            if arquivo.name.endswith('.csv'):
+                df = pd.read_csv(arquivo)
+            else:
+                df = pd.read_excel(arquivo)
+            df = df.fillna("")
+            dados = df.to_dict(orient="records")
+            supabase.table(tabela).insert(dados).execute()
+            st.cache_data.clear()
+            st.success(f"🎉 {len(dados)} registros importados com sucesso!")
+            st.rerun()
+        except Exception as e:
+            st.error(f"⚠️ Erro ao importar planilha: {e}")
+
     with st.sidebar:
         st.write(f"Logado como: **{name}**")
         p_txt = {"admin": "👑 Sócio", "advogado": "⚖️ Advogado(a)", "bacharel": "📜 Bacharel(a)"}.get(user_role, "🎓 Estagiário")
@@ -209,12 +224,12 @@ elif authentication_status == True:
         st.title(f"Módulo: {menu_principal} ⚖️")
 
         acoes_dict = {
-            "Clientes": ["Consultar Clientes", "Cadastrar Cliente", "Editar Cliente", "Excluir Cliente", "Exportar Base (Backup)"],
+            "Clientes": ["Consultar Clientes", "Cadastrar Cliente", "Importar Excel", "Editar Cliente", "Excluir Cliente", "Exportar Base (Backup)"],
             "Pagamentos": ["Ver Parcelas", "Cadastrar Contrato / Parcelas", "Baixar Parcela", "Editar Contrato", "Excluir Contrato"],
-            "Perícias": ["Ver Perícias", "Cadastrar Perícia", "Editar Perícia", "Excluir Perícia"],
-            "Expedientes": ["Consultar Expedientes", "Cadastrar Expediente", "Editar Expediente", "Excluir Expediente"],
-            "Expedientes TRF": ["Consultar Expedientes TRF", "Cadastrar Expediente TRF", "Editar Expediente TRF", "Excluir Expediente TRF"],
-            "Pendências": ["Consultar Pendências", "Cadastrar Pendência", "Editar Pendência", "Excluir Pendência"]
+            "Perícias": ["Ver Perícias", "Cadastrar Perícia", "Importar Excel", "Editar Perícia", "Excluir Perícia"],
+            "Expedientes": ["Consultar Expedientes", "Cadastrar Expediente", "Importar Excel", "Editar Expediente", "Excluir Expediente"],
+            "Expedientes TRF": ["Consultar Expedientes TRF", "Cadastrar Expediente TRF", "Importar Excel", "Editar Expediente TRF", "Excluir Expediente TRF"],
+            "Pendências": ["Consultar Pendências", "Cadastrar Pendência", "Importar Excel", "Editar Pendência", "Excluir Pendência"]
         }
         acoes = acoes_dict.get(menu_principal, [])
 
@@ -245,6 +260,12 @@ elif authentication_status == True:
                             else:
                                 supabase.table("clientes_cadastrados").insert({"nome": n, "cpf_cnpj": doc, "telefone": tel, "email": email, "endereco": end, "cidade": cid, "senha_gov": gov, "indicado_por": ind, "observacoes": obs}).execute()
                                 st.cache_data.clear(); st.success("Cliente cadastrado!")
+            elif sub == "Importar Excel":
+                st.header("📥 Importar Clientes via Planilha Excel")
+                st.caption("O arquivo deve conter as colunas: nome, cpf_cnpj, telefone, email, endereco, cidade, senha_gov, indicado_por, observacoes")
+                file_up = st.file_uploader("Envie a planilha (.xlsx ou .csv)", type=["xlsx", "csv"], key="up_cli")
+                if file_up and st.button("Confirmar Importação", type="primary"):
+                    importar_excel_para_supabase("clientes_cadastrados", file_up)
             elif sub == "Consultar Clientes":
                 st.header("📋 Base de Clientes")
                 res = carregar_dados("clientes_cadastrados")
@@ -368,6 +389,12 @@ elif authentication_status == True:
                     if st.form_submit_button("Salvar"):
                         supabase.table("pericias").insert({"cliente": cli, "tipo_pericia": tipo, "juizo_vara": juizo, "honorario_pericial": float(val), "data_indicacao": dt.strftime("%Y-%m-%d"), "status": "Pendente"}).execute()
                         st.cache_data.clear(); st.success("Cadastrado!")
+            elif sub == "Importar Excel":
+                st.header("📥 Importar Perícias via Excel")
+                st.caption("O arquivo deve conter as colunas: cliente, tipo_pericia, juizo_vara, honorario_pericial, data_indicacao (AAAA-MM-DD), status")
+                file_up = st.file_uploader("Envie a planilha (.xlsx ou .csv)", type=["xlsx", "csv"], key="up_per")
+                if file_up and st.button("Confirmar Importação", type="primary"):
+                    importar_excel_para_supabase("pericias", file_up)
             elif sub == "Ver Perícias":
                 st.header("📋 Lista de Perícias")
                 res = carregar_dados("pericias")
@@ -411,6 +438,12 @@ elif authentication_status == True:
                     if st.form_submit_button("Salvar"):
                         supabase.table("expedientes").insert({"numero_processo": proc, "cliente": cli, "descricao": desc, "data_manifestacao": dt.strftime("%Y-%m-%d"), "responsavel": resp, "status": "Pendente"}).execute()
                         st.cache_data.clear(); st.success("Cadastrado!")
+            elif sub == "Importar Excel":
+                st.header("📥 Importar Expedientes via Excel")
+                st.caption("O arquivo deve conter as colunas: numero_processo, cliente, descricao, data_manifestacao (AAAA-MM-DD), responsavel, status")
+                file_up = st.file_uploader("Envie a planilha (.xlsx ou .csv)", type=["xlsx", "csv"], key="up_exp")
+                if file_up and st.button("Confirmar Importação", type="primary"):
+                    importar_excel_para_supabase("expedientes", file_up)
             elif sub == "Consultar Expedientes":
                 st.header("📋 Expedientes")
                 res = carregar_dados("expedientes")
@@ -459,6 +492,12 @@ elif authentication_status == True:
                     if st.form_submit_button("Salvar"):
                         supabase.table("expedientes_trf").insert({"numero_processo": proc, "cliente": cli, "descricao": desc, "data_manifestacao": dt.strftime("%Y-%m-%d"), "responsavel": resp, "status": "Pendente"}).execute()
                         st.cache_data.clear(); st.success("Cadastrado com sucesso!")
+            elif sub == "Importar Excel":
+                st.header("📥 Importar Expedientes TRF via Excel")
+                st.caption("O arquivo deve conter as colunas: numero_processo, cliente, descricao, data_manifestacao (AAAA-MM-DD), responsavel, status")
+                file_up = st.file_uploader("Envie a planilha (.xlsx ou .csv)", type=["xlsx", "csv"], key="up_trf")
+                if file_up and st.button("Confirmar Importação", type="primary"):
+                    importar_excel_para_supabase("expedientes_trf", file_up)
             elif sub == "Consultar Expedientes TRF":
                 st.header("📋 Expedientes TRF")
                 res = carregar_dados("expedientes_trf")
@@ -514,6 +553,12 @@ elif authentication_status == True:
                             supabase.table("pendencias").insert({"cliente": cli, "processo": proc, "documento_devido": " | ".join(docs), "data_solicitacao": date.today().strftime("%Y-%m-%d"), "status": "Pendente"}).execute()
                             st.cache_data.clear(); st.success("Salvo!")
                         else: st.warning("Preencha o cliente e selecione ao menos um documento.")
+            elif sub == "Importar Excel":
+                st.header("📥 Importar Pendências via Excel")
+                st.caption("O arquivo deve conter as colunas: cliente, processo, documento_devido, data_solicitacao (AAAA-MM-DD), status")
+                file_up = st.file_uploader("Envie a planilha (.xlsx ou .csv)", type=["xlsx", "csv"], key="up_pen")
+                if file_up and st.button("Confirmar Importação", type="primary"):
+                    importar_excel_para_supabase("pendencias", file_up)
             elif sub == "Consultar Pendências":
                 st.header("📂 Pendências")
                 res = carregar_dados("pendencias")
@@ -548,7 +593,7 @@ elif authentication_status == True:
 
                     st.markdown("---")
                     st.warning("⚠️ **ÁREA CRÍTICA:** Exclusão em massa de TODAS as pendências.")
-                    if st.checkbox("Confirmo a exclusão de TODOS as pendências cadastradas."):
+                    if st.checkbox("Confirmo a exclusão de TODAS as pendências cadastradas."):
                         if st.button("🔥 EXCLUIR TODAS AS PENDÊNCIAS", type="primary"):
                             supabase.table("pendencias").delete().neq("id", 0).execute()
                             st.cache_data.clear(); st.success("Todas as pendências foram excluídas!"); st.rerun()

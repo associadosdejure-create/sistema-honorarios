@@ -112,20 +112,13 @@ elif authentication_status == True:
             else:
                 df = pd.read_excel(arquivo)
             
-            # Converte valores vazios/nulos para string vazia
             df = df.fillna("")
             
-            # Converte automaticamente qualquer coluna de data/timestamp para texto YYYY-MM-DD
+            # Formata colunas de data de maneira segura para texto
             for col in df.columns:
-                if pd.api.types.is_datetime64_any_dtype(df[col]) or 'data' in col.lower():
-                    df[col] = pd.to_datetime(df[col], errors='ignore')
-                    # Se após a conversão ainda for datetime, converte para string YYYY-MM-DD
-                    if pd.api.types.is_datetime64_any_dtype(df[col]):
-                        df[col] = df[col].dt.strftime('%Y-%m-%d')
-                    else:
-                        df[col] = df[col].astype(str).str.split(' ').str[0]
-                    # Substitui 'NaT' ou 'nan' gerados por vazio
-                    df[col] = df[col].replace(['NaT', 'nan', 'NAT', 'NaN'], '')
+                if 'data' in col.lower() or 'vencimento' in col.lower():
+                    df[col] = pd.to_datetime(df[col], errors='coerce').dt.strftime('%Y-%m-%d')
+                    df[col] = df[col].replace(['NaT', 'nan', 'NAT', 'NaN', 'None'], '')
 
             dados = df.to_dict(orient="records")
             supabase.table(tabela).insert(dados).execute()

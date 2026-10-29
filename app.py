@@ -8,6 +8,34 @@ import time
 
 st.set_page_config(page_title="Controle DEJURE ADVOCACIA", layout="wide", page_icon="⚖️")
 
+# --- ESTILIZAÇÃO CSS (COR AMARELO QUASE DOURADO) ---
+st.markdown("""
+    <style>
+    /* Títulos principais e subtítulos em amarelo dourado (#E6C200 ou #D4AF37) */
+    h1, h2, h3 {
+        color: #D4AF37 !important;
+    }
+    
+    /* Botões primários (ativos) com fundo dourado e texto escuro para contraste */
+    .stButton > button[kind="primary"] {
+        background-color: #D4AF37 !important;
+        color: #1A1A1A !important;
+        font-weight: bold;
+        border: none;
+    }
+    
+    .stButton > button[kind="primary"]:hover {
+        background-color: #C5A028 !important;
+        color: #000000 !important;
+    }
+
+    /* Métricas com valor destacado em dourado */
+    [data-testid="stMetricValue"] {
+        color: #D4AF37 !important;
+    }
+    </style>
+""", unsafe_allow_html=True)
+
 hashed_passwords = stauth.Hasher.hash_list(['mudar123', 'mudar123', 'bacharel123', 'advogado123', 'estagiario123'])
 
 credentials = {

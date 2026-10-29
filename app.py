@@ -45,7 +45,7 @@ def registrar_auditoria(usuario, acao, modulo, detalhes=""):
             "detalhes": detalhes
         }).execute()
     except Exception:
-        pass # Não trava o app se falhar o log
+        pass  # Não trava o app se falhar o log
 
 # Carrega usuários do Supabase para autenticação dinâmica
 @st.cache_data(ttl=60)
@@ -63,7 +63,16 @@ def carregar_usuarios_db():
             return cred_dict
     except Exception:
         pass
-    return {"usernames": {"nelson": {"name": "Nelson Freire Machado", "password": stauth.Hasher.hash('mudar123'), "role": "admin"}}}
+    # Backup padrão seguro
+    return {
+        "usernames": {
+            "nelson": {
+                "name": "Nelson Freire Machado", 
+                "password": "$2b$12$EixZaYVK1fsbw1ZfbX3OXePaWxn96p36WQoeg6Lruj3vjPGga31lW", 
+                "role": "admin"
+            }
+        }
+    }
 
 credentials = carregar_usuarios_db()
 
@@ -265,7 +274,7 @@ elif authentication_status == True:
                 st.info("🎉 Nenhum alerta de prazo pendente para hoje!")
         except Exception: pass
     
-    elif menu_principal == "Auditoria" and user_role == 'admin':
+    elif menu_escolha == "Auditoria" and user_role == 'admin':
         st.title("🔒 Log de Auditoria do Sistema")
         st.caption("Registro de todas as ações importantes realizadas pelos usuários na plataforma.")
         try:
@@ -728,7 +737,7 @@ elif authentication_status == True:
                         st.cache_data.clear(); st.success("Excluído!"); st.rerun()
 
                     st.markdown("---")
-                    st.warning("⚠️ **ÁREA CRÍTICA:** Exclusão em massa de TODAS as pendências.")
+                    st.warning("⚠️ **ÁREA CRÍTICA:** Exclusão em massa de TODOS as pendências.")
                     if st.checkbox("Confirmo a exclusão de TODOS as pendências cadastradas."):
                         if st.button("🔥 EXCLUIR TODOS AS PENDÊNCIAS", type="primary"):
                             supabase.table("pendencias").delete().neq("id", 0).execute()

@@ -47,7 +47,6 @@ def registrar_auditoria(usuario, acao, modulo, detalhes=""):
     except Exception:
         pass
 
-# Hashes seguros gerados nativamente pelo Streamlit Authenticator
 hashed_passwords = stauth.Hasher.hash_list(['mudar123', 'mudar123', 'bacharel123', 'advogado123', 'estagiario123'])
 
 credentials = {
@@ -258,7 +257,7 @@ elif authentication_status == True:
                 st.info("🎉 Nenhum alerta de prazo pendente para hoje!")
         except Exception: pass
     
-    elif menu_principal == "Auditoria" and user_role == 'admin':
+    elif menu_escolha in ["🔒 Auditoria", "Auditoria"] and user_role == 'admin':
         st.title("🔒 Log de Auditoria do Sistema")
         st.caption("Registro de todas as ações importantes realizadas pelos usuários na plataforma.")
         try:
@@ -715,16 +714,16 @@ elif authentication_status == True:
                 if res:
                     pdict = {f"ID: {i['id']} | {i['cliente']}": i['id'] for i in res}
                     sel = st.selectbox("Pendência:", list(pdict.keys()))
-                    if st.checkbox("Confirmo exclusão da pendência selecionada.") and st.button("EXCLUIR SELECIONADO", type="primary"):
+                    if st.checkbox("Confirmo exclusão da pendência selecionada.") and st.button("EXCLUIR SELECIONADA", type="primary"):
                         supabase.table("pendencias").delete().eq("id", pdict[sel]).execute()
                         registrar_auditoria(username, "Excluir Pendência", "Pendências", f"ID: {pdict[sel]}")
                         st.cache_data.clear(); st.success("Excluído!"); st.rerun()
 
                     st.markdown("---")
-                    st.warning("⚠️ **ÁREA CRÍTICA:** Exclusão em massa de TODOS as pendências.")
+                    st.warning("⚠️ **ÁREA CRÍTICA:** Exclusão em massa de TODAS as pendências.")
                     if st.checkbox("Confirmo a exclusão de TODOS as pendências cadastradas."):
                         if st.button("🔥 EXCLUIR TODOS AS PENDÊNCIAS", type="primary"):
                             supabase.table("pendencias").delete().neq("id", 0).execute()
                             registrar_auditoria(username, "EXCLUIR TODAS AS PENDÊNCIAS", "Pendências", "Exclusão em massa.")
                             st.cache_data.clear(); st.success("Todas as pendências foram excluídas!"); st.rerun()
-                else: st.info("Sem pendências cadastrados.")
+                else: st.info("Sem pendências cadastradas.")

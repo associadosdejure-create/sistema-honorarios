@@ -100,8 +100,8 @@ credentials = carregar_usuarios_db()
 
 authenticator = stauth.Authenticate(
     credentials, 
-    cookie_name='sistema_dejure_cookie_v12', 
-    cookie_key='chave_seguranca_dejure_2026_v12', 
+    cookie_name='sistema_dejure_cookie_v13', 
+    cookie_key='chave_seguranca_dejure_2026_v13', 
     cookie_expiry_days=30
 )
 
@@ -127,7 +127,7 @@ elif authentication_status == None:
     if st.session_state.get('sessao_expirada'):
         st.warning('⏱️ Sua sessão expirou (5 min inativa). Faça login novamente.')
     else:
-        st.info('🔑 Use o login padrão: usuário **master** e senha **mudar123**')
+        pass  # Mensagem padrão removida conforme solicitado
 elif authentication_status == True:
     
     agora = time.time()
@@ -215,7 +215,6 @@ elif authentication_status == True:
             "🔒 Segurança": "Segurança"
         }
         
-        # Apenas ADMIN visualiza Auditoria (Segurança fica visível para todos para alterar senha)
         if user_role == 'admin':
             modulos["🛡️ Auditoria"] = "Auditoria"
 
@@ -323,7 +322,6 @@ elif authentication_status == True:
         menu_principal = menu_escolha
         st.title(f"Módulo: {menu_principal} ⚖️")
 
-        # Constrói a lista de sub-ações com base na permissão de admin
         if menu_principal == "Clientes":
             acoes = ["Consultar Clientes", "Cadastrar Cliente", "Importar Excel", "Editar Cliente", "Exportar Base (Backup)"]
             if user_role == 'admin':

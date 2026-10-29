@@ -76,8 +76,8 @@ credentials = carregar_usuarios_db()
 
 authenticator = stauth.Authenticate(
     credentials, 
-    cookie_name='sistema_dejure_cookie_v3', 
-    cookie_key='chave_seguranca_dejure_2026_v3', 
+    cookie_name='sistema_dejure_cookie_v4', 
+    cookie_key='chave_seguranca_dejure_2026_v4', 
     cookie_expiry_days=30
 )
 
@@ -252,7 +252,7 @@ elif authentication_status == True:
             for et in exp_trf:
                 if et.get('status') == 'Pendente' and et.get('data_manifestacao'):
                     dt = datetime.strptime(et['data_manifestacao'], "%Y-%m-%d").date()
-                    alertas.append(((dt - hoje).days, f"⚖️ Expediente TRF | Processo: {et['numero_processo']} | Prazo: {dt.strftime('%d/%m/%Y')} | Resp: {et['responsavel']}", e.get('id', 0), 'expediente_trf'))
+                    alertas.append(((dt - hoje).days, f"⚖️ Expediente TRF | Processo: {et['numero_processo']} | Prazo: {dt.strftime('%d/%m/%Y')} | Resp: {et['responsavel']}", et.get('id', 0), 'expediente_trf'))
                     
             if alertas:
                 col_a1, col_a2 = st.columns([0.80, 0.20])

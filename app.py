@@ -127,7 +127,7 @@ elif authentication_status == None:
     if st.session_state.get('sessao_expirada'):
         st.warning('⏱️ Sua sessão expirou (5 min inativa). Faça login novamente.')
     else:
-        pass  # Mensagem padrão removida conforme solicitado
+        pass  # Mensagem padrão removida
 elif authentication_status == True:
     
     agora = time.time()
@@ -377,8 +377,6 @@ elif authentication_status == True:
                     if st.form_submit_button("Atualizar Minha Senha"):
                         if not nova_senha or nova_senha != conf_senha:
                             st.error("As senhas não coincidem ou estão vazias.")
-                        elif username == 'master':
-                            st.error("A conta Master de emergência não pode ser alterada.")
                         else:
                             novo_hash = gerar_hash(nova_senha)
                             try:

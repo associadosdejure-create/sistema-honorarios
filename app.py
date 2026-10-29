@@ -70,9 +70,12 @@ elif authentication_status == True:
         st.error("⚠️ ERRO CRÍTICO: Chaves do Supabase ausentes nos Secrets.")
         st.stop()
 
-    # --- INICIALIZAÇÃO DA PÁGINA ATUAL NO SESSION_STATE ---
+    # --- INICIALIZAÇÃO DE ESTADOS DE NAVEGAÇÃO ---
     if 'pagina_atual' not in st.session_state:
         st.session_state['pagina_atual'] = "🏠 Página Inicial"
+
+    if 'submenu_atual' not in st.session_state:
+        st.session_state['submenu_atual'] = ""
 
     # --- FUNÇÃO DE VALIDAÇÃO DE CPF ---
     def validar_cpf(cpf):
@@ -123,29 +126,34 @@ elif authentication_status == True:
         else: p_txt = "🎓 Estagiário"
             
         st.caption(f"Perfil: {p_txt}")
-        
         st.markdown("---")
         
-        # --- MENU DE NAVEGAÇÃO EM FORMATO DE LINKS (BOTÕES ESTILIZADOS) ---
-        st.subheader("🧭 Navegação")
+        # --- MENU PRINCIPAL EM LINKS (SIDEBAR) ---
+        st.subheader("🧭 Módulos do Sistema")
         
         if st.button("🏠 Página Inicial", use_container_width=True):
             st.session_state['pagina_atual'] = "🏠 Página Inicial"
+            st.session_state['submenu_atual'] = ""
             st.rerun()
         if st.button("👥 Clientes", use_container_width=True):
             st.session_state['pagina_atual'] = "Clientes"
+            st.session_state['submenu_atual'] = "Consultar Clientes"
             st.rerun()
         if st.button("💰 Pagamentos", use_container_width=True):
             st.session_state['pagina_atual'] = "Pagamentos"
+            st.session_state['submenu_atual'] = "Ver Parcelas"
             st.rerun()
         if st.button("🔬 Perícias", use_container_width=True):
             st.session_state['pagina_atual'] = "Perícias"
+            st.session_state['submenu_atual'] = "Ver Perícias"
             st.rerun()
         if st.button("📂 Expedientes", use_container_width=True):
             st.session_state['pagina_atual'] = "Expedientes"
+            st.session_state['submenu_atual'] = "Consultar Expedientes"
             st.rerun()
         if st.button("📋 Pendências", use_container_width=True):
             st.session_state['pagina_atual'] = "Pendências"
+            st.session_state['submenu_atual'] = "Consultar Pendências"
             st.rerun()
         
         st.markdown("---")
@@ -167,7 +175,6 @@ elif authentication_status == True:
         st.title(f"Seja bem-vindo, {name}! ⚖️")
         st.markdown("### 📊 Visão Geral do Escritório")
         
-        # Métricas rápidas
         try:
             total_cli = len(carregar_clientes())
             total_hon = len(carregar_honorarios())
@@ -186,7 +193,6 @@ elif authentication_status == True:
 
         st.markdown("---")
 
-        # Central de Alertas na Página Inicial
         try:
             lista_per = carregar_pericias()
             lista_exp = carregar_expedientes()
@@ -232,31 +238,41 @@ elif authentication_status == True:
             pass
 
         st.markdown("---")
-        st.info("💡 **Dica:** Utilize os botões do menu lateral esquerdo para navegar entre os módulos de Clientes, Pagamentos, Perícias, Expedientes e Pendências.")
+        st.info("💡 **Dica:** Utilize os botões do menu lateral esquerdo para acessar e gerenciar os módulos.")
 
     # ==========================================
-    # MÓDULOS DE NAVEGAÇÃO PRINCIPAL
+    # MÓDULOS DE NAVEGAÇÃO PRINCIPAL (EM LINKS)
     # ==========================================
     else:
         menu_principal = menu_escolha
-
         st.title(f"Módulo: {menu_principal} ⚖️")
 
-        # Seletor de Ações Internas (Submenus) para cada módulo
-        col1_sub, col2_sub = st.columns([0.4, 0.6])
-        with col1_sub:
-            if menu_principal == "Clientes":
-                submenu = st.selectbox("Selecione a Ação:", ["Cadastrar Cliente", "Consultar Clientes", "Editar Cliente", "Excluir Cliente", "Exportar Base (Backup)"])
-            elif menu_principal == "Pagamentos":
-                submenu = st.selectbox("Selecione a Ação:", ["Cadastrar Contrato / Parcelas", "Ver Parcelas", "Baixar Parcela", "Editar Contrato", "Excluir Contrato"])
-            elif menu_principal == "Perícias":
-                submenu = st.selectbox("Selecione a Ação:", ["Cadastrar Perícia", "Ver Perícias", "Editar Perícia", "Excluir Perícia"])
-            elif menu_principal == "Expedientes":
-                submenu = st.selectbox("Selecione a Ação:", ["Cadastrar Expediente", "Consultar Expedientes", "Editar Expediente", "Excluir Expediente"])
-            elif menu_principal == "Pendências":
-                submenu = st.selectbox("Selecione a Ação:", ["Cadastrar Pendência", "Consultar Pendências", "Editar Pendência", "Excluir Pendência"])
+        # --- SUBMENUS EM FORMATO DE LINKS (BOTÕES HORIZONTAIS) ---
+        if menu_principal == "Clientes":
+            acoes = ["Consultar Clientes", "Cadastrar Cliente", "Editar Cliente", "Excluir Cliente", "Exportar Base (Backup)"]
+        elif menu_principal == "Pagamentos":
+            acoes = ["Ver Parcelas", "Cadastrar Contrato / Parcelas", "Baixar Parcela", "Editar Contrato", "Excluir Contrato"]
+        elif menu_principal == "Perícias":
+            acoes = ["Ver Perícias", "Cadastrar Perícia", "Editar Perícia", "Excluir Perícia"]
+        elif menu_principal == "Expedientes":
+            acoes = ["Consultar Expedientes", "Cadastrar Expediente", "Editar Expediente", "Excluir Expediente"]
+        elif menu_principal == "Pendências":
+            acoes = ["Consultar Pendências", "Cadastrar Pendência", "Editar Pendência", "Excluir Pendência"]
+
+        if not st.session_state['submenu_atual'] or st.session_state['submenu_atual'] not in acoes:
+            st.session_state['submenu_atual'] = acoes[0]
+
+        # Exibe os links de ações na parte superior do módulo
+        cols = st.columns(len(acoes))
+        for idx, acao in enumerate(acoes):
+            with cols[idx]:
+                tipo_btn = "primary" if st.session_state['submenu_atual'] == acao else "secondary"
+                if st.button(acao, use_container_width=True, type=tipo_btn):
+                    st.session_state['submenu_atual'] = acao
+                    st.rerun()
 
         st.markdown("---")
+        submenu = st.session_state['submenu_atual']
 
         # --- LÓGICA DE CADA SUBMENU ---
         if menu_principal == "Clientes":

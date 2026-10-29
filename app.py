@@ -146,6 +146,11 @@ elif authentication_status == True:
 
     if 'pagina_atual' not in st.session_state: st.session_state['pagina_atual'] = "🏠 Página Inicial"
     if 'submenu_atual' not in st.session_state: st.session_state['submenu_atual'] = ""
+    
+    # Inicializa os estados de ocultação visual dos alertas por sessão
+    if 'ocultar_vencidos' not in st.session_state: st.session_state['ocultar_vencidos'] = set()
+    if 'ocultar_urgentes' not in st.session_state: st.session_state['ocultar_urgentes'] = set()
+    if 'ocultar_lembretes' not in st.session_state: st.session_state['ocultar_lembretes'] = set()
 
     def validar_cpf(cpf):
         cpf = ''.join(filter(str.isdigit, str(cpf)))
@@ -284,28 +289,33 @@ elif authentication_status == True:
                 if p.get('status') == 'Pendente':
                     if p.get('data_pm'):
                         dt = datetime.strptime(p['data_pm'], "%Y-%m-%d").date()
-                        alertas_pericias.append(((dt - hoje).days, f"🔬 Perícia Médica | Nome: {p.get('nome', 'N/D')} | Data PM: {dt.strftime('%d/%m/%Y')}", p['id'], 'pericia'))
+                        uid = f"per_{p['id']}_pm"
+                        alertas_pericias.append(((dt - hoje).days, f"🔬 Perícia Médica | Nome: {p.get('nome', 'N/D')} | Data PM: {dt.strftime('%d/%m/%Y')}", uid, 'pericia'))
                     if p.get('data_ps'):
                         dt = datetime.strptime(p['data_ps'], "%Y-%m-%d").date()
-                        alertas_pericias.append(((dt - hoje).days, f"🔬 Perícia Social | Nome: {p.get('nome', 'N/D')} | Data PS: {dt.strftime('%d/%m/%Y')}", p['id'], 'pericia'))
+                        uid = f"per_{p['id']}_ps"
+                        alertas_pericias.append(((dt - hoje).days, f"🔬 Perícia Social | Nome: {p.get('nome', 'N/D')} | Data PS: {dt.strftime('%d/%m/%Y')}", uid, 'pericia'))
 
             # Expedientes
             for e in exp:
                 if e.get('status') == 'Pendente' and e.get('data_manifestacao'):
                     dt = datetime.strptime(e['data_manifestacao'], "%Y-%m-%d").date()
-                    alertas_expedientes.append(((dt - hoje).days, f"📂 Processo: {e['numero_processo']} | Cliente: {e.get('cliente', 'N/D')} | Prazo: {dt.strftime('%d/%m/%Y')} | Resp: {e['responsavel']}", e.get('id', 0), 'expediente'))
+                    uid = f"exp_{e.get('id', 0)}"
+                    alertas_expedientes.append(((dt - hoje).days, f"📂 Processo: {e['numero_processo']} | Cliente: {e.get('cliente', 'N/D')} | Prazo: {dt.strftime('%d/%m/%Y')} | Resp: {e['responsavel']}", uid, 'expediente'))
 
             # Expedientes TRF
             for et in exp_trf:
                 if et.get('status') == 'Pendente' and et.get('data_manifestacao'):
                     dt = datetime.strptime(et['data_manifestacao'], "%Y-%m-%d").date()
-                    alertas_expedientes_trf.append(((dt - hoje).days, f"⚖️ Processo: {et['numero_processo']} | Cliente: {et.get('cliente', 'N/D')} | Prazo: {dt.strftime('%d/%m/%Y')} | Resp: {et['responsavel']}", et.get('id', 0), 'expediente_trf'))
+                    uid = f"trf_{et.get('id', 0)}"
+                    alertas_expedientes_trf.append(((dt - hoje).days, f"⚖️ Processo: {et['numero_processo']} | Cliente: {et.get('cliente', 'N/D')} | Prazo: {dt.strftime('%d/%m/%Y')} | Resp: {et['responsavel']}", uid, 'expediente_trf'))
 
             # Pagamentos (Parcelas)
             for pc in parcelas_db:
                 if pc.get('status') == 'Pendente' and pc.get('vencimento'):
                     dt = datetime.strptime(pc['vencimento'], "%Y-%m-%d").date()
-                    alertas_pagamentos.append(((dt - hoje).days, f"💰 Parcela {pc.get('numero_parcela')} | Vencimento: {dt.strftime('%d/%m/%Y')} | Valor: R$ {pc.get('valor', 0):.2f}", pc.get('id', 0), 'pagamento'))
+                    uid = f"pag_{pc.get('id', 0)}"
+                    alertas_pagamentos.append(((dt - hoje).days, f"💰 Parcela {pc.get('numero_parcela')} | Vencimento: {dt.strftime('%d/%m/%Y')} | Valor: R$ {pc.get('valor', 0):.2f}", uid, 'pagamento'))
 
             total_alertas = len(alertas_pericias) + len(alertas_expedientes) + len(alertas_expedientes_trf) + len(alertas_pagamentos)
 
@@ -314,60 +324,47 @@ elif authentication_status == True:
                 
                 tab_per, tab_exp, tab_trf, tab_pag = st.tabs(["🔬 Perícias", "📂 Expedientes", "⚖️ Expedientes TRF", "💰 Pagamentos"])
 
-                def renderizar_lista_alerta(lista_alertas, nome_tabela):
-                    if not lista_alertas:
-                        st.info("Nenhum alerta pendente nesta categoria.")
+                def renderizar_lista_alerta(lista_alertas, nome_cat):
+                    # Filtra os itens ocultados visualmente nesta sessão
+                    lista_visivel = [
+                        item for item in lista_alertas 
+                        if item[2] not in st.session_state['ocultar_vencidos'] 
+                        and item[2] not in st.session_state['ocultar_urgentes'] 
+                        and item[2] not in st.session_state['ocultar_lembretes']
+                    ]
+
+                    if not lista_visivel:
+                        st.info("Nenhum alerta pendente visível nesta categoria.")
                         return
 
-                    # Botões de Limpeza por Nível de Urgência (Exclusivo para Admin)
+                    # Botões de Limpeza Visual (Exclusivo para Admin)
                     if user_role == 'admin':
-                        st.markdown("##### ⚡ Ações Administrativas de Limpeza")
+                        st.markdown(f"##### ⚡ Limpeza Visual (Apenas Tela)")
                         col_b1, col_b2, col_b3 = st.columns(3)
                         
                         with col_b1:
-                            if st.button(f"🔴 Limpar Vencidos ({nome_tabela})", key=f"btn_venc_{nome_tabela}"):
-                                ids_vencidos = [item[2] for item in lista_alertas if item[0] < 0]
-                                if ids_vencidos:
-                                    status_alvo = "Pago" if nome_tabela == "pagamentos" else ("Concluído" if nome_tabela == "pericias" else "Manifestado")
-                                    for i_id in ids_vencidos:
-                                        supabase.table(nome_tabela).update({"status": status_alvo}).eq("id", i_id).execute()
-                                    registrar_auditoria(username, f"Limpeza Vencidos ({nome_tabela})", "Home", f"{len(ids_vencidos)} itens limpos.")
-                                    st.cache_data.clear()
-                                    st.success("Alertas vencidos limpos com sucesso!")
-                                    st.rerun()
-                                else:
-                                    st.warning("Nenhum alerta vencido encontrado.")
+                            if st.button(f"🔴 Ocultar Vencidos", key=f"btn_venc_{nome_cat}"):
+                                for item in lista_alertas:
+                                    if item[0] < 0:
+                                        st.session_state['ocultar_vencidos'].add(item[2])
+                                st.rerun()
 
                         with col_b2:
-                            if st.button(f"🟠 Limpar Críticos/Urgentes ({nome_tabela})", key=f"btn_urg_{nome_tabela}"):
-                                ids_urgentes = [item[2] for item in lista_alertas if 0 <= item[0] <= 3]
-                                if ids_urgentes:
-                                    status_alvo = "Pago" if nome_tabela == "pagamentos" else ("Concluído" if nome_tabela == "pericias" else "Manifestado")
-                                    for i_id in ids_urgentes:
-                                        supabase.table(nome_tabela).update({"status": status_alvo}).eq("id", i_id).execute()
-                                    registrar_auditoria(username, f"Limpeza Urgentes ({nome_tabela})", "Home", f"{len(ids_urgentes)} itens limpos.")
-                                    st.cache_data.clear()
-                                    st.success("Alertas críticos/urgentes limpos com sucesso!")
-                                    st.rerun()
-                                else:
-                                    st.warning("Nenhum alerta crítico ou urgente encontrado.")
+                            if st.button(f"🟠 Ocultar Críticos/Urgentes", key=f"btn_urg_{nome_cat}"):
+                                for item in lista_alertas:
+                                    if 0 <= item[0] <= 3:
+                                        st.session_state['ocultar_urgentes'].add(item[2])
+                                st.rerun()
 
                         with col_b3:
-                            if st.button(f"🟢 Limpar Lembretes ({nome_tabela})", key=f"btn_lemb_{nome_tabela}"):
-                                ids_lembretes = [item[2] for item in lista_alertas if item[0] > 3]
-                                if ids_lembretes:
-                                    status_alvo = "Pago" if nome_tabela == "pagamentos" else ("Concluído" if nome_tabela == "pericias" else "Manifestado")
-                                    for i_id in ids_lembretes:
-                                        supabase.table(nome_tabela).update({"status": status_alvo}).eq("id", i_id).execute()
-                                    registrar_auditoria(username, f"Limpeza Lembretes ({nome_tabela})", "Home", f"{len(ids_lembretes)} itens limpos.")
-                                    st.cache_data.clear()
-                                    st.success("Lembretes limpos com sucesso!")
-                                    st.rerun()
-                                else:
-                                    st.warning("Nenhum lembrete encontrado.")
+                            if st.button(f"🟢 Ocultar Lembretes", key=f"btn_lemb_{nome_cat}"):
+                                for item in lista_alertas:
+                                    if item[0] > 3:
+                                        st.session_state['ocultar_lembretes'].add(item[2])
+                                st.rerun()
                         st.markdown("---")
 
-                    for dias, texto, _, _ in sorted(lista_alertas, key=lambda x: x[0]):
+                    for dias, texto, uid, _ in sorted(lista_visivel, key=lambda x: x[0]):
                         if dias < 0: st.error(f"⚠️ **VENCIDO ({abs(dias)} dias):** {texto}")
                         elif dias == 1: st.error(f"🚨 **CRÍTICO (1 dia):** {texto}")
                         elif dias <= 3: st.warning(f"⚠️ **URGENTE ({dias} dias):** {texto}")
@@ -380,7 +377,7 @@ elif authentication_status == True:
                 with tab_trf:
                     renderizar_lista_alerta(alertas_expedientes_trf, "expedientes_trf")
                 with tab_pag:
-                    renderizar_lista_alerta(alertas_pagamentos, "parcelas")
+                    renderizar_lista_alerta(alertas_pagamentos, "pagamentos")
             else:
                 st.info("🎉 Nenhum alerta de prazo ou pagamento pendente para hoje!")
         except Exception as e: 

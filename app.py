@@ -11,7 +11,7 @@ st.set_page_config(page_title="Controle DEJURE ADVOCACIA", layout="wide", page_i
 # --- ESTILIZAÇÃO CSS (COR AMARELO QUASE DOURADO) ---
 st.markdown("""
     <style>
-    /* Títulos principais e subtítulos em amarelo dourado (#E6C200 ou #D4AF37) */
+    /* Títulos principais e subtítulos em amarelo dourado (#D4AF37) */
     h1, h2, h3 {
         color: #D4AF37 !important;
     }
@@ -200,6 +200,14 @@ elif authentication_status == True:
     # PÁGINA INICIAL (DASHBOARD ANTECEDENTE)
     # ==========================================
     if menu_escolha == "🏠 Página Inicial":
+        # --- EXIBIÇÃO DA LOGO NA TELA INICIAL ---
+        col_logo1, col_logo2, col_logo3 = st.columns([1, 2, 1])
+        with col_logo2:
+            try:
+                st.image("logo.png", use_container_width=True)
+            except Exception:
+                st.markdown("<h2 style='text-align: center;'>⚖️ DEJURE ADVOCACIA</h2>", unsafe_allow_html=True)
+
         st.title(f"Seja bem-vindo, {name}! ⚖️")
         st.markdown("### 📊 Visão Geral do Escritório")
         

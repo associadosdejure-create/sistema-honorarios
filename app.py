@@ -83,10 +83,8 @@ def carregar_usuarios_db():
                 if not uname: continue
                 
                 senha_db = str(u.get("senha_hash", u.get("password", ""))).strip()
-                
-                # Blindagem: se a senha no banco não for um hash válido do bcrypt, usa a senha padrão com segurança
-                if not senha_db or not senha_db.startswith("$2"):
-                    senha_db = senha_padrao_hash
+                if senha_db and not senha_db.startswith("$2"):
+                    senha_db = gerar_hash(senha_db)
 
                 cred_dict["usernames"][uname] = {
                     "name": str(u.get("nome_completo", u.get("name", "Usuário"))),
@@ -129,7 +127,7 @@ elif authentication_status == None:
     if st.session_state.get('sessao_expirada'):
         st.warning('⏱️ Sua sessão expirou (5 min inativa). Faça login novamente.')
     else:
-        pass
+        pass  # Mensagem padrão removida conforme solicitado
 elif authentication_status == True:
     
     agora = time.time()
@@ -379,6 +377,8 @@ elif authentication_status == True:
                     if st.form_submit_button("Atualizar Minha Senha"):
                         if not nova_senha or nova_senha != conf_senha:
                             st.error("As senhas não coincidem ou estão vazias.")
+                        elif username == 'master':
+                            st.error("A conta Master de emergência não pode ser alterada.")
                         else:
                             novo_hash = gerar_hash(nova_senha)
                             try:

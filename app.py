@@ -10,7 +10,7 @@ import bcrypt
 
 st.set_page_config(page_title="Controle DEJURE ADVOCACIA", layout="wide", page_icon="⚖️")
 
-# --- ESTILIZAÇÃO CSS COMPACTA (PRETO FECHADO E DOURADO) ---
+# --- ESTILIZAÇÃO CSS COMPACTA (PRETO FECHADO, DOURADO E TABELAS FLUIDAS) ---
 st.markdown("""
     <style>
     .stApp { background-color: #0A0A0A !important; }
@@ -27,6 +27,13 @@ st.markdown("""
     .stButton > button:hover { background-color: #2D2D2D !important; color: #D4AF37 !important; border-color: #D4AF37 !important; }
     [data-testid="stMetricValue"] { color: #D4AF37 !important; }
     input, select, textarea { background-color: #1A1A1A !important; color: #FFFFFF !important; border-color: #333333 !important; }
+    
+    /* Ajuste automático e fluido para colunas de todas as tabelas */
+    [data-testid="stDataFrame"] div[data-testid="stTable"] th, 
+    [data-testid="stDataFrame"] div[data-testid="stTable"] td {
+        white-space: nowrap !important;
+        width: auto !important;
+    }
     </style>
 """, unsafe_allow_html=True)
 
@@ -91,8 +98,8 @@ credentials = carregar_usuarios_db()
 
 authenticator = stauth.Authenticate(
     credentials, 
-    cookie_name='sistema_dejure_cookie_v8', 
-    cookie_key='chave_seguranca_dejure_2026_v8', 
+    cookie_name='sistema_dejure_cookie_v9', 
+    cookie_key='chave_seguranca_dejure_2026_v9', 
     cookie_expiry_days=30
 )
 

@@ -45,36 +45,20 @@ def registrar_auditoria(usuario, acao, modulo, detalhes=""):
             "detalhes": detalhes
         }).execute()
     except Exception:
-        pass  # Não trava o app se falhar o log
-
-# Carrega usuários do Supabase para autenticação dinâmica
-@st.cache_data(ttl=60)
-def carregar_usuarios_db():
-    try:
-        res = supabase.table("usuarios_sistema").select("*").eq("ativo", True).execute()
-        if res.data:
-            cred_dict = {"usernames": {}}
-            for u in res.data:
-                cred_dict["usernames"][u["username"]] = {
-                    "name": u["nome_completo"],
-                    "password": u["senha_hash"],
-                    "role": u["role"]
-                }
-            return cred_dict
-    except Exception:
         pass
-    # Backup padrão seguro
-    return {
-        "usernames": {
-            "nelson": {
-                "name": "Nelson Freire Machado", 
-                "password": "$2b$12$EixZaYVK1fsbw1ZfbX3OXePaWxn96p36WQoeg6Lruj3vjPGga31lW", 
-                "role": "admin"
-            }
-        }
-    }
 
-credentials = carregar_usuarios_db()
+# Hashes seguros gerados nativamente pelo Streamlit Authenticator
+hashed_passwords = stauth.Hasher.hash_list(['mudar123', 'mudar123', 'bacharel123', 'advogado123', 'estagiario123'])
+
+credentials = {
+    "usernames": {
+        "nelson": {"name": "Nelson Freire Machado", "password": hashed_passwords[0], "role": "admin"},
+        "leonidas": {"name": "Leônidas da Paz e Silva", "password": hashed_passwords[1], "role": "admin"},
+        "bacharel": {"name": "Bacharel(a)", "password": hashed_passwords[2], "role": "bacharel"},
+        "advogado": {"name": "Advogado(a)", "password": hashed_passwords[3], "role": "advogado"},
+        "estagiario": {"name": "Estagiário(a)", "password": hashed_passwords[4], "role": "estagiario"}
+    }
+}
 
 authenticator = stauth.Authenticate(
     credentials, cookie_name='sistema_honorarios_cookie', cookie_key='chave_seguranca_sistema_123', cookie_expiry_days=30
@@ -274,7 +258,7 @@ elif authentication_status == True:
                 st.info("🎉 Nenhum alerta de prazo pendente para hoje!")
         except Exception: pass
     
-    elif menu_escolha == "Auditoria" and user_role == 'admin':
+    elif menu_principal == "Auditoria" and user_role == 'admin':
         st.title("🔒 Log de Auditoria do Sistema")
         st.caption("Registro de todas as ações importantes realizadas pelos usuários na plataforma.")
         try:
@@ -731,7 +715,7 @@ elif authentication_status == True:
                 if res:
                     pdict = {f"ID: {i['id']} | {i['cliente']}": i['id'] for i in res}
                     sel = st.selectbox("Pendência:", list(pdict.keys()))
-                    if st.checkbox("Confirmo exclusão da pendência selecionada.") and st.button("EXCLUIR SELECIONADA", type="primary"):
+                    if st.checkbox("Confirmo exclusão da pendência selecionada.") and st.button("EXCLUIR SELECIONADO", type="primary"):
                         supabase.table("pendencias").delete().eq("id", pdict[sel]).execute()
                         registrar_auditoria(username, "Excluir Pendência", "Pendências", f"ID: {pdict[sel]}")
                         st.cache_data.clear(); st.success("Excluído!"); st.rerun()
@@ -743,4 +727,4 @@ elif authentication_status == True:
                             supabase.table("pendencias").delete().neq("id", 0).execute()
                             registrar_auditoria(username, "EXCLUIR TODAS AS PENDÊNCIAS", "Pendências", "Exclusão em massa.")
                             st.cache_data.clear(); st.success("Todas as pendências foram excluídas!"); st.rerun()
-                else: st.info("Sem pendências cadastradas.")
+                else: st.info("Sem pendências cadastrados.")

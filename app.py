@@ -100,8 +100,8 @@ credentials = carregar_usuarios_db()
 
 authenticator = stauth.Authenticate(
     credentials, 
-    cookie_name='sistema_dejure_cookie_v10', 
-    cookie_key='chave_seguranca_dejure_2026_v10', 
+    cookie_name='sistema_dejure_cookie_v12', 
+    cookie_key='chave_seguranca_dejure_2026_v12', 
     cookie_expiry_days=30
 )
 
@@ -215,6 +215,7 @@ elif authentication_status == True:
             "🔒 Segurança": "Segurança"
         }
         
+        # Apenas ADMIN visualiza Auditoria (Segurança fica visível para todos para alterar senha)
         if user_role == 'admin':
             modulos["🛡️ Auditoria"] = "Auditoria"
 
@@ -228,7 +229,7 @@ elif authentication_status == True:
                     "Expedientes": "Consultar Expedientes", 
                     "Expedientes TRF": "Consultar Expedientes TRF",
                     "Pendências": "Consultar Pendências",
-                    "Segurança": "Gerenciar Usuários",
+                    "Segurança": "Gerenciar Usuários" if user_role == 'admin' else "Alterar Senha",
                     "Auditoria": "Ver Logs"
                 }.get(pag, "")
                 st.rerun()
@@ -285,7 +286,7 @@ elif authentication_status == True:
                 col_a1, col_a2 = st.columns([0.80, 0.20])
                 with col_a1: st.subheader("🚨 Central de Alertas de Prazos")
                 with col_a2:
-                    if st.button("🗑️ Excluir Alertas", type="primary"):
+                    if user_role == 'admin' and st.button("🗑️ Excluir Alertas", type="primary"):
                         for _, _, i_id, i_tipo in alertas:
                             if i_tipo == 'pericia': supabase.table("pericias").update({"status": "Concluído"}).eq("id", i_id).execute()
                             elif i_tipo == 'expediente': supabase.table("expedientes").update({"status": "Manifestado"}).eq("id", i_id).execute()
@@ -322,16 +323,35 @@ elif authentication_status == True:
         menu_principal = menu_escolha
         st.title(f"Módulo: {menu_principal} ⚖️")
 
-        acoes_dict = {
-            "Clientes": ["Consultar Clientes", "Cadastrar Cliente", "Importar Excel", "Editar Cliente", "Excluir Cliente", "Exportar Base (Backup)"],
-            "Pagamentos": ["Ver Parcelas", "Cadastrar Contrato / Parcelas", "Baixar Parcela", "Editar Contrato", "Excluir Contrato"],
-            "Perícias": ["Ver Perícias", "Cadastrar Perícia", "Importar Excel", "Editar Perícia", "Excluir Perícia"],
-            "Expedientes": ["Consultar Expedientes", "Cadastrar Expediente", "Importar Excel", "Editar Expediente", "Excluir Expediente"],
-            "Expedientes TRF": ["Consultar Expedientes TRF", "Cadastrar Expediente TRF", "Importar Excel", "Editar Expediente TRF", "Excluir Expediente TRF"],
-            "Pendências": ["Consultar Pendências", "Cadastrar Pendência", "Importar Excel", "Editar Pendência", "Excluir Pendência"],
-            "Segurança": (["Gerenciar Usuários", "Cadastrar Novo Usuário"] if user_role == 'admin' else []) + ["Alterar Senha"]
-        }
-        acoes = acoes_dict.get(menu_principal, [])
+        # Constrói a lista de sub-ações com base na permissão de admin
+        if menu_principal == "Clientes":
+            acoes = ["Consultar Clientes", "Cadastrar Cliente", "Importar Excel", "Editar Cliente", "Exportar Base (Backup)"]
+            if user_role == 'admin':
+                acoes.insert(4, "Excluir Cliente")
+        elif menu_principal == "Pagamentos":
+            acoes = ["Ver Parcelas", "Cadastrar Contrato / Parcelas", "Baixar Parcela", "Editar Contrato"]
+            if user_role == 'admin':
+                acoes.append("Excluir Contrato")
+        elif menu_principal == "Perícias":
+            acoes = ["Ver Perícias", "Cadastrar Perícia", "Importar Excel", "Editar Perícia"]
+            if user_role == 'admin':
+                acoes.append("Excluir Perícia")
+        elif menu_principal == "Expedientes":
+            acoes = ["Consultar Expedientes", "Cadastrar Expediente", "Importar Excel", "Editar Expediente"]
+            if user_role == 'admin':
+                acoes.append("Excluir Expediente")
+        elif menu_principal == "Expedientes TRF":
+            acoes = ["Consultar Expedientes TRF", "Cadastrar Expediente TRF", "Importar Excel", "Editar Expediente TRF"]
+            if user_role == 'admin':
+                acoes.append("Excluir Expediente TRF")
+        elif menu_principal == "Pendências":
+            acoes = ["Consultar Pendências", "Cadastrar Pendência", "Importar Excel", "Editar Pendência"]
+            if user_role == 'admin':
+                acoes.append("Excluir Pendência")
+        elif menu_principal == "Segurança":
+            acoes = ["Gerenciar Usuários", "Cadastrar Novo Usuário", "Alterar Senha"] if user_role == 'admin' else ["Alterar Senha"]
+        else:
+            acoes = []
 
         if not st.session_state['submenu_atual'] or st.session_state['submenu_atual'] not in acoes:
             if acoes:
@@ -686,7 +706,7 @@ elif authentication_status == True:
                 else: 
                     st.info("Sem perícias para editar.")
 
-            elif sub == "Excluir Perícia":
+            elif sub == "Excluir Perícia" and user_role == 'admin':
                 st.header("🗑️ Excluir Perícia")
                 res = carregar_dados("pericias")
                 if res:
@@ -764,7 +784,7 @@ elif authentication_status == True:
                             supabase.table("expedientes").update({"numero_processo": ep, "cliente": ec, "descricao": ed, "responsavel": er, "status": es}).eq("id", obj['id']).execute()
                             registrar_auditoria(username, "Editar Expediente", "Expedientes", f"ID: {obj['id']}")
                             st.cache_data.clear(); st.success("Atualizado!"); st.rerun()
-            elif sub == "Excluir Expediente":
+            elif sub == "Excluir Expediente" and user_role == 'admin':
                 st.header("🗑️ Excluir Expediente")
                 res = carregar_dados("expedientes")
                 if res:
@@ -838,7 +858,7 @@ elif authentication_status == True:
                             registrar_auditoria(username, "Editar Expediente TRF", "Expedientes TRF", f"ID: {obj['id']}")
                             st.cache_data.clear(); st.success("Atualizado!"); st.rerun()
                 else: st.info("Sem expedientes TRF.")
-            elif sub == "Excluir Expediente TRF":
+            elif sub == "Excluir Expediente TRF" and user_role == 'admin':
                 st.header("🗑️ Excluir Expediente TRF")
                 res = carregar_dados("expedientes_trf")
                 if res:
@@ -908,7 +928,7 @@ elif authentication_status == True:
                             supabase.table("pendencias").update({"cliente": ec, "processo": ep, "documento_devido": ed}).eq("id", obj['id']).execute()
                             registrar_auditoria(username, "Editar Pendência", "Pendências", f"ID: {obj['id']}")
                             st.cache_data.clear(); st.success("Atualizado!"); st.rerun()
-            elif sub == "Excluir Pendência":
+            elif sub == "Excluir Pendência" and user_role == 'admin':
                 st.header("🗑️ Excluir Pendência")
                 res = carregar_dados("pendencias")
                 if res:

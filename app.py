@@ -6,6 +6,7 @@ from datetime import datetime, date
 from dateutil.relativedelta import relativedelta
 import time
 import os
+import bcrypt
 
 st.set_page_config(page_title="Controle DEJURE ADVOCACIA", layout="wide", page_icon="⚖️")
 
@@ -35,6 +36,10 @@ except Exception:
     st.error("⚠️ ERRO CRÍTICO: Chaves do Supabase ausentes nos Secrets.")
     st.stop()
 
+# Função segura de Hashing compatível com qualquer versão
+def gerar_hash(senha: str) -> str:
+    return bcrypt.hashpw(senha.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+
 # Função de Auditoria Automática
 def registrar_auditoria(usuario, acao, modulo, detalhes=""):
     try:
@@ -47,21 +52,19 @@ def registrar_auditoria(usuario, acao, modulo, detalhes=""):
     except Exception:
         pass
 
-# Carregamento de usuários com CHAVE MESTRA IMORTAL
+# Carregamento de usuários com CHAVE MESTRA IMORTAL E HASH SEGURO
 def carregar_usuarios_db():
-    # 1. Cria a conta mestre que nunca vai falhar, independente do banco de dados
-    hashed_padrao = stauth.Hasher(['mudar123']).generate()[0]
+    senha_padrao_hash = gerar_hash('mudar123')
     cred_dict = {
         "usernames": {
             "master": {
                 "name": "Administrador Master",
-                "password": hashed_padrao,
+                "password": senha_padrao_hash,
                 "role": "admin"
             }
         }
     }
     
-    # 2. Tenta puxar os demais usuários do banco
     try:
         res = supabase.table("usuarios_sistema").select("*").execute()
         if res.data:
@@ -71,9 +74,9 @@ def carregar_usuarios_db():
                 
                 senha_db = str(u.get("senha_hash", u.get("password", ""))).strip()
                 
-                # Criptografa na hora caso a senha esteja em texto puro
+                # Se a senha salva no banco não estiver criptografada, converte na hora
                 if senha_db and not senha_db.startswith("$2"):
-                    senha_db = stauth.Hasher([senha_db]).generate()[0]
+                    senha_db = gerar_hash(senha_db)
 
                 cred_dict["usernames"][uname] = {
                     "name": str(u.get("nome_completo", u.get("name", "Usuário"))),
@@ -89,8 +92,8 @@ credentials = carregar_usuarios_db()
 
 authenticator = stauth.Authenticate(
     credentials, 
-    cookie_name='sistema_dejure_cookie_v7', 
-    cookie_key='chave_seguranca_dejure_2026_v7', 
+    cookie_name='sistema_dejure_cookie_v8', 
+    cookie_key='chave_seguranca_dejure_2026_v8', 
     cookie_expiry_days=30
 )
 
@@ -116,7 +119,7 @@ elif authentication_status == None:
     if st.session_state.get('sessao_expirada'):
         st.warning('⏱️ Sua sessão expirou (5 min inativa). Faça login novamente.')
     else:
-        st.info('Digite **master** no usuário e **mudar123** na senha para acessar.')
+        st.info('🔑 Use o login padrão: usuário **master** e senha **mudar123**')
 elif authentication_status == True:
     
     agora = time.time()
@@ -351,7 +354,7 @@ elif authentication_status == True:
                         elif username == 'master':
                             st.error("A conta Master de emergência não pode ser alterada.")
                         else:
-                            novo_hash = stauth.Hasher([nova_senha]).generate()[0]
+                            novo_hash = gerar_hash(nova_senha)
                             try:
                                 supabase.table("usuarios_sistema").update({"senha_hash": novo_hash, "password": novo_hash}).eq("username", username).execute()
                                 registrar_auditoria(username, "Alterar Senha", "Segurança", f"Usuário {username} alterou a própria senha.")
@@ -380,7 +383,7 @@ elif authentication_status == True:
                         if not new_user or not new_name or not new_pass:
                             st.error("Preencha todos os campos obrigatórios.")
                         else:
-                            senha_hash = stauth.Hasher([new_pass]).generate()[0]
+                            senha_hash = gerar_hash(new_pass)
                             try:
                                 supabase.table("usuarios_sistema").insert({
                                     "username": new_user.strip().lower(),

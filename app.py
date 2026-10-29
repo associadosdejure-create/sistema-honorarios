@@ -5,10 +5,11 @@ import pandas as pd
 from datetime import datetime, date
 from dateutil.relativedelta import relativedelta
 import time
+import os
 
 st.set_page_config(page_title="Controle DEJURE ADVOCACIA", layout="wide", page_icon="⚖️")
 
-# --- ESTILIZAÇÃO CSS (FUNDO PRETO FECHADO E DETALHES DOURADOS) ---
+# --- ESTILIZAÇÃO CSS (FUNDO PRETO FECHADO, DOURADO E SUBSTITUIÇÃO DA LOGO NO LOGIN) ---
 st.markdown("""
     <style>
     /* Fundo geral da aplicação (preto fechado) */
@@ -67,6 +68,23 @@ st.markdown("""
         background-color: #1A1A1A !important;
         color: #FFFFFF !important;
         border-color: #333333 !important;
+    }
+
+    /* --- SUBSTITUIÇÃO DO TÍTULO DE LOGIN PELA LOGO --- */
+    /* Esconde o texto padrão do formulário de login */
+    [data-testid="stForm"] h1 {
+        font-size: 0px !important;
+        visibility: hidden;
+    }
+    /* Insere a imagem da logo no topo do formulário de login via CSS */
+    [data-testid="stForm"] h1::before {
+        content: url("logo.png");
+        font-size: initial;
+        visibility: visible;
+        display: block;
+        text-align: center;
+        max-width: 200px;
+        margin: 0 auto;
     }
     </style>
 """, unsafe_allow_html=True)
@@ -237,7 +255,6 @@ elif authentication_status == True:
     if menu_escolha == "🏠 Página Inicial":
         col_logo1, col_logo2, col_logo3 = st.columns([1, 2, 1])
         with col_logo2:
-            import os
             logo_encontrada = False
             for arquivo_teste in ["logo.png", "logo.jpg", "logo.jpeg", "Logo.png", "Logo.jpg"]:
                 if os.path.exists(arquivo_teste):
@@ -284,7 +301,7 @@ elif authentication_status == True:
                 if e.get('status') == 'Pendente' and e.get('data_manifestacao'):
                     dt = datetime.strptime(e['data_manifestacao'], "%Y-%m-%d").date()
                     dias = (dt - hoje).days
-                    alertas.append((dias, f"📂 Expediente | Processo: {e['numero_processo']} | Prazo: {dt.strftime('%d/%m/%Y')} | Resp: {e['responsavel']}", e['id'], 'expediente'))
+                    alertas.append((dias, f"📂 Expediente | Processo: {e['numero_processo']} | Prazo: {dt.strftime('%d/%m/%Y')} | Resp: {e['responsavel']}", p['id'] if 'id' in p else 0, 'expediente'))
                     
             if alertas:
                 col_alerta_1, col_alerta_2 = st.columns([0.80, 0.20])

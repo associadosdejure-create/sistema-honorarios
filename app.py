@@ -173,17 +173,22 @@ elif authentication_status == True:
             df = df.dropna(how='all', axis=1)
             df.columns = df.columns.str.strip().str.lower()
             
+            # Limpa e substitui NaN para compatibilidade JSON com o Supabase
+            df = df.where(pd.notnull(df), "")
             df = df.fillna("")
+            
             for col in df.columns:
                 if 'data' in col.lower() or 'vencimento' in col.lower():
                     df[col] = pd.to_datetime(df[col], errors='coerce').dt.strftime('%Y-%m-%d')
-                    df[col] = df[col].replace(['NaT', 'nan', 'NAT', 'NaN', 'None'], '')
+                    df[col] = df[col].replace(['NaT', 'nan', 'NAT', 'NaN', 'None', ''], None)
 
             dados = df.to_dict(orient="records")
-            supabase.table(tabela).insert(dados).execute()
-            registrar_auditoria(username, "Importação Excel", tabela, f"{len(dados)} registros importados.")
+            dadosLimpos = [{k: (v if pd.notnull(v) and v != "" else None) for k, v in registro.items()} for registro in dados]
+
+            supabase.table(tabela).insert(dadosLimpos).execute()
+            registrar_auditoria(username, "Importação Excel", tabela, f"{len(dadosLimpos)} registros importados.")
             st.cache_data.clear()
-            st.success(f"🎉 {len(dados)} registros importados com sucesso!")
+            st.success(f"🎉 {len(dadosLimpos)} registros importados com sucesso!")
             st.rerun()
         except Exception as e:
             st.error(f"⚠️ Erro ao importar planilha: {e}")

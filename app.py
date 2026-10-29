@@ -47,6 +47,7 @@ def registrar_auditoria(usuario, acao, modulo, detalhes=""):
     except Exception:
         pass
 
+# Autenticação Estável
 hashed_passwords = stauth.Hasher.hash_list(['mudar123', 'mudar123', 'bacharel123', 'advogado123', 'estagiario123'])
 
 credentials = {
@@ -97,7 +98,6 @@ elif authentication_status == True:
     t_rest = TEMPO_MAXIMO - (agora - st.session_state['ultima_atividade'])
     min_res, seg_res = max(0, int(t_rest // 60)), max(0, int(t_rest % 60))
 
-    # Identificação de papel do usuário
     user_role = credentials["usernames"].get(username, {}).get("role", "estagiario")
 
     if 'pagina_atual' not in st.session_state: st.session_state['pagina_atual'] = "🏠 Página Inicial"
@@ -170,7 +170,7 @@ elif authentication_status == True:
             "📋 Pendências": "Pendências"
         }
         
-        # Garante a exibição do menu de Auditoria para administradores
+        # Garante a inserção do menu Auditoria para Administradores
         if user_role == 'admin':
             modulos["🔒 Auditoria"] = "Auditoria"
 
@@ -196,6 +196,7 @@ elif authentication_status == True:
         if os.path.exists("logo.png"): st.image("logo.png", use_container_width=True)
         else: st.write("⚖️ **Dejure Advocacia**")
 
+    # Tratamento global da página selecionada
     menu_escolha = st.session_state['pagina_atual']
 
     if menu_escolha == "🏠 Página Inicial":
@@ -260,21 +261,18 @@ elif authentication_status == True:
                 st.info("🎉 Nenhum alerta de prazo pendente para hoje!")
         except Exception: pass
     
-    elif menu_escolha in ["Auditoria", "🔒 Auditoria"]:
-        if user_role == 'admin':
-            st.title("🔒 Log de Auditoria do Sistema")
-            st.caption("Registro de todas as ações importantes realizadas pelos usuários na plataforma.")
-            try:
-                res_logs = supabase.table("logs_auditoria").select("*").order("data_hora", desc=True).limit(100).execute()
-                if res_logs.data:
-                    df_logs = pd.DataFrame(res_logs.data)
-                    st.dataframe(df_logs, use_container_width=True, hide_index=True)
-                else:
-                    st.info("Nenhum registro de auditoria encontrado.")
-            except Exception as e:
-                st.error(f"Erro ao carregar logs: {e}")
-        else:
-            st.error("⚠️ Acesso restrito aos administradores do sistema.")
+    elif menu_escolha == "Auditoria" and user_role == 'admin':
+        st.title("🔒 Log de Auditoria do Sistema")
+        st.caption("Registro de todas as ações importantes realizadas pelos usuários na plataforma.")
+        try:
+            res_logs = supabase.table("logs_auditoria").select("*").order("data_hora", desc=True).limit(100).execute()
+            if res_logs.data:
+                df_logs = pd.DataFrame(res_logs.data)
+                st.dataframe(df_logs, use_container_width=True, hide_index=True)
+            else:
+                st.info("Nenhum registro de auditoria encontrado.")
+        except Exception as e:
+            st.error(f"Erro ao carregar logs: {e}")
 
     else:
         menu_principal = menu_escolha
@@ -291,14 +289,16 @@ elif authentication_status == True:
         acoes = acoes_dict.get(menu_principal, [])
 
         if not st.session_state['submenu_atual'] or st.session_state['submenu_atual'] not in acoes:
-            st.session_state['submenu_atual'] = acoes[0]
+            if acoes:
+                st.session_state['submenu_atual'] = acoes[0]
 
-        cols = st.columns(len(acoes))
-        for idx, acao in enumerate(acoes):
-            with cols[idx]:
-                if st.button(acao, use_container_width=True, type="primary" if st.session_state['submenu_atual'] == acao else "secondary"):
-                    st.session_state['submenu_atual'] = acao
-                    st.rerun()
+        if acoes:
+            cols = st.columns(len(acoes))
+            for idx, acao in enumerate(acoes):
+                with cols[idx]:
+                    if st.button(acao, use_container_width=True, type="primary" if st.session_state['submenu_atual'] == acao else "secondary"):
+                        st.session_state['submenu_atual'] = acao
+                        st.rerun()
 
         st.markdown("---")
         sub = st.session_state['submenu_atual']
@@ -624,4 +624,111 @@ elif authentication_status == True:
                     novo_status_trf = st.selectbox("Novo Status:", ["Pendente", "Em Andamento", "Manifestado"], index=["Pendente", "Em Andamento", "Manifestado"].index(obj_trf.get('status', 'Pendente')) if obj_trf.get('status', 'Pendente') in ["Pendente", "Em Andamento", "Manifestado"] else 0, key="st_trf_val")
                     
                     if st.button("Atualizar Status do Expediente TRF", type="primary"):
-                        supabase.table("expedientes_trf").update({"status":
+                        supabase.table("expedientes_trf").update({"status": novo_status_trf}).eq("id", obj_trf['id']).execute()
+                        registrar_auditoria(username, "Atualizar Status TRF", "Expedientes TRF", f"Processo ID {obj_trf['id']} para {novo_status_trf}")
+                        st.cache_data.clear()
+                        st.success("Status atualizado com sucesso!")
+                        st.rerun()
+                else: st.info("Sem expedientes TRF cadastrados.")
+            elif sub == "Editar Expediente TRF":
+                st.header("✏️ Editar Expediente TRF")
+                res = carregar_dados("expedientes_trf")
+                if res:
+                    edict = {f"ID: {i['id']} | Proc: {i['numero_processo']}": i for i in res}
+                    sel = st.selectbox("Expediente TRF:", list(edict.keys()))
+                    obj = edict[sel]
+                    with st.form("fe_exp_trf"):
+                        ep, ec, ed, er, es = st.text_input("Processo", value=obj.get('numero_processo','')), st.text_input("Cliente", value=obj.get('cliente','')), st.text_input("Descrição", value=obj.get('descricao','')), st.text_input("Responsável", value=obj.get('responsavel','')), st.selectbox("Status", ["Pendente", "Em Andamento", "Manifestado"])
+                        if st.form_submit_button("Salvar"):
+                            supabase.table("expedientes_trf").update({"numero_processo": ep, "cliente": ec, "descricao": ed, "responsavel": er, "status": es}).eq("id", obj['id']).execute()
+                            registrar_auditoria(username, "Editar Expediente TRF", "Expedientes TRF", f"ID: {obj['id']}")
+                            st.cache_data.clear(); st.success("Atualizado!"); st.rerun()
+            elif sub == "Excluir Expediente TRF":
+                st.header("🗑️ Excluir Expediente TRF")
+                res = carregar_dados("expedientes_trf")
+                if res:
+                    edict = {f"ID: {i['id']} | Proc: {i['numero_processo']}": i['id'] for i in res}
+                    sel = st.selectbox("Expediente TRF:", list(edict.keys()))
+                    if st.checkbox("Confirmo exclusão do expediente TRF selecionado.") and st.button("EXCLUIR SELECIONADO", type="primary"):
+                        supabase.table("expedientes_trf").delete().eq("id", edict[sel]).execute()
+                        registrar_auditoria(username, "Excluir Expediente TRF", "Expedientes TRF", f"ID: {edict[sel]}")
+                        st.cache_data.clear(); st.success("Excluído!"); st.rerun()
+
+                    st.markdown("---")
+                    st.warning("⚠️ **ÁREA CRÍTICA:** Exclusão em massa de TODOS os expedientes TRF.")
+                    if st.checkbox("Confirmo a exclusão de TODOS os expedientes TRF cadastrados."):
+                        if st.button("🔥 EXCLUIR TODOS OS EXPEDIENTES TRF", type="primary"):
+                            supabase.table("expedientes_trf").delete().neq("id", 0).execute()
+                            registrar_auditoria(username, "EXCLUIR TODOS OS EXPEDIENTES TRF", "Expedientes TRF", "Exclusão em massa.")
+                            st.cache_data.clear(); st.success("Todos os expedientes TRF foram excluídos!"); st.rerun()
+                else: st.info("Sem expedientes TRF cadastrados.")
+
+        elif menu_principal == "Pendências":
+            if sub == "Cadastrar Pendência":
+                st.header("📋 Nova Pendência")
+                with st.form("fc_pen"):
+                    cli, proc = st.text_input("Cliente"), st.text_input("Processo")
+                    d1, d2, d3 = st.checkbox("Procuração / RG / CPF"), st.checkbox("Comprovante Residência"), st.checkbox("Laudos / Exames")
+                    d4 = st.text_input("Outro")
+                    if st.form_submit_button("Salvar"):
+                        docs = [d for d, b in zip(["Procuração/Docs", "Comp. Residência", "Laudos/Exames"], [d1, d2, d3]) if b]
+                        if d4.strip(): docs.append(d4.strip())
+                        if cli and docs:
+                            supabase.table("pendencias").insert({"cliente": cli, "processo": proc, "documento_devido": " | ".join(docs), "data_solicitacao": date.today().strftime("%Y-%m-%d"), "status": "Pendente"}).execute()
+                            registrar_auditoria(username, "Cadastrar Pendência", "Pendências", f"Cliente: {cli}")
+                            st.cache_data.clear(); st.success("Salvo!")
+                        else: st.warning("Preencha o cliente e selecione ao menos um documento.")
+            elif sub == "Importar Excel":
+                st.header("📥 Importar Pendências via Excel")
+                st.caption("O arquivo deve conter as colunas: cliente, processo, documento_devido, data_solicitacao (AAAA-MM-DD), status")
+                file_up = st.file_uploader("Envie a planilha (.xlsx ou .csv)", type=["xlsx", "csv"], key="up_pen")
+                if file_up and st.button("Confirmar Importação", type="primary"):
+                    importar_excel_para_supabase("pendencias", file_up)
+            elif sub == "Consultar Pendências":
+                st.header("📂 Pendências")
+                res = carregar_dados("pendencias")
+                if res:
+                    df_pen = pd.DataFrame(res)
+                    if 'status' in df_pen.columns:
+                        st.dataframe(df_pen.style.map(colorir_status, subset=['status']), use_container_width=True, hide_index=True)
+                    else:
+                        st.dataframe(df_pen, use_container_width=True, hide_index=True)
+
+                    pid = st.number_input("ID da Pendência entregue:", min_value=1, step=1)
+                    if st.button("Marcar como Entregue"):
+                        supabase.table("pendencias").update({"status": "Entregue"}).eq("id", pid).execute()
+                        registrar_auditoria(username, "Marcar Entregue", "Pendências", f"Pendência ID: {pid}")
+                        st.cache_data.clear(); st.success("Atualizado!"); st.rerun()
+                else: st.info("Sem pendências.")
+            elif sub == "Editar Pendência":
+                st.header("✏️ Editar Pendência")
+                res = carregar_dados("pendencias")
+                if res:
+                    pdict = {f"ID: {i['id']} | {i['cliente']}": i for i in res}
+                    sel = st.selectbox("Pendência:", list(pdict.keys()))
+                    obj = pdict[sel]
+                    with st.form("fe_pen"):
+                        ec, ep, ed = st.text_input("Cliente", value=obj.get('cliente','')), st.text_input("Processo", value=obj.get('processo','')), st.text_input("Documentos", value=obj.get('documento_devido',''))
+                        if st.form_submit_button("Salvar"):
+                            supabase.table("pendencias").update({"cliente": ec, "processo": ep, "documento_devido": ed}).eq("id", obj['id']).execute()
+                            registrar_auditoria(username, "Editar Pendência", "Pendências", f"ID: {obj['id']}")
+                            st.cache_data.clear(); st.success("Atualizado!"); st.rerun()
+            elif sub == "Excluir Pendência":
+                st.header("🗑️ Excluir Pendência")
+                res = carregar_dados("pendencias")
+                if res:
+                    pdict = {f"ID: {i['id']} | {i['cliente']}": i['id'] for i in res}
+                    sel = st.selectbox("Pendência:", list(pdict.keys()))
+                    if st.checkbox("Confirmo exclusão da pendência selecionada.") and st.button("EXCLUIR SELECIONADA", type="primary"):
+                        supabase.table("pendencias").delete().eq("id", pdict[sel]).execute()
+                        registrar_auditoria(username, "Excluir Pendência", "Pendências", f"ID: {pdict[sel]}")
+                        st.cache_data.clear(); st.success("Excluído!"); st.rerun()
+
+                    st.markdown("---")
+                    st.warning("⚠️ **ÁREA CRÍTICA:** Exclusão em massa de TODAS as pendências.")
+                    if st.checkbox("Confirmo a exclusão de TODOS as pendências cadastradas."):
+                        if st.button("🔥 EXCLUIR TODOS AS PENDÊNCIAS", type="primary"):
+                            supabase.table("pendencias").delete().neq("id", 0).execute()
+                            registrar_auditoria(username, "EXCLUIR TODAS AS PENDÊNCIAS", "Pendências", "Exclusão em massa.")
+                            st.cache_data.clear(); st.success("Todas as pendências foram excluídas!"); st.rerun()
+                else: st.info("Sem pendências cadastradas.")

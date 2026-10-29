@@ -100,7 +100,8 @@ elif authentication_status == True:
         d2 = (soma * 10) % 11; d2 = 0 if d2 == 10 else d2
         return d2 == int(cpf[10])
 
-    @st.cache_data(ttl=30)
+    # Cache otimizado com TTL maior (300 segundos = 5 minutos) para evitar requisições constantes
+    @st.cache_data(ttl=300)
     def carregar_dados(tabela):
         res = supabase.table(tabela).select("*").execute()
         return res.data if res.data else []

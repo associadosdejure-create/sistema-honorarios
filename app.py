@@ -9,7 +9,7 @@ import os
 
 st.set_page_config(page_title="Controle DEJURE ADVOCACIA", layout="wide", page_icon="⚖️")
 
-# --- ESTILIZAÇÃO CSS (FUNDO PRETO FECHADO, DOURADO E SUBSTITUIÇÃO DA LOGO NO LOGIN) ---
+# --- ESTILIZAÇÃO CSS (FUNDO PRETO FECHADO E DOURADO) ---
 st.markdown("""
     <style>
     /* Fundo geral da aplicação (preto fechado) */
@@ -69,23 +69,6 @@ st.markdown("""
         color: #FFFFFF !important;
         border-color: #333333 !important;
     }
-
-    /* --- SUBSTITUIÇÃO DO TÍTULO DE LOGIN PELA LOGO --- */
-    /* Esconde o texto padrão do formulário de login */
-    [data-testid="stForm"] h1 {
-        font-size: 0px !important;
-        visibility: hidden;
-    }
-    /* Insere a imagem da logo no topo do formulário de login via CSS */
-    [data-testid="stForm"] h1::before {
-        content: url("logo.png");
-        font-size: initial;
-        visibility: visible;
-        display: block;
-        text-align: center;
-        max-width: 200px;
-        margin: 0 auto;
-    }
     </style>
 """, unsafe_allow_html=True)
 
@@ -108,7 +91,15 @@ authenticator = stauth.Authenticate(
     cookie_expiry_days=30
 )
 
-authenticator.login(location='main', fields={'Form name': 'DEJURE ADVOCACIA'})
+# --- TELA DE LOGIN COM A LOGO ---
+# Verifica se o arquivo de logo existe para passá-lo ao autenticador
+caminho_logo = "logo.png" if os.path.exists("logo.png") else None
+
+authenticator.login(
+    location='main', 
+    fields={'Form name': 'DEJURE ADVOCACIA'},
+    logo=caminho_logo
+)
 
 authentication_status = st.session_state.get('authentication_status')
 name = st.session_state.get('name')
@@ -301,7 +292,7 @@ elif authentication_status == True:
                 if e.get('status') == 'Pendente' and e.get('data_manifestacao'):
                     dt = datetime.strptime(e['data_manifestacao'], "%Y-%m-%d").date()
                     dias = (dt - hoje).days
-                    alertas.append((dias, f"📂 Expediente | Processo: {e['numero_processo']} | Prazo: {dt.strftime('%d/%m/%Y')} | Resp: {e['responsavel']}", p['id'] if 'id' in p else 0, 'expediente'))
+                    alertas.append((dias, f"📂 Expediente | Processo: {e['numero_processo']} | Prazo: {dt.strftime('%d/%m/%Y')} | Resp: {e['responsavel']}", e['id'] if 'id' in e else 0, 'expediente'))
                     
             if alertas:
                 col_alerta_1, col_alerta_2 = st.columns([0.80, 0.20])

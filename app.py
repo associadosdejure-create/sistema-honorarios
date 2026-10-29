@@ -10,7 +10,7 @@ import bcrypt
 
 st.set_page_config(page_title="Controle DEJURE ADVOCACIA", layout="wide", page_icon="⚖️")
 
-# --- ESTILIZAÇÃO CSS COMPACTA (PRETO FECHADO, DOURADO E TABELAS FLUIDAS) ---
+# --- ESTILIZAÇÃO CSS (PRETO, DOURADO E TABELAS COM TEXTO EXPANDIDO) ---
 st.markdown("""
     <style>
     .stApp { background-color: #0A0A0A !important; }
@@ -28,11 +28,17 @@ st.markdown("""
     [data-testid="stMetricValue"] { color: #D4AF37 !important; }
     input, select, textarea { background-color: #1A1A1A !important; color: #FFFFFF !important; border-color: #333333 !important; }
     
-    /* Ajuste automático e fluido para colunas de todas as tabelas */
-    [data-testid="stDataFrame"] div[data-testid="stTable"] th, 
-    [data-testid="stDataFrame"] div[data-testid="stTable"] td {
-        white-space: nowrap !important;
-        width: auto !important;
+    /* Força todas as tabelas a quebrarem o texto e se ajustarem sem cortar */
+    [data-testid="stDataFrame"] div[data-baseweb="table"] tr,
+    [data-testid="stDataFrame"] table, 
+    [data-testid="stTable"] {
+        width: 100% !important;
+    }
+    [data-testid="stDataFrame"] th, [data-testid="stDataFrame"] td,
+    [data-testid="stTable"] th, [data-testid="stTable"] td {
+        white-space: normal !important;
+        word-break: break-word !important;
+        overflow-wrap: break-word !important;
     }
     </style>
 """, unsafe_allow_html=True)
@@ -43,11 +49,9 @@ except Exception:
     st.error("⚠️ ERRO CRÍTICO: Chaves do Supabase ausentes nos Secrets.")
     st.stop()
 
-# Função segura de Hashing compatível com qualquer versão
 def gerar_hash(senha: str) -> str:
     return bcrypt.hashpw(senha.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
 
-# Função de Auditoria Automática
 def registrar_auditoria(usuario, acao, modulo, detalhes=""):
     try:
         supabase.table("logs_auditoria").insert({
@@ -59,7 +63,6 @@ def registrar_auditoria(usuario, acao, modulo, detalhes=""):
     except Exception:
         pass
 
-# Carregamento de usuários com CHAVE MESTRA IMORTAL E HASH SEGURO
 def carregar_usuarios_db():
     senha_padrao_hash = gerar_hash('mudar123')
     cred_dict = {
@@ -80,7 +83,6 @@ def carregar_usuarios_db():
                 if not uname: continue
                 
                 senha_db = str(u.get("senha_hash", u.get("password", ""))).strip()
-                
                 if senha_db and not senha_db.startswith("$2"):
                     senha_db = gerar_hash(senha_db)
 
@@ -98,8 +100,8 @@ credentials = carregar_usuarios_db()
 
 authenticator = stauth.Authenticate(
     credentials, 
-    cookie_name='sistema_dejure_cookie_v9', 
-    cookie_key='chave_seguranca_dejure_2026_v9', 
+    cookie_name='sistema_dejure_cookie_v10', 
+    cookie_key='chave_seguranca_dejure_2026_v10', 
     cookie_expiry_days=30
 )
 

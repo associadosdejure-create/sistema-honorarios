@@ -83,8 +83,10 @@ def carregar_usuarios_db():
                 if not uname: continue
                 
                 senha_db = str(u.get("senha_hash", u.get("password", ""))).strip()
-                if senha_db and not senha_db.startswith("$2"):
-                    senha_db = gerar_hash(senha_db)
+                
+                # Blindagem: se a senha no banco não for um hash válido do bcrypt, usa a senha padrão com segurança
+                if not senha_db or not senha_db.startswith("$2"):
+                    senha_db = senha_padrao_hash
 
                 cred_dict["usernames"][uname] = {
                     "name": str(u.get("nome_completo", u.get("name", "Usuário"))),
@@ -127,7 +129,7 @@ elif authentication_status == None:
     if st.session_state.get('sessao_expirada'):
         st.warning('⏱️ Sua sessão expirou (5 min inativa). Faça login novamente.')
     else:
-        pass  # Mensagem padrão removida
+        pass
 elif authentication_status == True:
     
     agora = time.time()

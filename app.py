@@ -170,7 +170,7 @@ elif authentication_status == True:
             "📋 Pendências": "Pendências"
         }
         
-        # Módulo de Auditoria com ícone exclusivo (Escudo) para administradores
+        # Inserção garantida do módulo de Auditoria com ícone de Escudo
         if user_role == 'admin':
             modulos["🛡️ Auditoria"] = "Auditoria"
 
@@ -661,7 +661,7 @@ elif authentication_status == True:
                         if st.button("🔥 EXCLUIR TODOS OS EXPEDIENTES TRF", type="primary"):
                             supabase.table("expedientes_trf").delete().neq("id", 0).execute()
                             registrar_auditoria(username, "EXCLUIR TODOS OS EXPEDIENTES TRF", "Expedientes TRF", "Exclusão em massa.")
-                            st.cache_data.clear(); st.success("Todos os expedientes TRF foram excluídos!"); st.rerun()
+                            st.cache_data.clear(); st.success("Todas as expedientes TRF foram excluídos!"); st.rerun()
                 else: st.info("Sem expedientes TRF cadastrados.")
 
         elif menu_principal == "Pendências":

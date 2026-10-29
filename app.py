@@ -112,6 +112,11 @@ elif authentication_status == True:
             else:
                 df = pd.read_excel(arquivo)
             
+            # Remove colunas vazias, sem nome ou que comecem com 'Unnamed'
+            df = df.loc[:, ~df.columns.str.contains('^Unnamed', na=False)]
+            df = df.dropna(how='all', axis=1)
+            df.columns = df.columns.str.strip().str.lower()
+            
             df = df.fillna("")
             for col in df.columns:
                 if 'data' in col.lower() or 'vencimento' in col.lower():
@@ -126,7 +131,7 @@ elif authentication_status == True:
         except Exception as e:
             st.error(f"⚠️ Erro ao importar planilha: {e}")
 
-    # Função para colorir status nas tabelas (compatível com Pandas atualizado)
+    # Função para colorir status nas tabelas
     def colorir_status(val):
         if str(val).lower() == 'pendente':
             return 'color: #FF4B4B; font-weight: bold;'
@@ -615,7 +620,7 @@ elif authentication_status == True:
                         else: st.warning("Preencha o cliente e selecione ao menos um documento.")
             elif sub == "Importar Excel":
                 st.header("📥 Importar Pendências via Excel")
-                st.caption("O arquivo deve conter as colunas: cliente, processo, documento_devido, data_solicitacao (AAAA-MM-DD), status")
+                st.caption("O arquivo deve conter as colunas: numero_processo, cliente, descricao, data_manifestacao (AAAA-MM-DD), responsavel, status")
                 file_up = st.file_uploader("Envie a planilha (.xlsx ou .csv)", type=["xlsx", "csv"], key="up_pen")
                 if file_up and st.button("Confirmar Importação", type="primary"):
                     importar_excel_para_supabase("pendencias", file_up)
@@ -652,7 +657,7 @@ elif authentication_status == True:
                 if res:
                     pdict = {f"ID: {i['id']} | {i['cliente']}": i['id'] for i in res}
                     sel = st.selectbox("Pendência:", list(pdict.keys()))
-                    if st.checkbox("Confirmo exclusão da pendência selecionada.") and st.button("EXCLUIR SELECIONADO", type="primary"):
+                    if st.checkbox("Confirmo exclusão da pendência selecionada.") and st.button("EXCLUIR SELECIONADA", type="primary"):
                         supabase.table("pendencias").delete().eq("id", pdict[sel]).execute()
                         st.cache_data.clear(); st.success("Excluído!"); st.rerun()
 

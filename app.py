@@ -113,8 +113,6 @@ elif authentication_status == True:
                 df = pd.read_excel(arquivo)
             
             df = df.fillna("")
-            
-            # Formata colunas de data de maneira segura para texto
             for col in df.columns:
                 if 'data' in col.lower() or 'vencimento' in col.lower():
                     df[col] = pd.to_datetime(df[col], errors='coerce').dt.strftime('%Y-%m-%d')
@@ -212,8 +210,8 @@ elif authentication_status == True:
                     if st.button("🗑️ Excluir Alertas", type="primary"):
                         for _, _, i_id, i_tipo in alertas:
                             if i_tipo == 'pericia': supabase.table("pericias").update({"status": "Concluído"}).eq("id", i_id).execute()
-                            elif i_tipo == 'expediente': supabase.table("expedientes").update({"status": "Protocolado"}).eq("id", i_id).execute()
-                            elif i_tipo == 'expediente_trf': supabase.table("expedientes_trf").update({"status": "Protocolado"}).eq("id", i_id).execute()
+                            elif i_tipo == 'expediente': supabase.table("expedientes").update({"status": "Manifestado"}).eq("id", i_id).execute()
+                            elif i_tipo == 'expediente_trf': supabase.table("expedientes_trf").update({"status": "Manifestado"}).eq("id", i_id).execute()
                         st.cache_data.clear()
                         st.success("Alertas atualizados!")
                         st.rerun()
@@ -416,7 +414,7 @@ elif authentication_status == True:
                     sel = st.selectbox("Perícia:", list(pdict.keys()))
                     obj = pdict[sel]
                     with st.form("fe_per"):
-                        ec, et, ej, ev, st_op = st.text_input("Cliente", value=obj.get('cliente','')), st.text_input("Tipo", value=obj.get('tipo_pericia','')), st.text_input("Juízo", value=obj.get('juizo_vara','')), st.number_input("Valor", value=float(obj.get('honorario_pericial',0))), st.selectbox("Status", ["Pendente", "Concluído", "Pago"])
+                        ec, et, ej, ev, st_op = st.text_input("Cliente", value=obj.get('cliente','')), st.text_input("Tipo", value=obj.get('tipo_pericia','')), st.text_input("Juízo", value=obj.get('juizo_vara','')), st.number_input("Valor", value=float(obj.get('honorario_pericial',0))), st.selectbox("Status", ["Pendente", "Em Andamento", "Concluído", "Pago"])
                         if st.form_submit_button("Salvar"):
                             supabase.table("pericias").update({"cliente": ec, "tipo_pericia": et, "juizo_vara": ej, "honorario_pericial": float(ev), "status": st_op}).eq("id", obj['id']).execute()
                             st.cache_data.clear(); st.success("Atualizado!"); st.rerun()
@@ -453,15 +451,24 @@ elif authentication_status == True:
                 if file_up and st.button("Confirmar Importação", type="primary"):
                     importar_excel_para_supabase("expedientes", file_up)
             elif sub == "Consultar Expedientes":
-                st.header("📋 Expedientes")
+                st.header("📋 Expedientes & Gestão Rápida de Status")
                 res = carregar_dados("expedientes")
                 if res:
                     st.dataframe(pd.DataFrame(res), use_container_width=True)
-                    eid = st.number_input("ID para Protocolar:", min_value=1, step=1)
-                    if st.button("Marcar como Protocolado"):
-                        supabase.table("expedientes").update({"status": "Protocolado"}).eq("id", eid).execute()
-                        st.cache_data.clear(); st.success("Atualizado!"); st.rerun()
-                else: st.info("Sem expedientes.")
+                    st.markdown("---")
+                    st.subheader("⚡ Atualização Rápida de Status")
+                    edict = {f"ID: {i['id']} | Proc: {i['numero_processo']} ({i.get('status', 'Pendente')})": i for i in res}
+                    sel_exp = st.selectbox("Selecione o Expediente:", list(edict.keys()), key="sel_up_exp")
+                    obj_exp = edict[sel_exp]
+                    
+                    novo_status_exp = st.selectbox("Novo Status:", ["Pendente", "Em Andamento", "Manifestado"], index=["Pendente", "Em Andamento", "Manifestado"].index(obj_exp.get('status', 'Pendente')) if obj_exp.get('status', 'Pendente') in ["Pendente", "Em Andamento", "Manifestado"] else 0, key="st_exp_val")
+                    
+                    if st.button("Atualizar Status do Expediente", type="primary"):
+                        supabase.table("expedientes").update({"status": novo_status_exp}).eq("id", obj_exp['id']).execute()
+                        st.cache_data.clear()
+                        st.success("Status atualizado com sucesso!")
+                        st.rerun()
+                else: st.info("Sem expedientes cadastrados.")
             elif sub == "Editar Expediente":
                 st.header("✏️ Editar Expediente")
                 res = carregar_dados("expedientes")
@@ -470,9 +477,9 @@ elif authentication_status == True:
                     sel = st.selectbox("Expediente:", list(edict.keys()))
                     obj = edict[sel]
                     with st.form("fe_exp"):
-                        ep, ec, ed, er = st.text_input("Processo", value=obj.get('numero_processo','')), st.text_input("Cliente", value=obj.get('cliente','')), st.text_input("Descrição", value=obj.get('descricao','')), st.text_input("Responsável", value=obj.get('responsavel',''))
+                        ep, ec, ed, er, es = st.text_input("Processo", value=obj.get('numero_processo','')), st.text_input("Cliente", value=obj.get('cliente','')), st.text_input("Descrição", value=obj.get('descricao','')), st.text_input("Responsável", value=obj.get('responsavel','')), st.selectbox("Status", ["Pendente", "Em Andamento", "Manifestado"])
                         if st.form_submit_button("Salvar"):
-                            supabase.table("expedientes").update({"numero_processo": ep, "cliente": ec, "descricao": ed, "responsavel": er}).eq("id", obj['id']).execute()
+                            supabase.table("expedientes").update({"numero_processo": ep, "cliente": ec, "descricao": ed, "responsavel": er, "status": es}).eq("id", obj['id']).execute()
                             st.cache_data.clear(); st.success("Atualizado!"); st.rerun()
             elif sub == "Excluir Expediente":
                 st.header("🗑️ Excluir Expediente")
@@ -507,14 +514,23 @@ elif authentication_status == True:
                 if file_up and st.button("Confirmar Importação", type="primary"):
                     importar_excel_para_supabase("expedientes_trf", file_up)
             elif sub == "Consultar Expedientes TRF":
-                st.header("📋 Expedientes TRF")
+                st.header("📋 Expedientes TRF & Gestão Rápida de Status")
                 res = carregar_dados("expedientes_trf")
                 if res:
                     st.dataframe(pd.DataFrame(res), use_container_width=True)
-                    eid = st.number_input("ID para Protocolar (TRF):", min_value=1, step=1)
-                    if st.button("Marcar como Protocolado"):
-                        supabase.table("expedientes_trf").update({"status": "Protocolado"}).eq("id", eid).execute()
-                        st.cache_data.clear(); st.success("Atualizado!"); st.rerun()
+                    st.markdown("---")
+                    st.subheader("⚡ Atualização Rápida de Status")
+                    edict = {f"ID: {i['id']} | Proc: {i['numero_processo']} ({i.get('status', 'Pendente')})": i for i in res}
+                    sel_trf = st.selectbox("Selecione o Expediente TRF:", list(edict.keys()), key="sel_up_trf")
+                    obj_trf = edict[sel_trf]
+                    
+                    novo_status_trf = st.selectbox("Novo Status:", ["Pendente", "Em Andamento", "Manifestado"], index=["Pendente", "Em Andamento", "Manifestado"].index(obj_trf.get('status', 'Pendente')) if obj_trf.get('status', 'Pendente') in ["Pendente", "Em Andamento", "Manifestado"] else 0, key="st_trf_val")
+                    
+                    if st.button("Atualizar Status do Expediente TRF", type="primary"):
+                        supabase.table("expedientes_trf").update({"status": novo_status_trf}).eq("id", obj_trf['id']).execute()
+                        st.cache_data.clear()
+                        st.success("Status atualizado com sucesso!")
+                        st.rerun()
                 else: st.info("Sem expedientes TRF cadastrados.")
             elif sub == "Editar Expediente TRF":
                 st.header("✏️ Editar Expediente TRF")
@@ -524,9 +540,9 @@ elif authentication_status == True:
                     sel = st.selectbox("Expediente TRF:", list(edict.keys()))
                     obj = edict[sel]
                     with st.form("fe_exp_trf"):
-                        ep, ec, ed, er = st.text_input("Processo", value=obj.get('numero_processo','')), st.text_input("Cliente", value=obj.get('cliente','')), st.text_input("Descrição", value=obj.get('descricao','')), st.text_input("Responsável", value=obj.get('responsavel',''))
+                        ep, ec, ed, er, es = st.text_input("Processo", value=obj.get('numero_processo','')), st.text_input("Cliente", value=obj.get('cliente','')), st.text_input("Descrição", value=obj.get('descricao','')), st.text_input("Responsável", value=obj.get('responsavel','')), st.selectbox("Status", ["Pendente", "Em Andamento", "Manifestado"])
                         if st.form_submit_button("Salvar"):
-                            supabase.table("expedientes_trf").update({"numero_processo": ep, "cliente": ec, "descricao": ed, "responsavel": er}).eq("id", obj['id']).execute()
+                            supabase.table("expedientes_trf").update({"numero_processo": ep, "cliente": ec, "descricao": ed, "responsavel": er, "status": es}).eq("id", obj['id']).execute()
                             st.cache_data.clear(); st.success("Atualizado!"); st.rerun()
                 else: st.info("Sem expedientes TRF.")
             elif sub == "Excluir Expediente TRF":
@@ -600,7 +616,7 @@ elif authentication_status == True:
                         st.cache_data.clear(); st.success("Excluído!"); st.rerun()
 
                     st.markdown("---")
-                    st.warning("⚠️ **ÁREA CRÍTICA:** Exclusão em massa de TODAS as pendências.")
+                    st.warning("⚠️ **ÁREA CRÍTICA:** Exclusão em massa de TODOS os pendências.")
                     if st.checkbox("Confirmo a exclusão de TODOS as pendências cadastradas."):
                         if st.button("🔥 EXCLUIR TODOS AS PENDÊNCIAS", type="primary"):
                             supabase.table("pendencias").delete().neq("id", 0).execute()

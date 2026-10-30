@@ -96,7 +96,7 @@ def carregar_usuarios_db():
                     "name": str(u.get("nome_completo", u.get("name", "Usuário"))),
                     "password": senha_db,
                     "role": str(u.get("role", "estagiario")),
-                    "trocar_senha": u.get("trocar_senha", True) # Padrão True para novos acessos
+                    "trocar_senha": u.get("trocar_senha", True) if "trocar_senha" in u else True
                 }
     except Exception:
         pass
@@ -178,11 +178,19 @@ elif authentication_status == True:
                     else:
                         hash_novo = gerar_hash(nova_s)
                         try:
-                            supabase.table("usuarios_sistema").update({
-                                "senha_hash": hash_novo,
-                                "password": hash_novo,
-                                "trocar_senha": False
-                            }).eq("username", username).execute()
+                            # Tenta atualizar com o campo trocar_senha
+                            try:
+                                supabase.table("usuarios_sistema").update({
+                                    "senha_hash": hash_novo,
+                                    "password": hash_novo,
+                                    "trocar_senha": False
+                                }).eq("username", username).execute()
+                            except Exception:
+                                # Fallback se a coluna trocar_senha ainda não existir na tabela
+                                supabase.table("usuarios_sistema").update({
+                                    "senha_hash": hash_novo,
+                                    "password": hash_novo
+                                }).eq("username", username).execute()
                             
                             registrar_auditoria(username, "Troca de Senha Obrigatória", "Segurança", "Senha alterada com sucesso no primeiro acesso.")
                             st.cache_data.clear()
@@ -363,14 +371,12 @@ elif authentication_status == True:
                     if p.get('data_pm'):
                         dt = datetime.strptime(p['data_pm'], "%Y-%m-%d").date()
                         dias_restantes = (dt - hoje).days
-                        # Filtro: Descarta pericias vencidas ha mais de 5 dias
                         if dias_restantes >= -5:
                             uid = f"per_{p['id']}_pm"
                             alertas_pericias.append((dias_restantes, f"🔬 Perícia Médica | Nome: {p.get('nome', 'N/D')} | Data PM: {dt.strftime('%d/%m/%Y')}", uid, 'pericia'))
                     if p.get('data_ps'):
                         dt = datetime.strptime(p['data_ps'], "%Y-%m-%d").date()
                         dias_restantes = (dt - hoje).days
-                        # Filtro: Descarta pericias vencidas ha mais de 5 dias
                         if dias_restantes >= -5:
                             uid = f"per_{p['id']}_ps"
                             alertas_pericias.append((dias_restantes, f"🔬 Perícia Social | Nome: {p.get('nome', 'N/D')} | Data PS: {dt.strftime('%d/%m/%Y')}", uid, 'pericia'))
@@ -601,15 +607,26 @@ elif authentication_status == True:
                         else:
                             senha_hash = gerar_hash(new_pass)
                             try:
-                                supabase.table("usuarios_sistema").insert({
-                                    "username": new_user.strip().lower(),
-                                    "nome_completo": new_name,
-                                    "name": new_name,
-                                    "senha_hash": senha_hash,
-                                    "password": senha_hash,
-                                    "role": new_role,
-                                    "trocar_senha": True
-                                }).execute()
+                                try:
+                                    supabase.table("usuarios_sistema").insert({
+                                        "username": new_user.strip().lower(),
+                                        "nome_completo": new_name,
+                                        "name": new_name,
+                                        "senha_hash": senha_hash,
+                                        "password": senha_hash,
+                                        "role": new_role,
+                                        "trocar_senha": True
+                                    }).execute()
+                                except Exception:
+                                    supabase.table("usuarios_sistema").insert({
+                                        "username": new_user.strip().lower(),
+                                        "nome_completo": new_name,
+                                        "name": new_name,
+                                        "senha_hash": senha_hash,
+                                        "password": senha_hash,
+                                        "role": new_role
+                                    }).execute()
+                                    
                                 registrar_auditoria(username, "Cadastrar Usuário", "Segurança", f"Novo usuário criado: {new_user} ({new_role})")
                                 st.cache_data.clear()
                                 st.session_state['cad_user_sucesso'] = True
@@ -1200,7 +1217,7 @@ elif authentication_status == True:
                 res_h = carregar_dados("honorarios")
                 if res_h:
                     hdict = {f"{h['cliente']} — {h['servico']}": h['id'] for h in res_h}
-                    sel = st.selectbox("Contrato:", list(hdict.keys()))
+                    sel = st.selectbox("Contrato:", list(cdict.keys())) if 'cdict' in locals() else st.selectbox("Contrato:", list(hdict.keys()))
                     if st.checkbox("Confirmo exclusão do contrato selecionado.") and st.button("EXCLUIR SELECIONADO", type="primary"):
                         supabase.table("honorarios").delete().eq("id", hdict[sel]).execute()
                         registrar_auditoria(username, "Excluir Contrato", "Pagamentos", f"ID: {hdict[sel]}")

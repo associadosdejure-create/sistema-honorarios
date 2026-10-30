@@ -362,6 +362,26 @@ elif authentication_status == True:
             st.markdown("<h2 style='text-align: center; color: #D4AF37;'>⚖️ DEJURE ADVOCACIA</h2>", unsafe_allow_html=True)
 
         st.markdown(f"### Seja bem-vindo, {name}! ⚖️")
+
+        # --- ALERTA DE ANIVERSÁRIO DO DIA ---
+        try:
+            res_users_nasc = supabase.table("usuarios_sistema").select("nome_completo, name, data_nascimento").execute()
+            if res_users_nasc.data:
+                hoje_str = date.today().strftime("%m-%d")
+                aniversariantes_hoje = []
+                for u in res_users_nasc.data:
+                    dt_n = u.get("data_nascimento")
+                    if dt_n and len(dt_n) >= 10:
+                        # Compara mês e dia (MM-DD)
+                        if dt_n[5:] == hoje_str:
+                            aniversariantes_hoje.append(u.get("nome_completo", u.get("name", "Colaborador")))
+                
+                if aniversariantes_hoje:
+                    nomes_aniv = " e ".join(aniversariantes_hoje)
+                    st.success(f"🥳 **PARABÉNS DA EQUIPE DEJURE!** Hoje é o aniversário de **{nomes_aniv}**! 🎂 Desejamos muito sucesso, felicidades e realizações!")
+        except Exception:
+            pass
+
         st.markdown("### 📊 Visão Geral do Escritório")
         
         try:
@@ -415,7 +435,7 @@ elif authentication_status == True:
                 if et.get('status') == 'Pendente' and et.get('data_manifestacao'):
                     dt = datetime.strptime(et['data_manifestacao'], "%Y-%m-%d").date()
                     uid = f"trf_{et.get('id', 0)}"
-                    alertas_expedientes_trf.append(((dt - hoje).days, f"⚖️ Processo: {et['numero_processo']} | Cliente: {et.get('cliente', 'N/D')} | Prazo: {dt.strftime('%d/%m/%Y')} | Resp: {et['responsavel']}", uid, 'expediente_trf'))
+                    alertas_expedientes_trf.append(((dt - hoje).days, f"⚖️ Processo: {et['numero_processo']} | Cliente: {e.get('cliente', 'N/D')} | Prazo: {dt.strftime('%d/%m/%Y')} | Resp: {et['responsavel']}", uid, 'expediente_trf'))
 
             for pc in parcelas_db:
                 if pc.get('status') == 'Pendente' and pc.get('vencimento'):
@@ -498,12 +518,9 @@ elif authentication_status == True:
             # --- QUADRO SUPERIOR: COLABORADOR DO MÊS ---
             st.markdown("### 🏆 Colaborador(a) em Destaque do Mês")
             
-            # Filtra usuários válidos (exclui o master se desejar, ou mantém)
             colabs_validos = [u for u in lista_colabs if u.get('username') != 'master']
             
             if colabs_validos:
-                # Se houver campo colaborador do mês salvo nas configurações globais ou podemos selecionar o primeiro/definir via selectbox de admin
-                # Aqui vamos buscar se existe um admin configurado ou permitir escolher o destaque do mês:
                 if user_role == 'admin':
                     st.caption("⚙️ Painel do Sócio: Defina quem será o Colaborador do Mês em destaque.")
                     nomes_c = [c.get('nome_completo', c.get('name', '')) for c in colabs_validos]
@@ -511,7 +528,6 @@ elif authentication_status == True:
                 else:
                     destaque_atual = colabs_validos[0].get('nome_completo', colabs_validos[0].get('name', ''))
 
-                # Encontra o objeto do colaborador em destaque
                 obj_destaque = next((c for c in colabs_validos if c.get('nome_completo') == destaque_atual or c.get('name') == destaque_atual), colabs_validos[0])
                 
                 col_d1, col_d2, col_d3 = st.columns([1, 2, 1])
@@ -564,7 +580,6 @@ elif authentication_status == True:
                         if colab.get('telefone'):
                             st.markdown(f"<p style='color: #999999; font-size: 12px; margin: 2px 0;'>📞 {colab.get('telefone')}</p>", unsafe_allow_html=True)
                         
-                        # Aniversário formatado (Dia e Mês)
                         dt_nasc = colab.get('data_nascimento')
                         if dt_nasc:
                             try:
@@ -1287,12 +1302,10 @@ elif authentication_status == True:
                                     dt_baixa_str = r.get('data_baixa', log['data_hora'][:10])
                                     dt_baixa_obj = datetime.strptime(dt_baixa_str, "%Y-%m-%d").date()
 
-                                    # Filtro por período
                                     if dt_inicio <= dt_baixa_obj <= dt_fim:
                                         prosp = r.get('prospectador', '')
                                         op = r.get('operador', '')
                                         
-                                        # Filtro por pessoa (caso selecionado)
                                         if filtro_pessoa != "Todos os Colaboradores / Sócios":
                                             if filtro_pessoa not in [prosp, op, "Leônidas", "Nelson"]:
                                                 continue

@@ -121,6 +121,11 @@ except Exception:
 name = st.session_state.get('name')
 username = st.session_state.get('username')
 
+# Registrar Login se autenticado com sucesso e ainda não marcado na sessão
+if authentication_status == True and not st.session_state.get('login_registrado', False):
+    registrar_auditoria(username, "Login", "Acesso", f"Usuário {name} ({username}) efetuou login no sistema.")
+    st.session_state['login_registrado'] = True
+
 if authentication_status == False:
     st.error('❌ Usuário ou senha incorretos.')
 elif authentication_status == None:
@@ -133,7 +138,8 @@ elif authentication_status == True:
     agora = time.time()
     TEMPO_MAXIMO = 300
     if 'ultima_atividade' in st.session_state and agora - st.session_state['ultima_atividade'] > TEMPO_MAXIMO:
-        st.session_state.update({'authentication_status': None, 'sessao_expirada': True})
+        registrar_auditoria(username, "Logout (Inatividade)", "Acesso", f"Sessão de {username} expirou por inatividade.")
+        st.session_state.update({'authentication_status': None, 'sessao_expirada': True, 'login_registrado': False})
         del st.session_state['ultima_atividade']
         st.rerun()
         
@@ -246,7 +252,13 @@ elif authentication_status == True:
         st.markdown("---")
         st.markdown(f"⏳ **Sessão expira em:**\n### `{min_res:02d}:{seg_res:02d}`")
         st.markdown("---")
-        authenticator.logout('Sair', 'sidebar')
+        
+        # Botão de Logout personalizado para registrar na auditoria antes de sair
+        if st.button("Sair", use_container_width=True):
+            registrar_auditoria(username, "Logout", "Acesso", f"Usuário {name} ({username}) efetuou logout do sistema.")
+            st.session_state.update({'authentication_status': None, 'login_registrado': False})
+            st.rerun()
+
         st.markdown("---")
         if os.path.exists("logo.png"): st.image("logo.png", use_container_width=True)
         else: st.write("⚖️ **Dejure Advocacia**")
@@ -267,7 +279,6 @@ elif authentication_status == True:
             cli, hon, per, exp, exp_trf, pen = carregar_dados("clientes_cadastrados"), carregar_dados("honorarios"), carregar_dados("pericias"), carregar_dados("expedientes"), carregar_dados("expedientes_trf"), carregar_dados("pendencias")
             parcelas_db = carregar_dados("parcelas")
             
-            # Conta perícias pendentes apenas se possuírem alguma data agendada (data_pm ou data_ps preenchidas)
             per_pendentes_com_data = 0
             for p in per:
                 if p.get('status') == 'Pendente' and (p.get('data_pm') or p.get('data_ps')):
@@ -290,7 +301,6 @@ elif authentication_status == True:
             alertas_expedientes_trf = []
             alertas_pagamentos = []
 
-            # Perícias com data agendada
             for p in per:
                 if p.get('status') == 'Pendente':
                     if p.get('data_pm'):
@@ -302,21 +312,18 @@ elif authentication_status == True:
                         uid = f"per_{p['id']}_ps"
                         alertas_pericias.append(((dt - hoje).days, f"🔬 Perícia Social | Nome: {p.get('nome', 'N/D')} | Data PS: {dt.strftime('%d/%m/%Y')}", uid, 'pericia'))
 
-            # Expedientes
             for e in exp:
                 if e.get('status') == 'Pendente' and e.get('data_manifestacao'):
                     dt = datetime.strptime(e['data_manifestacao'], "%Y-%m-%d").date()
                     uid = f"exp_{e.get('id', 0)}"
                     alertas_expedientes.append(((dt - hoje).days, f"📂 Processo: {e['numero_processo']} | Cliente: {e.get('cliente', 'N/D')} | Prazo: {dt.strftime('%d/%m/%Y')} | Resp: {e['responsavel']}", uid, 'expediente'))
 
-            # Expedientes TRF
             for et in exp_trf:
                 if et.get('status') == 'Pendente' and et.get('data_manifestacao'):
                     dt = datetime.strptime(et['data_manifestacao'], "%Y-%m-%d").date()
                     uid = f"trf_{et.get('id', 0)}"
                     alertas_expedientes_trf.append(((dt - hoje).days, f"⚖️ Processo: {et['numero_processo']} | Cliente: {et.get('cliente', 'N/D')} | Prazo: {dt.strftime('%d/%m/%Y')} | Resp: {et['responsavel']}", uid, 'expediente_trf'))
 
-            # Pagamentos (Parcelas)
             for pc in parcelas_db:
                 if pc.get('status') == 'Pendente' and pc.get('vencimento'):
                     dt = datetime.strptime(pc['vencimento'], "%Y-%m-%d").date()
@@ -388,17 +395,50 @@ elif authentication_status == True:
             st.error(f"Erro ao carregar central de alertas: {e}")
     
     elif menu_escolha == "Auditoria" and user_role == 'admin':
-        st.title("🛡️ Log de Auditoria do Sistema")
-        st.caption("Registro de todas as ações importantes realizadas pelos usuários na plataforma.")
-        try:
-            res_logs = supabase.table("logs_auditoria").select("*").order("data_hora", desc=True).limit(100).execute()
-            if res_logs.data:
-                df_logs = pd.DataFrame(res_logs.data)
-                st.dataframe(df_logs, use_container_width=True, hide_index=True)
-            else:
-                st.info("Nenhum registro de auditoria encontrado.")
-        except Exception as e:
-            st.error(f"Erro ao carregar logs: {e}")
+        st.title("🛡️ Central de Auditoria do Sistema")
+        st.caption("Acompanhe as ações gerais do sistema e os registros de acesso dos usuários.")
+        
+        tab_geral, tab_acessos = st.tabs(["🛡️ Auditoria Geral", "🔑 Logs de Acesso (Login / Logout)"])
+        
+        with tab_geral:
+            st.subheader("Histórico de Ações Gerais")
+            if st.button("🔥 ZERAR LOGS GERAIS", key="btn_zerar_geral"):
+                try:
+                    supabase.table("logs_auditoria").delete().neq("id", 0).execute()
+                    st.success("Logs gerais zerados com sucesso!")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Erro: {e}")
+
+            try:
+                res_logs = supabase.table("logs_auditoria").select("*").neq("modulo", "Acesso").order("data_hora", desc=True).limit(100).execute()
+                if res_logs.data:
+                    df_logs = pd.DataFrame(res_logs.data)
+                    st.dataframe(df_logs, use_container_width=True, hide_index=True)
+                else:
+                    st.info("Nenhum registro de auditoria geral encontrado.")
+            except Exception as e:
+                st.error(f"Erro ao carregar logs gerais: {e}")
+
+        with tab_acessos:
+            st.subheader("Histórico de Entradas e Saídas (Login / Logout)")
+            if st.button("🔥 ZERAR LOGS DE ACESSO", key="btn_zerar_acesso"):
+                try:
+                    supabase.table("logs_auditoria").delete().eq("modulo", "Acesso").execute()
+                    st.success("Logs de acesso zerados com sucesso!")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Erro: {e}")
+
+            try:
+                res_acessos = supabase.table("logs_auditoria").select("*").eq("modulo", "Acesso").order("data_hora", desc=True).limit(100).execute()
+                if res_acessos.data:
+                    df_acessos = pd.DataFrame(res_acessos.data)
+                    st.dataframe(df_acessos, use_container_width=True, hide_index=True)
+                else:
+                    st.info("Nenhum registro de acesso encontrado.")
+            except Exception as e:
+                st.error(f"Erro ao carregar logs de acesso: {e}")
 
     else:
         menu_principal = menu_escolha

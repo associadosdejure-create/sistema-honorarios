@@ -178,7 +178,6 @@ elif authentication_status == True:
                     else:
                         hash_novo = gerar_hash(nova_s)
                         try:
-                            # Tenta atualizar com o campo trocar_senha
                             try:
                                 supabase.table("usuarios_sistema").update({
                                     "senha_hash": hash_novo,
@@ -186,7 +185,6 @@ elif authentication_status == True:
                                     "trocar_senha": False
                                 }).eq("username", username).execute()
                             except Exception:
-                                # Fallback se a coluna trocar_senha ainda não existir na tabela
                                 supabase.table("usuarios_sistema").update({
                                     "senha_hash": hash_novo,
                                     "password": hash_novo
@@ -523,8 +521,6 @@ elif authentication_status == True:
                 acoes.insert(3, "Extrato de Repasses")
                 acoes.insert(4, "Relatório por Período")
                 acoes.append("Excluir Contrato")
-            else:
-                acoes.append("Relatório por Período")
         elif menu_principal == "Perícias":
             acoes = ["Ver Perícias", "Cadastrar Perícia", "Importar Excel", "Editar Perícia"]
             if user_role == 'admin':
@@ -1071,7 +1067,7 @@ elif authentication_status == True:
                 except Exception as e:
                     st.error(f"Erro ao carregar extratos: {e}")
 
-            elif sub == "Relatório por Período":
+            elif sub == "Relatório por Período" and user_role == 'admin':
                 st.header("📅 Relatório Financeiro de Pagamentos por Período")
                 st.caption("Gere balancetes e relatórios detalhados de entradas e divisões de honorários com base no intervalo de datas desejado.")
                 

@@ -297,7 +297,7 @@ elif authentication_status == True:
         col_f1, col_f2, col_f3 = st.columns([1, 2, 1])
         with col_f2:
             if user_foto:
-                st.markdown(f"<div style='width: 100%; height: 120px; border-radius: 50%; overflow: hidden;'><img src='{user_foto}' style='width: 100%; height: 100%; object-fit: cover;'></div>", unsafe_allow_html=True)
+                st.image(user_foto, use_container_width=True) # Foto no formato retangular original
             else:
                 st.markdown("<h1 style='text-align: center; margin: 0;'>👤</h1>", unsafe_allow_html=True)
 

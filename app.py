@@ -362,12 +362,18 @@ elif authentication_status == True:
                 if p.get('status') == 'Pendente':
                     if p.get('data_pm'):
                         dt = datetime.strptime(p['data_pm'], "%Y-%m-%d").date()
-                        uid = f"per_{p['id']}_pm"
-                        alertas_pericias.append(((dt - hoje).days, f"🔬 Perícia Médica | Nome: {p.get('nome', 'N/D')} | Data PM: {dt.strftime('%d/%m/%Y')}", uid, 'pericia'))
+                        dias_restantes = (dt - hoje).days
+                        # Descarta se estiver vencida há mais de 5 dias (dias_restantes < -5)
+                        if dias_restantes >= -5:
+                            uid = f"per_{p['id']}_pm"
+                            alertas_pericias.append((dias_restantes, f"🔬 Perícia Médica | Nome: {p.get('nome', 'N/D')} | Data PM: {dt.strftime('%d/%m/%Y')}", uid, 'pericia'))
                     if p.get('data_ps'):
                         dt = datetime.strptime(p['data_ps'], "%Y-%m-%d").date()
-                        uid = f"per_{p['id']}_ps"
-                        alertas_pericias.append(((dt - hoje).days, f"🔬 Perícia Social | Nome: {p.get('nome', 'N/D')} | Data PS: {dt.strftime('%d/%m/%Y')}", uid, 'pericia'))
+                        dias_restantes = (dt - hoje).days
+                        # Descarta se estiver vencida há mais de 5 dias (dias_restantes < -5)
+                        if dias_restantes >= -5:
+                            uid = f"per_{p['id']}_ps"
+                            alertas_pericias.append((dias_restantes, f"🔬 Perícia Social | Nome: {p.get('nome', 'N/D')} | Data PS: {dt.strftime('%d/%m/%Y')}", uid, 'pericia'))
 
             for e in exp:
                 if e.get('status') == 'Pendente' and e.get('data_manifestacao'):
@@ -928,7 +934,7 @@ elif authentication_status == True:
                                 supabase.table("parcelas").update({"status": "Pago"}).eq("id", parcela_obj['id']).execute()
                                 registrar_auditoria(username, "Baixa e Rateio", "Repasses", json_repasse)
                                 st.cache_data.clear()
-                                st.success("✅ Parcela baixada e repasse calculado com sucesso! Consulte o Extrato de Repasses.")
+                                st.success("✅ Parcela baixada e repasse calculated com sucesso! Consulte o Extrato de Repasses.")
                                 st.rerun()
                             except Exception as e:
                                 st.error(f"Erro ao processar baixa: {e}")

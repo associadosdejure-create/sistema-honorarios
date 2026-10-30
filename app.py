@@ -64,6 +64,10 @@ def registrar_auditoria(usuario, acao, modulo, detalhes=""):
     except Exception:
         pass
 
+def limpar_flags_cadastro():
+    for k in ['cad_cli_sucesso', 'cad_hon_sucesso', 'cad_per_sucesso', 'cad_exp_sucesso', 'cad_trf_sucesso', 'cad_pen_sucesso', 'cad_user_sucesso']:
+        st.session_state[k] = False
+
 def carregar_usuarios_db():
     senha_padrao_hash = gerar_hash('mudar123')
     cred_dict = {
@@ -201,7 +205,6 @@ elif authentication_status == True:
                     del st.session_state['ultima_atividade']
                 st.rerun()
         
-        # Interrompe a renderização do restante da aplicação (Menu e Módulos)
         st.stop()
 
     if 'pagina_atual' not in st.session_state: st.session_state['pagina_atual'] = "🏠 Página Inicial"
@@ -301,6 +304,7 @@ elif authentication_status == True:
                     "Segurança": "Gerenciar Usuários" if user_role == 'admin' else "Alterar Senha",
                     "Auditoria": "Ver Logs"
                 }.get(pag, "")
+                limpar_flags_cadastro()
                 st.rerun()
         
         st.markdown("---")
@@ -537,6 +541,7 @@ elif authentication_status == True:
                 with cols[idx]:
                     if st.button(acao, use_container_width=True, type="primary" if st.session_state['submenu_atual'] == acao else "secondary"):
                         st.session_state['submenu_atual'] = acao
+                        limpar_flags_cadastro()
                         st.rerun()
 
         st.markdown("---")
@@ -567,7 +572,7 @@ elif authentication_status == True:
 
             elif sub == "Cadastrar Novo Usuário" and user_role == 'admin':
                 st.header("➕ Cadastrar Novo Usuário no Sistema")
-                with st.form("form_cad_user"):
+                with st.form("form_cad_user", clear_on_submit=True):
                     new_user = st.text_input("Nome de Usuário (login sem espaços, ex: joao)")
                     new_name = st.text_input("Nome Completo")
                     new_pass = st.text_input("Senha Inicial", type="password")
@@ -594,13 +599,19 @@ elif authentication_status == True:
                                     "senha_hash": senha_hash,
                                     "password": senha_hash,
                                     "role": new_role,
-                                    "trocar_senha": True # Exige troca de senha no 1º acesso
+                                    "trocar_senha": True
                                 }).execute()
                                 registrar_auditoria(username, "Cadastrar Usuário", "Segurança", f"Novo usuário criado: {new_user} ({new_role})")
                                 st.cache_data.clear()
-                                st.success(f"🎉 Usuário '{new_user}' cadastrado com sucesso com perfil '{sel_perfil_label}'!")
+                                st.session_state['cad_user_sucesso'] = True
                             except Exception as e:
                                 st.error(f"Erro ao cadastrar usuário (verifique se o login já existe na tabela): {e}")
+
+                if st.session_state.get('cad_user_sucesso'):
+                    st.success("🎉 Usuário cadastrado com sucesso!")
+                    if st.button("➕ Cadastrar Novo Usuário", key="btn_novo_user", type="primary"):
+                        st.session_state['cad_user_sucesso'] = False
+                        st.rerun()
 
             elif sub == "Gerenciar Usuários" and user_role == 'admin':
                 st.header("🛡️ Gerenciamento de Usuários Ativos")
@@ -633,7 +644,7 @@ elif authentication_status == True:
         elif menu_principal == "Clientes":
             if sub == "Cadastrar Cliente":
                 st.header("👤 Cadastro Completo de Cliente")
-                with st.form("fc_cli"):
+                with st.form("fc_cli", clear_on_submit=True):
                     n, doc, tel, email, end, cid, gov, ind, obs = st.text_input("Nome *"), st.text_input("CPF/CNPJ"), st.text_input("Telefone"), st.text_input("E-mail"), st.text_input("Endereço"), st.text_input("Cidade/UF"), st.text_input("Senha Gov.br"), st.text_input("Indicado Por"), st.text_area("Observações")
                     if st.form_submit_button("Salvar"):
                         if not n: st.error("O campo Nome é obrigatório.")
@@ -643,7 +654,15 @@ elif authentication_status == True:
                             else:
                                 supabase.table("clientes_cadastrados").insert({"nome": n, "cpf_cnpj": doc, "telefone": tel, "email": email, "endereco": end, "cidade": cid, "senha_gov": gov, "indicado_por": ind, "observacoes": obs}).execute()
                                 registrar_auditoria(username, "Cadastrar Cliente", "Clientes", f"Cliente: {n}")
-                                st.cache_data.clear(); st.success("Cliente cadastrado!")
+                                st.cache_data.clear()
+                                st.session_state['cad_cli_sucesso'] = True
+
+                if st.session_state.get('cad_cli_sucesso'):
+                    st.success("🎉 Cliente cadastrado com sucesso!")
+                    if st.button("➕ Cadastrar Novo Cliente", key="btn_novo_cli", type="primary"):
+                        st.session_state['cad_cli_sucesso'] = False
+                        st.rerun()
+
             elif sub == "Importar Excel":
                 st.header("📥 Importar Clientes via Planilha Excel")
                 st.caption("O arquivo deve conter as colunas: nome, cpf_cnpj, telefone, email, endereco, cidade, senha_gov, indicado_por, observacoes")
@@ -703,7 +722,7 @@ elif authentication_status == True:
                 st.header("📝 Novo Contrato e Parcelamento")
                 cli_db = carregar_dados("clientes_cadastrados")
                 nomes = [c['nome'] for c in cli_db]
-                with st.form("fc_hon"):
+                with st.form("fc_hon", clear_on_submit=True):
                     cli_op = st.selectbox("Cliente:", ["Outro"] + nomes) if nomes else "Outro"
                     cli = st.text_input("Nome") if cli_op == "Outro" else cli_op
                     serv = st.text_input("Serviço")
@@ -754,7 +773,13 @@ elif authentication_status == True:
 
                                 registrar_auditoria(username, "Cadastrar Contrato com Entrada", "Pagamentos", f"Cliente: {cli} - Total: R$ {vtot}")
                                 st.cache_data.clear()
-                                st.success("🎉 Contrato e parcelas gerados com sucesso!")
+                                st.session_state['cad_hon_sucesso'] = True
+
+                if st.session_state.get('cad_hon_sucesso'):
+                    st.success("🎉 Contrato e parcelas gerados com sucesso!")
+                    if st.button("➕ Cadastrar Novo Contrato", key="btn_novo_hon", type="primary"):
+                        st.session_state['cad_hon_sucesso'] = False
+                        st.rerun()
 
             elif sub == "Ver Parcelas":
                 st.header("📋 Visualizar Parcelas")
@@ -793,7 +818,6 @@ elif authentication_status == True:
                         
                         st.markdown("---")
                         
-                        # Extrair nomes de usuários
                         lista_usuarios = []
                         for u in credentials['usernames'].values():
                             nome_u = u.get('name', '')
@@ -803,7 +827,6 @@ elif authentication_status == True:
                         
                         nomes_opcoes = [u['nome'] for u in lista_usuarios]
 
-                        # TRAVA DE INTELIGÊNCIA: Verifica se é Entrada ou Parcela Normal
                         is_entrada = (parcela_obj['numero_parcela'] == "Entrada")
                         
                         if is_entrada:
@@ -822,7 +845,6 @@ elif authentication_status == True:
                             elif prosp_name == resp_name:
                                 st.warning("📌 **Acúmulo Detectado:** O Prospectador e Operador são os mesmos. A comissão incidirá direto no bruto.")
 
-                            # Identificar papel do operador
                             resp_role = "estagiario"
                             for u in lista_usuarios:
                                 if u['nome'] == resp_name:
@@ -878,7 +900,6 @@ elif authentication_status == True:
                                     val_leonidas = saldo * 0.60
                                     val_nelson = saldo * 0.40
                             else:
-                                # Regra simples de parcela
                                 regra_aplicada = "Parcela Normal"
                                 prosp_name = "N/A"
                                 val_operador = val_op_input
@@ -886,7 +907,6 @@ elif authentication_status == True:
                                 val_leonidas = saldo_socios * 0.60
                                 val_nelson = saldo_socios * 0.40
 
-                            # Salvar Repasse
                             repasse_dict = {
                                 "parcela_id": parcela_obj['id'],
                                 "contrato": sel_contrato,
@@ -908,7 +928,7 @@ elif authentication_status == True:
                                 supabase.table("parcelas").update({"status": "Pago"}).eq("id", parcela_obj['id']).execute()
                                 registrar_auditoria(username, "Baixa e Rateio", "Repasses", json_repasse)
                                 st.cache_data.clear()
-                                st.success("✅ Parcela baixada e repasse calculated com sucesso! Consulte o Extrato de Repasses.")
+                                st.success("✅ Parcela baixada e repasse calculado com sucesso! Consulte o Extrato de Repasses.")
                                 st.rerun()
                             except Exception as e:
                                 st.error(f"Erro ao processar baixa: {e}")
@@ -1001,7 +1021,7 @@ elif authentication_status == True:
         elif menu_principal == "Perícias":
             if sub == "Cadastrar Perícia":
                 st.header("🔬 Nova Perícia")
-                with st.form("fc_per"):
+                with st.form("fc_per", clear_on_submit=True):
                     cpf = st.text_input("CPF")
                     nome = st.text_input("Nome *")
                     local_pm = st.text_input("Local PM")
@@ -1032,7 +1052,13 @@ elif authentication_status == True:
                             }).execute()
                             registrar_auditoria(username, "Cadastrar Perícia", "Perícias", f"Nome: {nome}")
                             st.cache_data.clear()
-                            st.success("Perícia cadastrada com sucesso!")
+                            st.session_state['cad_per_sucesso'] = True
+
+                if st.session_state.get('cad_per_sucesso'):
+                    st.success("🎉 Perícia cadastrada com sucesso!")
+                    if st.button("➕ Cadastrar Nova Perícia", key="btn_novo_per", type="primary"):
+                        st.session_state['cad_per_sucesso'] = False
+                        st.rerun()
 
             elif sub == "Importar Excel":
                 st.header("📥 Importar Perícias via Excel")
@@ -1142,12 +1168,20 @@ elif authentication_status == True:
         elif menu_principal == "Expedientes":
             if sub == "Cadastrar Expediente":
                 st.header("📂 Novo Expediente")
-                with st.form("fc_exp"):
+                with st.form("fc_exp", clear_on_submit=True):
                     proc, cli, desc, dt, resp = st.text_input("Processo"), st.text_input("Cliente"), st.text_input("Descrição"), st.date_input("Prazo", datetime.now()), st.text_input("Responsável")
                     if st.form_submit_button("Salvar"):
                         supabase.table("expedientes").insert({"numero_processo": proc, "cliente": cli, "descricao": desc, "data_manifestacao": dt.strftime("%Y-%m-%d"), "responsavel": resp, "status": "Pendente"}).execute()
                         registrar_auditoria(username, "Cadastrar Expediente", "Expedientes", f"Processo: {proc}")
-                        st.cache_data.clear(); st.success("Cadastrado!")
+                        st.cache_data.clear()
+                        st.session_state['cad_exp_sucesso'] = True
+
+                if st.session_state.get('cad_exp_sucesso'):
+                    st.success("🎉 Expediente cadastrado com sucesso!")
+                    if st.button("➕ Cadastrar Novo Expediente", key="btn_novo_exp", type="primary"):
+                        st.session_state['cad_exp_sucesso'] = False
+                        st.rerun()
+
             elif sub == "Importar Excel":
                 st.header("📥 Importar Expedientes via Excel")
                 st.caption("O arquivo deve conter as colunas: numero_processo, cliente, descricao, data_manifestacao (AAAA-MM-DD), responsavel, status")
@@ -1215,12 +1249,20 @@ elif authentication_status == True:
         elif menu_principal == "Expedientes TRF":
             if sub == "Cadastrar Expediente TRF":
                 st.header("⚖️ Novo Expediente TRF")
-                with st.form("fc_exp_trf"):
+                with st.form("fc_exp_trf", clear_on_submit=True):
                     proc, cli, desc, dt, resp = st.text_input("Processo"), st.text_input("Cliente"), st.text_input("Descrição"), st.date_input("Prazo", datetime.now()), st.text_input("Responsável")
                     if st.form_submit_button("Salvar"):
                         supabase.table("expedientes_trf").insert({"numero_processo": proc, "cliente": cli, "descricao": desc, "data_manifestacao": dt.strftime("%Y-%m-%d"), "responsavel": resp, "status": "Pendente"}).execute()
                         registrar_auditoria(username, "Cadastrar Expediente TRF", "Expedientes TRF", f"Processo: {proc}")
-                        st.cache_data.clear(); st.success("Cadastrado com sucesso!")
+                        st.cache_data.clear()
+                        st.session_state['cad_trf_sucesso'] = True
+
+                if st.session_state.get('cad_trf_sucesso'):
+                    st.success("🎉 Expediente TRF cadastrado com sucesso!")
+                    if st.button("➕ Cadastrar Novo Expediente TRF", key="btn_novo_trf", type="primary"):
+                        st.session_state['cad_trf_sucesso'] = False
+                        st.rerun()
+
             elif sub == "Importar Excel":
                 st.header("📥 Importar Expedientes TRF via Excel")
                 st.caption("O arquivo deve conter as colunas: numero_processo, cliente, descricao, data_manifestacao (AAAA-MM-DD), responsavel, status")
@@ -1289,7 +1331,7 @@ elif authentication_status == True:
         elif menu_principal == "Pendências":
             if sub == "Cadastrar Pendência":
                 st.header("📋 Nova Pendência")
-                with st.form("fc_pen"):
+                with st.form("fc_pen", clear_on_submit=True):
                     cli, proc = st.text_input("Cliente"), st.text_input("Processo")
                     d1, d2, d3 = st.checkbox("Procuração / RG / CPF"), st.checkbox("Comprovante Residência"), st.checkbox("Laudos / Exames")
                     d4 = st.text_input("Outro")
@@ -1299,8 +1341,16 @@ elif authentication_status == True:
                         if cli and docs:
                             supabase.table("pendencias").insert({"cliente": cli, "processo": proc, "documento_devido": " | ".join(docs), "data_solicitacao": date.today().strftime("%Y-%m-%d"), "status": "Pendente"}).execute()
                             registrar_auditoria(username, "Cadastrar Pendência", "Pendências", f"Cliente: {cli}")
-                            st.cache_data.clear(); st.success("Salvo!")
+                            st.cache_data.clear()
+                            st.session_state['cad_pen_sucesso'] = True
                         else: st.warning("Preencha o cliente e selecione ao menos um documento.")
+
+                if st.session_state.get('cad_pen_sucesso'):
+                    st.success("🎉 Pendência cadastrada com sucesso!")
+                    if st.button("➕ Cadastrar Nova Pendência", key="btn_novo_pen", type="primary"):
+                        st.session_state['cad_pen_sucesso'] = False
+                        st.rerun()
+
             elif sub == "Importar Excel":
                 st.header("📥 Importar Pendências via Excel")
                 st.caption("O arquivo deve conter as colunas: cliente, processo, documento_devido, data_solicitacao (AAAA-MM-DD), status")

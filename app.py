@@ -304,6 +304,13 @@ elif authentication_status == True:
         st.write(f"Logado como: **{name}**")
         p_txt = {"admin": "👑 Sócio", "advogado": "⚖️ Advogado(a)", "bacharel": "📜 Bacharel(a)"}.get(user_role, "🎓 Estagiário")
         st.caption(f"Perfil: {p_txt}")
+        
+        # BOTÃO SAIR LOGO ABAIXO DO PERFIL DO USUÁRIO
+        if st.button("🚪 Sair", use_container_width=True):
+            registrar_auditoria(username, "Logout", "Acesso", f"Usuário {name} ({username}) efetuou logout do sistema.")
+            st.session_state.update({'authentication_status': None, 'login_registrado': False})
+            st.rerun()
+
         st.markdown("---")
         
         st.subheader("🧭 Módulos do Sistema")
@@ -341,13 +348,6 @@ elif authentication_status == True:
         
         st.markdown("---")
         st.markdown(f"⏳ **Sessão expira em:**\n### `{min_res:02d}:{seg_res:02d}`")
-        st.markdown("---")
-        
-        if st.button("Sair", use_container_width=True):
-            registrar_auditoria(username, "Logout", "Acesso", f"Usuário {name} ({username}) efetuou logout do sistema.")
-            st.session_state.update({'authentication_status': None, 'login_registrado': False})
-            st.rerun()
-
         st.markdown("---")
         if os.path.exists("logo.png"): st.image("logo.png", use_container_width=True)
         else: st.write("⚖️ **Dejure Advocacia**")
@@ -885,7 +885,14 @@ elif authentication_status == True:
                 st.header("👤 Cadastro Completo de Cliente")
                 with st.form("fc_cli", clear_on_submit=True):
                     n, doc, tel, email, end, cid, gov, ind, obs = st.text_input("Nome *"), st.text_input("CPF/CNPJ"), st.text_input("Telefone"), st.text_input("E-mail"), st.text_input("Endereço"), st.text_input("Cidade/UF"), st.text_input("Senha Gov.br"), st.text_input("Indicado Por"), st.text_area("Observações")
-                    if st.form_submit_button("Salvar"):
+                    
+                    col_b_cad, col_b_vol = st.columns(2)
+                    with col_b_cad:
+                        salvar_cli = st.form_submit_button("Salvar", type="primary", use_container_width=True)
+                    with col_b_vol:
+                        voltar_cli = st.form_submit_button("⬅️ Voltar", use_container_width=True)
+
+                    if salvar_cli:
                         if not n: st.error("O campo Nome é obrigatório.")
                         else:
                             doc_l = ''.join(filter(str.isdigit, str(doc)))
@@ -895,6 +902,10 @@ elif authentication_status == True:
                                 registrar_auditoria(username, "Cadastrar Cliente", "Clientes", f"Cliente: {n}")
                                 st.cache_data.clear()
                                 st.session_state['cad_cli_sucesso'] = True
+                                st.rerun()
+                    if voltar_cli:
+                        st.session_state['submenu_atual'] = "Consultar Clientes"
+                        st.rerun()
 
                 if st.session_state.get('cad_cli_sucesso'):
                     st.success("🎉 Cliente cadastrado com sucesso!")
@@ -931,10 +942,20 @@ elif authentication_status == True:
                     obj = cdict[sel]
                     with st.form("fe_cli"):
                         en, edoc, etel, eemail, eend, ecid, egov, eind, eobs = st.text_input("Nome", value=obj.get('nome','')), st.text_input("CPF/CNPJ", value=obj.get('cpf_cnpj','')), st.text_input("Telefone", value=obj.get('telefone','')), st.text_input("E-mail", value=obj.get('email','')), st.text_input("Endereço", value=obj.get('endereco','')), st.text_input("Cidade", value=obj.get('cidade','')), st.text_input("Gov.br", value=obj.get('senha_gov','')), st.text_input("Indicação", value=obj.get('indicado_por','')), st.text_area("Obs", value=obj.get('observacoes',''))
-                        if st.form_submit_button("Atualizar"):
+                        
+                        col_e1, col_e2 = st.columns(2)
+                        with col_e1:
+                            atualizar_cli = st.form_submit_button("Atualizar", type="primary", use_container_width=True)
+                        with col_e2:
+                            voltar_ed_cli = st.form_submit_button("⬅️ Voltar", use_container_width=True)
+
+                        if atualizar_cli:
                             supabase.table("clientes_cadastrados").update({"nome": en, "cpf_cnpj": edoc, "telefone": etel, "email": eemail, "endereco": eend, "cidade": ecid, "senha_gov": egov, "indicado_por": eind, "observacoes": eobs}).eq("id", obj['id']).execute()
                             registrar_auditoria(username, "Editar Cliente", "Clientes", f"ID: {obj['id']} - {en}")
                             st.cache_data.clear(); st.success("Atualizado!"); st.rerun()
+                        if voltar_ed_cli:
+                            st.session_state['submenu_atual'] = "Consultar Clientes"
+                            st.rerun()
                 else: st.info("Nenhum cliente.")
             elif sub == "Excluir Cliente" and user_role == 'admin':
                 st.header("🗑️ Excluir Cliente")
@@ -982,7 +1003,13 @@ elif authentication_status == True:
                     
                     dt1 = st.date_input("Vencimento da 1ª Parcela (ou Entrada)", datetime.now())
                     
-                    if st.form_submit_button("Gerar Contrato e Parcelas"):
+                    col_b_h1, col_b_h2 = st.columns(2)
+                    with col_b_h1:
+                        salvar_hon = st.form_submit_button("Gerar Contrato e Parcelas", type="primary", use_container_width=True)
+                    with col_b_h2:
+                        voltar_hon = st.form_submit_button("⬅️ Voltar", use_container_width=True)
+
+                    if salvar_hon:
                         if not cli or not serv or vtot <= 0:
                             st.error("Preencha o cliente, o serviço e um valor total válido.")
                         elif v_entrada > vtot:
@@ -1020,6 +1047,10 @@ elif authentication_status == True:
                                 registrar_auditoria(username, "Cadastrar Contrato com Entrada", "Pagamentos", f"Cliente: {cli} - Total: R$ {vtot}")
                                 st.cache_data.clear()
                                 st.session_state['cad_hon_sucesso'] = True
+                                st.rerun()
+                    if voltar_hon:
+                        st.session_state['submenu_atual'] = "Ver Parcelas"
+                        st.rerun()
 
                 if st.session_state.get('cad_hon_sucesso'):
                     st.success("🎉 Contrato e parcelas gerados com sucesso!")
@@ -1435,10 +1466,20 @@ elif authentication_status == True:
                     obj = hdict[sel]
                     with st.form("fe_hon"):
                         ec, es, ev = st.text_input("Cliente", value=obj.get('cliente','')), st.text_input("Serviço", value=obj.get('servico','')), st.number_input("Valor", value=float(obj.get('valor_total',0)))
-                        if st.form_submit_button("Salvar"):
+                        
+                        col_eh1, col_eh2 = st.columns(2)
+                        with col_eh1:
+                            salvar_ed_hon = st.form_submit_button("Salvar", type="primary", use_container_width=True)
+                        with col_eh2:
+                            voltar_ed_hon = st.form_submit_button("⬅️ Voltar", use_container_width=True)
+
+                        if salvar_ed_hon:
                             supabase.table("honorarios").update({"cliente": ec, "servico": es, "valor_total": float(ev)}).eq("id", obj['id']).execute()
                             registrar_auditoria(username, "Editar Contrato", "Pagamentos", f"ID: {obj['id']}")
                             st.cache_data.clear(); st.success("Atualizado!"); st.rerun()
+                        if voltar_ed_hon:
+                            st.session_state['submenu_atual'] = "Ver Parcelas"
+                            st.rerun()
             elif sub == "Excluir Contrato" and user_role == 'admin':
                 st.header("🗑️ Excluir Contrato")
                 res_h = carregar_dados("honorarios")
@@ -1475,7 +1516,13 @@ elif authentication_status == True:
                     senha_inss = st.text_input("Senha INSS")
                     elaborador = st.text_input("Elaborador")
                     
-                    if st.form_submit_button("Salvar"):
+                    col_bp1, col_bp2 = st.columns(2)
+                    with col_bp1:
+                        salvar_per = st.form_submit_button("Salvar", type="primary", use_container_width=True)
+                    with col_bp2:
+                        voltar_per = st.form_submit_button("⬅️ Voltar", use_container_width=True)
+
+                    if salvar_per:
                         if not nome:
                             st.error("O campo Nome é obrigatório.")
                         else:
@@ -1495,6 +1542,10 @@ elif authentication_status == True:
                             registrar_auditoria(username, "Cadastrar Perícia", "Perícias", f"Nome: {nome}")
                             st.cache_data.clear()
                             st.session_state['cad_per_sucesso'] = True
+                            st.rerun()
+                    if voltar_per:
+                        st.session_state['submenu_atual'] = "Ver Perícias"
+                        st.rerun()
 
                 if st.session_state.get('cad_per_sucesso'):
                     st.success("🎉 Perícia cadastrada com sucesso!")
@@ -1568,7 +1619,13 @@ elif authentication_status == True:
                         eelab = st.text_input("Elaborador", value=obj.get('elaborador',''))
                         est_op = st.selectbox("Status", ["Pendente", "Em Andamento", "Concluído", "Pago"], index=["Pendente", "Em Andamento", "Concluído", "Pago"].index(obj.get('status', 'Pendente')) if obj.get('status', 'Pendente') in ["Pendente", "Em Andamento", "Concluído", "Pago"] else 0)
                         
-                        if st.form_submit_button("Salvar Alterações"):
+                        col_ep1, col_ep2 = st.columns(2)
+                        with col_ep1:
+                            salvar_ed_per = st.form_submit_button("Salvar Alterações", type="primary", use_container_width=True)
+                        with col_ep2:
+                            voltar_ed_per = st.form_submit_button("⬅️ Voltar", use_container_width=True)
+
+                        if salvar_ed_per:
                             supabase.table("pericias").update({
                                 "cpf": ecpf,
                                 "nome": enome,
@@ -1585,6 +1642,9 @@ elif authentication_status == True:
                             registrar_auditoria(username, "Editar Perícia", "Perícias", f"ID: {obj['id']}")
                             st.cache_data.clear()
                             st.success("Perícia atualizada com sucesso!")
+                            st.rerun()
+                        if voltar_ed_per:
+                            st.session_state['submenu_atual'] = "Ver Perícias"
                             st.rerun()
                 else: 
                     st.info("Sem perícias para editar.")
@@ -1619,11 +1679,22 @@ elif authentication_status == True:
                 st.header("📂 Novo Expediente")
                 with st.form("fc_exp", clear_on_submit=True):
                     proc, cli, desc, dt, resp = st.text_input("Processo"), st.text_input("Cliente"), st.text_input("Descrição"), st.date_input("Prazo", datetime.now()), st.text_input("Responsável")
-                    if st.form_submit_button("Salvar"):
+                    
+                    col_bx1, col_bx2 = st.columns(2)
+                    with col_bx1:
+                        salvar_exp = st.form_submit_button("Salvar", type="primary", use_container_width=True)
+                    with col_bx2:
+                        voltar_exp = st.form_submit_button("⬅️ Voltar", use_container_width=True)
+
+                    if salvar_exp:
                         supabase.table("expedientes").insert({"numero_processo": proc, "cliente": cli, "descricao": desc, "data_manifestacao": dt.strftime("%Y-%m-%d"), "responsavel": resp, "status": "Pendente"}).execute()
                         registrar_auditoria(username, "Cadastrar Expediente", "Expedientes", f"Processo: {proc}")
                         st.cache_data.clear()
                         st.session_state['cad_exp_sucesso'] = True
+                        st.rerun()
+                    if voltar_exp:
+                        st.session_state['submenu_atual'] = "Consultar Expedientes"
+                        st.rerun()
 
                 if st.session_state.get('cad_exp_sucesso'):
                     st.success("🎉 Expediente cadastrado com sucesso!")
@@ -1678,10 +1749,20 @@ elif authentication_status == True:
                     obj = edict[sel]
                     with st.form("fe_exp"):
                         ep, ec, ed, er, es = st.text_input("Processo", value=obj.get('numero_processo','')), st.text_input("Cliente", value=obj.get('cliente','')), st.text_input("Descrição", value=obj.get('descricao','')), st.text_input("Responsável", value=obj.get('responsavel','')), st.selectbox("Status", ["Pendente", "Em Andamento", "Manifestado"])
-                        if st.form_submit_button("Salvar"):
+                        
+                        col_eed1, col_eed2 = st.columns(2)
+                        with col_eed1:
+                            salvar_ed_exp = st.form_submit_button("Salvar", type="primary", use_container_width=True)
+                        with col_eed2:
+                            voltar_ed_exp = st.form_submit_button("⬅️ Voltar", use_container_width=True)
+
+                        if salvar_ed_exp:
                             supabase.table("expedientes").update({"numero_processo": ep, "cliente": ec, "descricao": ed, "responsavel": er, "status": es}).eq("id", obj['id']).execute()
                             registrar_auditoria(username, "Editar Expediente", "Expedientes", f"ID: {obj['id']}")
                             st.cache_data.clear(); st.success("Atualizado!"); st.rerun()
+                        if voltar_ed_exp:
+                            st.session_state['submenu_atual'] = "Consultar Expedientes"
+                            st.rerun()
             elif sub == "Excluir Expediente" and user_role == 'admin':
                 st.header("🗑️ Excluir Expediente")
                 res = carregar_dados("expedientes")
@@ -1707,11 +1788,22 @@ elif authentication_status == True:
                 st.header("⚖️ Novo Expediente TRF")
                 with st.form("fc_exp_trf", clear_on_submit=True):
                     proc, cli, desc, dt, resp = st.text_input("Processo"), st.text_input("Cliente"), st.text_input("Descrição"), st.date_input("Prazo", datetime.now()), st.text_input("Responsável")
-                    if st.form_submit_button("Salvar"):
+                    
+                    col_btrf1, col_btrf2 = st.columns(2)
+                    with col_btrf1:
+                        salvar_trf = st.form_submit_button("Salvar", type="primary", use_container_width=True)
+                    with col_btrf2:
+                        voltar_trf = st.form_submit_button("⬅️ Voltar", use_container_width=True)
+
+                    if salvar_trf:
                         supabase.table("expedientes_trf").insert({"numero_processo": proc, "cliente": cli, "descricao": desc, "data_manifestacao": dt.strftime("%Y-%m-%d"), "responsavel": resp, "status": "Pendente"}).execute()
                         registrar_auditoria(username, "Cadastrar Expediente TRF", "Expedientes TRF", f"Processo: {proc}")
                         st.cache_data.clear()
                         st.session_state['cad_trf_sucesso'] = True
+                        st.rerun()
+                    if voltar_trf:
+                        st.session_state['submenu_atual'] = "Consultar Expedientes TRF"
+                        st.rerun()
 
                 if st.session_state.get('cad_trf_sucesso'):
                     st.success("🎉 Expediente TRF cadastrado com sucesso!")
@@ -1766,10 +1858,20 @@ elif authentication_status == True:
                     obj = edict[sel]
                     with st.form("fe_exp_trf"):
                         ep, ec, ed, er, es = st.text_input("Processo", value=obj.get('numero_processo','')), st.text_input("Cliente", value=obj.get('cliente','')), st.text_input("Descrição", value=obj.get('descricao','')), st.text_input("Responsável", value=obj.get('responsavel','')), st.selectbox("Status", ["Pendente", "Em Andamento", "Manifestado"])
-                        if st.form_submit_button("Salvar"):
+                        
+                        col_edtrf1, col_edtrf2 = st.columns(2)
+                        with col_edtrf1:
+                            salvar_ed_trf = st.form_submit_button("Salvar", type="primary", use_container_width=True)
+                        with col_edtrf2:
+                            voltar_ed_trf = st.form_submit_button("⬅️ Voltar", use_container_width=True)
+
+                        if salvar_ed_trf:
                             supabase.table("expedientes_trf").update({"numero_processo": ep, "cliente": ec, "descricao": ed, "responsavel": er, "status": es}).eq("id", obj['id']).execute()
                             registrar_auditoria(username, "Editar Expediente TRF", "Expedientes TRF", f"ID: {obj['id']}")
                             st.cache_data.clear(); st.success("Atualizado!"); st.rerun()
+                        if voltar_ed_trf:
+                            st.session_state['submenu_atual'] = "Consultar Expedientes TRF"
+                            st.rerun()
                 else: st.info("Sem expedientes TRF.")
             elif sub == "Excluir Expediente TRF" and user_role == 'admin':
                 st.header("🗑️ Excluir Expediente TRF")
@@ -1798,7 +1900,14 @@ elif authentication_status == True:
                     cli, proc = st.text_input("Cliente"), st.text_input("Processo")
                     d1, d2, d3 = st.checkbox("Procuração / RG / CPF"), st.checkbox("Comprovante Residência"), st.checkbox("Laudos / Exames")
                     d4 = st.text_input("Outro")
-                    if st.form_submit_button("Salvar"):
+                    
+                    col_bpen1, col_bpen2 = st.columns(2)
+                    with col_bpen1:
+                        salvar_pen = st.form_submit_button("Salvar", type="primary", use_container_width=True)
+                    with col_bpen2:
+                        voltar_pen = st.form_submit_button("⬅️ Voltar", use_container_width=True)
+
+                    if salvar_pen:
                         docs = [d for d, b in zip(["Procuração/Docs", "Comp. Residência", "Laudos/Exames"], [d1, d2, d3]) if b]
                         if d4.strip(): docs.append(d4.strip())
                         if cli and docs:
@@ -1806,7 +1915,11 @@ elif authentication_status == True:
                             registrar_auditoria(username, "Cadastrar Pendência", "Pendências", f"Cliente: {cli}")
                             st.cache_data.clear()
                             st.session_state['cad_pen_sucesso'] = True
+                            st.rerun()
                         else: st.warning("Preencha o cliente e selecione ao menos um documento.")
+                    if voltar_pen:
+                        st.session_state['submenu_atual'] = "Consultar Pendências"
+                        st.rerun()
 
                 if st.session_state.get('cad_pen_sucesso'):
                     st.success("🎉 Pendência cadastrada com sucesso!")
@@ -1852,10 +1965,20 @@ elif authentication_status == True:
                     obj = pdict[sel]
                     with st.form("fe_pen"):
                         ec, ep, ed = st.text_input("Cliente", value=obj.get('cliente','')), st.text_input("Processo", value=obj.get('processo','')), st.text_input("Documentos", value=obj.get('documento_devido',''))
-                        if st.form_submit_button("Salvar"):
+                        
+                        col_edpen1, col_edpen2 = st.columns(2)
+                        with col_edpen1:
+                            salvar_ed_pen = st.form_submit_button("Salvar", type="primary", use_container_width=True)
+                        with col_edpen2:
+                            voltar_ed_pen = st.form_submit_button("⬅️ Voltar", use_container_width=True)
+
+                        if salvar_ed_pen:
                             supabase.table("pendencias").update({"cliente": ec, "processo": ep, "documento_devido": ed}).eq("id", obj['id']).execute()
                             registrar_auditoria(username, "Editar Pendência", "Pendências", f"ID: {obj['id']}")
                             st.cache_data.clear(); st.success("Atualizado!"); st.rerun()
+                        if voltar_ed_pen:
+                            st.session_state['submenu_atual'] = "Consultar Pendências"
+                            st.rerun()
             elif sub == "Excluir Pendência" and user_role == 'admin':
                 st.header("🗑️ Excluir Pendência")
                 res = carregar_dados("pendencias")

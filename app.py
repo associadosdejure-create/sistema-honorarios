@@ -313,6 +313,7 @@ elif authentication_status == True:
             "📂 Expedientes": "Expedientes",
             "⚖️ Expedientes TRF": "Expedientes TRF",
             "📋 Pendências": "Pendências",
+            "🧑‍⚖️ Equipe Dejure": "Equipe Dejure",
             "🔒 Segurança": "Segurança"
         }
         
@@ -329,6 +330,7 @@ elif authentication_status == True:
                     "Expedientes": "Consultar Expedientes", 
                     "Expedientes TRF": "Consultar Expedientes TRF",
                     "Pendências": "Consultar Pendências",
+                    "Equipe Dejure": "Nossa Equipe",
                     "Segurança": "Meu Perfil",
                     "Auditoria": "Ver Logs"
                 }.get(pag, "")
@@ -557,6 +559,8 @@ elif authentication_status == True:
             acoes = ["Consultar Pendências", "Cadastrar Pendência", "Importar Excel", "Editar Pendência"]
             if user_role == 'admin':
                 acoes.append("Excluir Pendência")
+        elif menu_principal == "Equipe Dejure":
+            acoes = ["Nossa Equipe"]
         elif menu_principal == "Segurança":
             acoes = ["Meu Perfil", "Alterar Senha"]
             if user_role == 'admin':
@@ -581,7 +585,47 @@ elif authentication_status == True:
         sub = st.session_state['submenu_atual']
 
         # --- PROCESSAMENTO DOS MÓDULOS ---
-        if menu_principal == "Segurança":
+        
+        if menu_principal == "Equipe Dejure":
+            if sub == "Nossa Equipe":
+                st.header("🧑‍⚖️ Equipe Dejure")
+                st.caption("Conheça os profissionais que fazem parte do nosso escritório.")
+                st.markdown("---")
+
+                usuarios_equipe = []
+                for uname, uinfo in credentials["usernames"].items():
+                    if uname != "master" and uinfo.get("name"):
+                        usuarios_equipe.append(uinfo)
+                
+                if not usuarios_equipe:
+                    st.info("Nenhum membro da equipe encontrado.")
+                else:
+                    cols = st.columns(4)
+                    for i, u in enumerate(usuarios_equipe):
+                        col = cols[i % 4]
+                        with col:
+                            with st.container(border=True):
+                                foto = u.get("foto_url")
+                                if foto:
+                                    st.image(foto, use_container_width=True)
+                                else:
+                                    st.markdown("<h1 style='text-align: center; margin: 0; padding: 40px 0; background-color: #1A1A1A; border-radius: 5px;'>👤</h1>", unsafe_allow_html=True)
+                                
+                                st.markdown(f"<h4 style='text-align: center; color: #D4AF37; margin-bottom: 0px;'>{u.get('name')}</h4>", unsafe_allow_html=True)
+                                papel_formatado = {"admin": "👑 Sócio", "advogado": "⚖️ Advogado(a)", "bacharel": "📜 Bacharel(a)"}.get(u.get("role"), "🎓 Estagiário")
+                                st.markdown(f"<p style='text-align: center; margin-bottom: 5px;'><b>{papel_formatado}</b></p>", unsafe_allow_html=True)
+                                
+                                if u.get("oab"):
+                                    st.markdown(f"<p style='text-align: center; font-size: 0.9em; margin-bottom: 0;'>OAB: {u.get('oab')}</p>", unsafe_allow_html=True)
+                                if u.get("telefone"):
+                                    st.markdown(f"<p style='text-align: center; font-size: 0.9em; margin-bottom: 0;'>📞 {u.get('telefone')}</p>", unsafe_allow_html=True)
+                                
+                                st.write("")
+                                if u.get("observacoes_pessoais"):
+                                    with st.expander("Ver perfil detalhado"):
+                                        st.write(u.get("observacoes_pessoais"))
+
+        elif menu_principal == "Segurança":
             if sub == "Meu Perfil":
                 st.header("👤 Meu Perfil de Usuário")
                 st.caption(f"Gerencie suas informações pessoais e envie sua foto de perfil diretamente do seu computador ou celular ({username}).")
@@ -1283,7 +1327,7 @@ elif authentication_status == True:
                 res_h = carregar_dados("honorarios")
                 if res_h:
                     hdict = {f"{h['cliente']} — {h['servico']}": h['id'] for h in res_h}
-                    sel = st.selectbox("Contrato:", list(cdict.keys())) if 'cdict' in locals() else st.selectbox("Contrato:", list(hdict.keys()))
+                    sel = st.selectbox("Contrato:", list(hdict.keys()))
                     if st.checkbox("Confirmo exclusão do contrato selecionado.") and st.button("EXCLUIR SELECIONADO", type="primary"):
                         supabase.table("honorarios").delete().eq("id", hdict[sel]).execute()
                         registrar_auditoria(username, "Excluir Contrato", "Pagamentos", f"ID: {hdict[sel]}")
@@ -1308,7 +1352,7 @@ elif authentication_status == True:
                     local_pm = st.text_input("Local PM")
                     dt_pm = st.date_input("Data PM", datetime.now())
                     hora_pm = st.text_input("Hora PM (ex: 14:30)")
-                    local_ps = st.text_input("Local PS")
+                    local_ps = st.text_input("Local PM")
                     dt_ps = st.date_input("Data PS", datetime.now())
                     hora_ps = st.text_input("Hora PS (ex: 15:30)")
                     senha_inss = st.text_input("Senha INSS")

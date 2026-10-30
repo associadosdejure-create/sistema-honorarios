@@ -13,7 +13,7 @@ import io
 
 st.set_page_config(page_title="Controle DEJURE ADVOCACIA", layout="wide", page_icon="⚖️")
 
-# --- ESTILIZAÇÃO CSS (PRETO, DOURADO E TABELAS COM TEXTO EXPANDIDO) ---
+# --- ESTILIZAÇÃO CSS ---
 st.markdown("""
     <style>
     .stApp { background-color: #0A0A0A !important; }
@@ -516,82 +516,58 @@ else:
             res_usuarios = supabase.table("usuarios_sistema").select("*").execute()
             lista_colabs = res_usuarios.data if res_usuarios.data else []
             
-            with st.expander("🛠️ Diagnóstico do Módulo Equipe Dejure", expanded=False):
-                st.write(f"Total de registros na tabela `usuarios_sistema`: **{len(lista_colabs)}**")
-                if lista_colabs: st.json(lista_colabs)
-                else: st.warning("A tabela retornou vazia.")
+            with st.expander("🛠️ Diagnóstico do Módulo Equipe Dejure", expanded=True):
+                st.write(f"Total de registros encontrados na tabela `usuarios_sistema`: **{len(lista_colabs)}**")
+                if lista_colabs: 
+                    st.json(lista_colabs)
+                else: 
+                    st.warning("A tabela retornou vazia.")
 
             if not lista_colabs:
                 st.warning("⚠️ Nenhum colaborador encontrado na tabela `usuarios_sistema` do Supabase.")
             else:
-                st.markdown("### 🏆 Colaborador(a) em Destaque do Mês")
-                colabs_validos = [u for u in lista_colabs if str(u.get('username', '')).strip().lower() != 'master']
-                
-                if colabs_validos:
-                    if user_role == 'admin':
-                        nomes_c = [c.get('nome_completo', c.get('name', '')) for c in colabs_validos]
-                        destaque_atual = st.selectbox("Selecione o Colaborador do Mês em Destaque:", nomes_c, index=0, key="sel_colab_mes")
-                    else:
-                        destaque_atual = colabs_validos[0].get('nome_completo', colabs_validos[0].get('name', ''))
-
-                    obj_destaque = next((c for c in colabs_validos if c.get('nome_completo') == destaque_atual or c.get('name') == destaque_atual), colabs_validos[0])
-                    
-                    col_d1, col_d2, col_d3 = st.columns([1, 2, 1])
-                    with col_d2:
-                        st.markdown("""
-                            <div style="background: linear-gradient(135deg, #1F1F1F, #121212); padding: 20px; border-radius: 15px; border: 2px solid #D4AF37; text-align: center; box-shadow: 0px 4px 15px rgba(212, 175, 55, 0.3);">
-                        """, unsafe_allow_html=True)
-                        
-                        foto_dest = obj_destaque.get('foto_url')
-                        if not exibir_imagem_base64(foto_dest, width=140):
-                            st.markdown("<h1 style='font-size: 60px; margin: 0;'>⭐</h1>", unsafe_allow_html=True)
-                        
-                        st.markdown(f"<h3 style='color: #D4AF37; margin-top: 10px;'>{obj_destaque.get('nome_completo', obj_destaque.get('name', ''))}</h3>", unsafe_allow_html=True)
-                        papel_d = {"admin": "👑 Sócio Administrador", "advogado": "⚖️ Advogado(a)", "bacharel": "📜 Bacharel(a)"}.get(obj_destaque.get('role'), "🎓 Estagiário(a)")
-                        st.markdown(f"<p style='color: #E0E0E0; font-weight: bold;'>{papel_d}</p>", unsafe_allow_html=True)
-                        if obj_destaque.get('oab'):
-                            st.markdown(f"<p style='color: #A0A0A0; font-size: 14px;'>OAB: {obj_destaque.get('oab')}</p>", unsafe_allow_html=True)
-                        
-                        st.markdown("</div>", unsafe_allow_html=True)
-
                 st.markdown("---")
                 st.markdown("### 🖼️ Galeria de Profissionais")
                 
                 cols_galeria = st.columns(3)
                 for idx, colab in enumerate(lista_colabs):
-                    col_atual = cols_galeria[idx % 3]
-                    with col_atual:
-                        st.markdown("""
-                            <div style="background-color: #161616; padding: 15px; border-radius: 10px; border: 1px solid #333333; text-align: center; margin-bottom: 15px; min-height: 280px;">
-                        """, unsafe_allow_html=True)
-                        
-                        f_url = colab.get('foto_url')
-                        if not exibir_imagem_base64(f_url, width=110):
-                            st.markdown("<h1 style='font-size: 50px; margin: 0;'>👤</h1>", unsafe_allow_html=True)
-                        
-                        nome_c = colab.get('nome_completo', colab.get('name', ''))
-                        cargo_c = {"admin": "👑 Sócio", "advogado": "⚖️ Advogado(a)", "bacharel": "📜 Bacharel(a)"}.get(colab.get('role'), "🎓 Estagiário(a)")
-                        
-                        st.markdown(f"<h4 style='color: #D4AF37; margin: 10px 0 5px 0;'>{nome_c}</h4>", unsafe_allow_html=True)
-                        st.markdown(f"<p style='color: #CCCCCC; font-size: 13px; margin: 0;'>{cargo_c}</p>", unsafe_allow_html=True)
-                        
-                        if colab.get('oab'):
-                            st.markdown(f"<p style='color: #999999; font-size: 12px; margin: 2px 0;'>OAB: {colab.get('oab')}</p>", unsafe_allow_html=True)
-                        
-                        if colab.get('telefone'):
-                            st.markdown(f"<p style='color: #999999; font-size: 12px; margin: 2px 0;'>📞 {colab.get('telefone')}</p>", unsafe_allow_html=True)
-                        
-                        dt_nasc = colab.get('data_nascimento')
-                        if dt_nasc:
-                            try:
-                                dt_obj = datetime.strptime(dt_nasc, "%Y-%m-%d")
-                                st.markdown(f"<p style='color: #00CC96; font-size: 12px; margin-top: 5px;'>🎂 Aniversário: <strong>{dt_obj.strftime('%d/%m')}</strong></p>", unsafe_allow_html=True)
-                            except:
-                                pass
-                        
-                        st.markdown("</div>", unsafe_allow_html=True)
+                    try:
+                        col_atual = cols_galeria[idx % 3]
+                        with col_atual:
+                            st.markdown("""
+                                <div style="background-color: #161616; padding: 15px; border-radius: 10px; border: 1px solid #333333; text-align: center; margin-bottom: 15px; min-height: 250px;">
+                            """, unsafe_allow_html=True)
+                            
+                            f_url = colab.get('foto_url')
+                            if not exibir_imagem_base64(f_url, width=110):
+                                st.markdown("<h1 style='font-size: 50px; margin: 0;'>👤</h1>", unsafe_allow_html=True)
+                            
+                            nome_c = str(colab.get('nome_completo') or colab.get('name') or 'Sem Nome')
+                            cargo_bruto = str(colab.get('role', 'estagiario')).lower()
+                            cargo_c = {"admin": "👑 Sócio", "advogado": "⚖️ Advogado(a)", "bacharel": "📜 Bacharel(a)"}.get(cargo_bruto, "🎓 Estagiário(a)")
+                            
+                            st.markdown(f"<h4 style='color: #D4AF37; margin: 10px 0 5px 0;'>{nome_c}</h4>", unsafe_allow_html=True)
+                            st.markdown(f"<p style='color: #CCCCCC; font-size: 13px; margin: 0;'>{cargo_c}</p>", unsafe_allow_html=True)
+                            
+                            if colab.get('oab'):
+                                st.markdown(f"<p style='color: #999999; font-size: 12px; margin: 2px 0;'>OAB: {colab.get('oab')}</p>", unsafe_allow_html=True)
+                            
+                            if colab.get('telefone'):
+                                st.markdown(f"<p style='color: #999999; font-size: 12px; margin: 2px 0;'>📞 {colab.get('telefone')}</p>", unsafe_allow_html=True)
+                            
+                            dt_nasc = colab.get('data_nascimento')
+                            if dt_nasc:
+                                try:
+                                    dt_obj = datetime.strptime(str(dt_nasc)[:10], "%Y-%m-%d")
+                                    st.markdown(f"<p style='color: #00CC96; font-size: 12px; margin-top: 5px;'>🎂 Aniversário: <strong>{dt_obj.strftime('%d/%m')}</strong></p>", unsafe_allow_html=True)
+                                except:
+                                    pass
+                            
+                            st.markdown("</div>", unsafe_allow_html=True)
+                    except Exception as card_err:
+                        st.error(f"Erro ao renderizar um dos cards: {card_err}")
         except Exception as e:
-            st.error(f"Erro ao carregar a galeria da equipe: {e}")
+            st.error(f"Erro crítico ao carregar a galeria da equipe: {e}")
 
     elif menu_escolha == "Auditoria" and user_role == 'admin':
         st.title("🛡️ Central de Auditoria do Sistema")
@@ -682,7 +658,7 @@ else:
         st.markdown("---")
         sub = st.session_state['submenu_atual']
 
-        # --- PROCESSAMENTO DOS MÓDULOS RESTAURADOS ---
+        # --- PROCESSAMENTO DOS MÓDULOS ---
         if menu_principal == "Segurança":
             if sub == "Meu Perfil":
                 st.header("👤 Meu Perfil de Usuário")

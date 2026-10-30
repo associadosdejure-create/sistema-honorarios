@@ -85,7 +85,9 @@ def carregar_usuarios_db():
                 "trocar_senha": False,
                 "foto_url": None,
                 "telefone": "",
-                "oab": ""
+                "oab": "",
+                "data_nascimento": None,
+                "observacoes_pessoais": ""
             }
         }
     }
@@ -109,6 +111,7 @@ def carregar_usuarios_db():
                     "foto_url": u.get("foto_url", None),
                     "telefone": u.get("telefone", ""),
                     "oab": u.get("oab", ""),
+                    "data_nascimento": u.get("data_nascimento", None),
                     "observacoes_pessoais": u.get("observacoes_pessoais", "")
                 }
     except Exception:
@@ -313,6 +316,7 @@ elif authentication_status == True:
             "📂 Expedientes": "Expedientes",
             "⚖️ Expedientes TRF": "Expedientes TRF",
             "📋 Pendências": "Pendências",
+            "🌟 Equipe Dejure": "Equipe Dejure",
             "🔒 Segurança": "Segurança"
         }
         
@@ -322,7 +326,7 @@ elif authentication_status == True:
         for label, pag in modulos.items():
             if st.button(label, use_container_width=True):
                 st.session_state['pagina_atual'] = pag
-                st.session_state['submenu_atual'] = "" if pag == "🏠 Página Inicial" else {
+                st.session_state['submenu_atual'] = "" if pag in ["🏠 Página Inicial", "🌟 Equipe Dejure"] else {
                     "Clientes": "Consultar Clientes", 
                     "Pagamentos": "Ver Parcelas", 
                     "Perícias": "Ver Perícias", 
@@ -483,6 +487,98 @@ elif authentication_status == True:
         except Exception as e: 
             st.error(f"Erro ao carregar central de alertas: {e}")
     
+    elif menu_escolha == "🌟 Equipe Dejure":
+        st.title("🌟 Galeria da Equipe Dejure")
+        st.caption("Conheça os profissionais que compõem o nosso escritório e celebre os aniversariantes.")
+        
+        try:
+            res_usuarios = supabase.table("usuarios_sistema").select("*").execute()
+            lista_colabs = res_usuarios.data if res_usuarios.data else []
+            
+            # --- QUADRO SUPERIOR: COLABORADOR DO MÊS ---
+            st.markdown("### 🏆 Colaborador(a) em Destaque do Mês")
+            
+            # Filtra usuários válidos (exclui o master se desejar, ou mantém)
+            colabs_validos = [u for u in lista_colabs if u.get('username') != 'master']
+            
+            if colabs_validos:
+                # Se houver campo colaborador do mês salvo nas configurações globais ou podemos selecionar o primeiro/definir via selectbox de admin
+                # Aqui vamos buscar se existe um admin configurado ou permitir escolher o destaque do mês:
+                if user_role == 'admin':
+                    st.caption("⚙️ Painel do Sócio: Defina quem será o Colaborador do Mês em destaque.")
+                    nomes_c = [c.get('nome_completo', c.get('name', '')) for c in colabs_validos]
+                    destaque_atual = st.selectbox("Selecione o Colaborador do Mês em Destaque:", nomes_c, index=0)
+                else:
+                    destaque_atual = colabs_validos[0].get('nome_completo', colabs_validos[0].get('name', ''))
+
+                # Encontra o objeto do colaborador em destaque
+                obj_destaque = next((c for c in colabs_validos if c.get('nome_completo') == destaque_atual or c.get('name') == destaque_atual), colabs_validos[0])
+                
+                col_d1, col_d2, col_d3 = st.columns([1, 2, 1])
+                with col_d2:
+                    st.markdown("""
+                        <div style="background: linear-gradient(135deg, #1F1F1F, #121212); padding: 20px; border-radius: 15px; border: 2px solid #D4AF37; text-align: center; box-shadow: 0px 4px 15px rgba(212, 175, 55, 0.3);">
+                    """, unsafe_allow_html=True)
+                    
+                    foto_dest = obj_destaque.get('foto_url')
+                    if foto_dest:
+                        st.image(foto_dest, width=150)
+                    else:
+                        st.markdown("<h1 style='font-size: 60px; margin: 0;'>⭐</h1>", unsafe_allow_html=True)
+                    
+                    st.markdown(f"<h3 style='color: #D4AF37; margin-top: 10px;'>{obj_destaque.get('nome_completo', obj_destaque.get('name', ''))}</h3>", unsafe_allow_html=True)
+                    papel_d = {"admin": "👑 Sócio Administrador", "advogado": "⚖️ Advogado(a)", "bacharel": "📜 Bacharel(a)"}.get(obj_destaque.get('role'), "🎓 Estagiário(a)")
+                    st.markdown(f"<p style='color: #E0E0E0; font-weight: bold;'>{papel_d}</p>", unsafe_allow_html=True)
+                    if obj_destaque.get('oab'):
+                        st.markdown(f"<p style='color: #A0A0A0; font-size: 14px;'>OAB: {obj_destaque.get('oab')}</p>", unsafe_allow_html=True)
+                    
+                    st.markdown("</div>", unsafe_allow_html=True)
+
+            st.markdown("---")
+            st.markdown("### 🖼️ Galeria de Profissionais")
+            
+            if lista_colabs:
+                cols_galeria = st.columns(3)
+                for idx, colab in enumerate(lista_colabs):
+                    col_atual = cols_galeria[idx % 3]
+                    with col_atual:
+                        st.markdown("""
+                            <div style="background-color: #161616; padding: 15px; border-radius: 10px; border: 1px solid #333333; text-align: center; margin-bottom: 15px; min-height: 280px;">
+                        """, unsafe_allow_html=True)
+                        
+                        f_url = colab.get('foto_url')
+                        if f_url:
+                            st.image(f_url, width=120)
+                        else:
+                            st.markdown("<h1 style='font-size: 50px; margin: 0;'>👤</h1>", unsafe_allow_html=True)
+                        
+                        nome_c = colab.get('nome_completo', colab.get('name', ''))
+                        cargo_c = {"admin": "👑 Sócio", "advogado": "⚖️ Advogado(a)", "bacharel": "📜 Bacharel(a)"}.get(colab.get('role'), "🎓 Estagiário(a)")
+                        
+                        st.markdown(f"<h4 style='color: #D4AF37; margin: 10px 0 5px 0;'>{nome_c}</h4>", unsafe_allow_html=True)
+                        st.markdown(f"<p style='color: #CCCCCC; font-size: 13px; margin: 0;'>{cargo_c}</p>", unsafe_allow_html=True)
+                        
+                        if colab.get('oab'):
+                            st.markdown(f"<p style='color: #999999; font-size: 12px; margin: 2px 0;'>OAB: {colab.get('oab')}</p>", unsafe_allow_html=True)
+                        
+                        if colab.get('telefone'):
+                            st.markdown(f"<p style='color: #999999; font-size: 12px; margin: 2px 0;'>📞 {colab.get('telefone')}</p>", unsafe_allow_html=True)
+                        
+                        # Aniversário formatado (Dia e Mês)
+                        dt_nasc = colab.get('data_nascimento')
+                        if dt_nasc:
+                            try:
+                                dt_obj = datetime.strptime(dt_nasc, "%Y-%m-%d")
+                                st.markdown(f"<p style='color: #00CC96; font-size: 12px; margin-top: 5px;'>🎂 Aniversário: <strong>{dt_obj.strftime('%d/%m')}</strong></p>", unsafe_allow_html=True)
+                            except:
+                                pass
+                        
+                        st.markdown("</div>", unsafe_allow_html=True)
+            else:
+                st.info("Nenhum usuário cadastrado na equipe.")
+        except Exception as e:
+            st.error(f"Erro ao carregar a galeria da equipe: {e}")
+
     elif menu_escolha == "Auditoria" and user_role == 'admin':
         st.title("🛡️ Central de Auditoria do Sistema")
         st.caption("Acompanhe as ações gerais do sistema e os registros de acesso dos usuários.")
@@ -584,7 +680,7 @@ elif authentication_status == True:
         if menu_principal == "Segurança":
             if sub == "Meu Perfil":
                 st.header("👤 Meu Perfil de Usuário")
-                st.caption(f"Gerencie suas informações pessoais e envie sua foto de perfil diretamente do seu computador ou celular ({username}).")
+                st.caption(f"Gerencie suas informações pessoais, data de nascimento e envie sua foto de perfil ({username}).")
                 
                 col_pf1, col_pf2 = st.columns([1, 2])
                 
@@ -599,6 +695,14 @@ elif authentication_status == True:
                         p_nome = st.text_input("Nome Completo", value=user_info.get("name", ""))
                         p_tel = st.text_input("Telefone de Contato", value=user_info.get("telefone", ""))
                         p_oab = st.text_input("Registro OAB / Identificação Profissional", value=user_info.get("oab", ""))
+                        
+                        dt_nasc_val = date(1990, 1, 1)
+                        if user_info.get("data_nascimento"):
+                            try:
+                                dt_nasc_val = datetime.strptime(user_info.get("data_nascimento"), "%Y-%m-%d").date()
+                            except:
+                                pass
+                        p_nasc = st.date_input("Data de Nascimento", value=dt_nasc_val)
                         
                         file_foto = st.file_uploader("Escolher Foto do Computador ou Celular (.png, .jpg, .jpeg)", type=["png", "jpg", "jpeg"])
                         
@@ -618,11 +722,12 @@ elif authentication_status == True:
                                         "name": p_nome,
                                         "telefone": p_tel,
                                         "oab": p_oab,
+                                        "data_nascimento": p_nasc.strftime("%Y-%m-%d"),
                                         "foto_url": foto_final,
                                         "observacoes_pessoais": p_obs
                                     }).eq("username", username).execute()
                                     
-                                    registrar_auditoria(username, "Atualizar Perfil", "Segurança", "Dados de perfil e foto atualizados via upload.")
+                                    registrar_auditoria(username, "Atualizar Perfil", "Segurança", "Dados de perfil, nascimento e foto atualizados.")
                                     st.cache_data.clear()
                                     st.success("✅ Perfil atualizado com sucesso!")
                                     time.sleep(1)
@@ -711,7 +816,7 @@ elif authentication_status == True:
                     res_users = supabase.table("usuarios_sistema").select("*").execute()
                     if res_users.data:
                         df_u = pd.DataFrame(res_users.data)
-                        colunas_visiveis = [c for c in ['id', 'username', 'nome_completo', 'name', 'role', 'trocar_senha', 'telefone', 'oab'] if c in df_u.columns]
+                        colunas_visiveis = [c for c in ['id', 'username', 'nome_completo', 'name', 'role', 'trocar_senha', 'telefone', 'oab', 'data_nascimento'] if c in df_u.columns]
                         st.dataframe(df_u[colunas_visiveis], use_container_width=True, hide_index=True)
                         
                         st.markdown("---")
@@ -1628,7 +1733,7 @@ elif authentication_status == True:
 
                 if st.session_state.get('cad_pen_sucesso'):
                     st.success("🎉 Pendência cadastrada com sucesso!")
-                    if st.button("➕ Cadastrar Nova Pendência", key="btn_novo_pen", type="primary"):
+                    if st.button("➕ Cadastrar Novo Pendência", key="btn_novo_pen", type="primary"):
                         st.session_state['cad_pen_sucesso'] = False
                         st.rerun()
 

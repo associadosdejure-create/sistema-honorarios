@@ -121,7 +121,6 @@ except Exception:
 name = st.session_state.get('name')
 username = st.session_state.get('username')
 
-# Registrar Login se autenticado com sucesso e ainda não marcado na sessão
 if authentication_status == True and not st.session_state.get('login_registrado', False):
     registrar_auditoria(username, "Login", "Acesso", f"Usuário {name} ({username}) efetuou login no sistema.")
     st.session_state['login_registrado'] = True
@@ -253,7 +252,6 @@ elif authentication_status == True:
         st.markdown(f"⏳ **Sessão expira em:**\n### `{min_res:02d}:{seg_res:02d}`")
         st.markdown("---")
         
-        # Botão de Logout personalizado para registrar na auditoria antes de sair
         if st.button("Sair", use_container_width=True):
             registrar_auditoria(username, "Logout", "Acesso", f"Usuário {name} ({username}) efetuou logout do sistema.")
             st.session_state.update({'authentication_status': None, 'login_registrado': False})
@@ -645,29 +643,74 @@ elif authentication_status == True:
 
         elif menu_principal == "Pagamentos":
             if sub == "Cadastrar Contrato / Parcelas":
-                st.header("📝 Novo Contrato")
+                st.header("📝 Novo Contrato e Parcelamento")
                 cli_db = carregar_dados("clientes_cadastrados")
                 nomes = [c['nome'] for c in cli_db]
                 with st.form("fc_hon"):
                     cli_op = st.selectbox("Cliente:", ["Outro"] + nomes) if nomes else "Outro"
                     cli = st.text_input("Nome") if cli_op == "Outro" else cli_op
-                    serv, vtot, npar, dt1 = st.text_input("Serviço"), st.number_input("Valor Total", min_value=0.0), st.number_input("Parcelas", min_value=1, max_value=36, value=3), st.date_input("1º Vencimento", datetime.now())
-                    if st.form_submit_button("Gerar"):
-                        if cli and serv and vtot > 0:
+                    serv = st.text_input("Serviço")
+                    vtot = st.number_input("Valor Total do Contrato (R$)", min_value=0.0, step=100.0)
+                    
+                    col_e1, col_e2 = st.columns(2)
+                    with col_e1:
+                        v_entrada = st.number_input("Valor de Entrada (R$)", min_value=0.0, step=50.0, value=0.0)
+                    with col_e2:
+                        npar = st.number_input("Quantidade de Parcelas (Restante)", min_value=1, max_value=36, value=3)
+                    
+                    dt1 = st.date_input("Vencimento da 1ª Parcela (ou Entrada)", datetime.now())
+                    
+                    if st.form_submit_button("Gerar Contrato e Parcelas"):
+                        if not cli or not serv or vtot <= 0:
+                            st.error("Preencha o cliente, o serviço e um valor total válido.")
+                        elif v_entrada > vtot:
+                            st.error("O valor da entrada não pode ser maior que o valor total do contrato.")
+                        else:
+                            # Salva o contrato principal
                             res = supabase.table("honorarios").insert({"cliente": cli, "servico": serv, "valor_total": float(vtot)}).execute()
                             if res.data:
                                 h_id = res.data[0]['id']
-                                vp = vtot / npar
-                                for i in range(int(npar)):
-                                    venc = (dt1 + relativedelta(months=i)).strftime("%Y-%m-%d")
-                                    supabase.table("parcelas").insert({"honorario_id": h_id, "numero_parcela": f"{i+1}/{int(npar)}", "valor": float(vp), "vencimento": venc, "status": "Pendente"}).execute()
-                                registrar_auditoria(username, "Cadastrar Contrato", "Pagamentos", f"Cliente: {cli} - R$ {vtot}")
-                                st.cache_data.clear(); st.success("Contrato cadastrado!")
+                                
+                                # Calcula saldo devedor restante
+                                saldo_restante = vtot - v_entrada
+                                
+                                # Se houver entrada, gera a parcela de entrada como Paga (ou pendente)
+                                indice_inicial = 0
+                                if v_entrada > 0:
+                                    supabase.table("parcelas").insert({
+                                        "honorario_id": h_id, 
+                                        "numero_parcela": "Entrada", 
+                                        "valor": float(v_entrada), 
+                                        "vencimento": dt1.strftime("%Y-%m-%d"), 
+                                        "status": "Pago"
+                                    }).execute()
+                                    # Se houve entrada, as parcelas mensais começam a contar a partir do mês seguinte
+                                    data_primeira_parcela = dt1 + relativedelta(months=1)
+                                else:
+                                    data_primeira_parcela = dt1
+
+                                # Gera as parcelas restantes
+                                if npar > 0 and saldo_restante > 0:
+                                    vp = saldo_restante / npar
+                                    for i in range(int(npar)):
+                                        venc = (data_primeira_parcela + relativedelta(months=i)).strftime("%Y-%m-%d")
+                                        supabase.table("parcelas").insert({
+                                            "honorario_id": h_id, 
+                                            "numero_parcela": f"{i+1}/{int(npar)}", 
+                                            "valor": float(vp), 
+                                            "vencimento": venc, 
+                                            "status": "Pendente"
+                                        }).execute()
+
+                                registrar_auditoria(username, "Cadastrar Contrato com Entrada", "Pagamentos", f"Cliente: {cli} - Total: R$ {vtot} (Entrada: R$ {v_entrada})")
+                                st.cache_data.clear()
+                                st.success("🎉 Contrato e parcelas gerados com sucesso!")
+
             elif sub == "Ver Parcelas":
                 st.header("📋 Visualizar Parcelas")
                 res_h = carregar_dados("honorarios")
                 if res_h:
-                    cdict = {f"{h['cliente']} — {h['servico']}": h['id'] for h in res_h}
+                    cdict = {f"{h['cliente']} — {h['servico']} (Total: R$ {h.get('valor_total', 0)})": h['id'] for h in res_h}
                     sel = st.selectbox("Contrato:", list(cdict.keys()))
                     res_p = supabase.table("parcelas").select("*").eq("honorario_id", cdict[sel]).execute()
                     if res_p.data: 
@@ -714,7 +757,7 @@ elif authentication_status == True:
                 res_h = carregar_dados("honorarios")
                 if res_h:
                     hdict = {f"{h['cliente']} — {h['servico']}": h['id'] for h in res_h}
-                    sel = st.selectbox("Contrato:", list(cdict.keys()))
+                    sel = st.selectbox("Contrato:", list(hdict.keys()))
                     if st.checkbox("Confirmo exclusão do contrato selecionado.") and st.button("EXCLUIR SELECIONADO", type="primary"):
                         supabase.table("honorarios").delete().eq("id", hdict[sel]).execute()
                         registrar_auditoria(username, "Excluir Contrato", "Pagamentos", f"ID: {hdict[sel]}")

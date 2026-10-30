@@ -147,7 +147,6 @@ elif authentication_status == True:
     if 'pagina_atual' not in st.session_state: st.session_state['pagina_atual'] = "🏠 Página Inicial"
     if 'submenu_atual' not in st.session_state: st.session_state['submenu_atual'] = ""
     
-    # Inicializa os estados de ocultação visual dos alertas por sessão
     if 'ocultar_vencidos' not in st.session_state: st.session_state['ocultar_vencidos'] = set()
     if 'ocultar_urgentes' not in st.session_state: st.session_state['ocultar_urgentes'] = set()
     if 'ocultar_lembretes' not in st.session_state: st.session_state['ocultar_lembretes'] = set()
@@ -325,7 +324,6 @@ elif authentication_status == True:
                 tab_per, tab_exp, tab_trf, tab_pag = st.tabs(["🔬 Perícias", "📂 Expedientes", "⚖️ Expedientes TRF", "💰 Pagamentos"])
 
                 def renderizar_lista_alerta(lista_alertas, nome_cat):
-                    # Filtra os itens ocultados visualmente nesta sessão
                     lista_visivel = [
                         item for item in lista_alertas 
                         if item[2] not in st.session_state['ocultar_vencidos'] 
@@ -337,7 +335,6 @@ elif authentication_status == True:
                         st.info("Nenhum alerta pendente visível nesta categoria.")
                         return
 
-                    # Botões de Limpeza Visual (Exclusivo para Admin)
                     if user_role == 'admin':
                         st.markdown(f"##### ⚡ Limpeza Visual (Apenas Tela)")
                         col_b1, col_b2, col_b3 = st.columns(3)

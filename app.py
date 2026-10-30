@@ -270,7 +270,8 @@ elif authentication_status == True:
         else:
             st.markdown("<h2 style='text-align: center; color: #D4AF37;'>⚖️ DEJURE ADVOCACIA</h2>", unsafe_allow_html=True)
 
-        st.title(f"Seja bem-vindo, {name}! ⚖️")
+        # TEXTO DE BOAS-VINDAS COM FONTE MENOR (Usando ### em vez de st.title)
+        st.markdown(f"### Seja bem-vindo, {name}! ⚖️")
         st.markdown("### 📊 Visão Geral do Escritório")
         
         try:
@@ -666,16 +667,12 @@ elif authentication_status == True:
                         elif v_entrada > vtot:
                             st.error("O valor da entrada não pode ser maior que o valor total do contrato.")
                         else:
-                            # Salva o contrato principal
                             res = supabase.table("honorarios").insert({"cliente": cli, "servico": serv, "valor_total": float(vtot)}).execute()
                             if res.data:
                                 h_id = res.data[0]['id']
                                 
-                                # Calcula saldo devedor restante
                                 saldo_restante = vtot - v_entrada
                                 
-                                # Se houver entrada, gera a parcela de entrada como Paga (ou pendente)
-                                indice_inicial = 0
                                 if v_entrada > 0:
                                     supabase.table("parcelas").insert({
                                         "honorario_id": h_id, 
@@ -684,12 +681,10 @@ elif authentication_status == True:
                                         "vencimento": dt1.strftime("%Y-%m-%d"), 
                                         "status": "Pago"
                                     }).execute()
-                                    # Se houve entrada, as parcelas mensais começam a contar a partir do mês seguinte
                                     data_primeira_parcela = dt1 + relativedelta(months=1)
                                 else:
                                     data_primeira_parcela = dt1
 
-                                # Gera as parcelas restantes
                                 if npar > 0 and saldo_restante > 0:
                                     vp = saldo_restante / npar
                                     for i in range(int(npar)):
@@ -757,7 +752,7 @@ elif authentication_status == True:
                 res_h = carregar_dados("honorarios")
                 if res_h:
                     hdict = {f"{h['cliente']} — {h['servico']}": h['id'] for h in res_h}
-                    sel = st.selectbox("Contrato:", list(hdict.keys()))
+                    sel = st.selectbox("Contrato:", list(cdict.keys()))
                     if st.checkbox("Confirmo exclusão do contrato selecionado.") and st.button("EXCLUIR SELECIONADO", type="primary"):
                         supabase.table("honorarios").delete().eq("id", hdict[sel]).execute()
                         registrar_auditoria(username, "Excluir Contrato", "Pagamentos", f"ID: {hdict[sel]}")

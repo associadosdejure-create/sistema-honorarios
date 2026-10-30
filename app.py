@@ -71,7 +71,8 @@ def carregar_usuarios_db():
             "master": {
                 "name": "Administrador Master",
                 "password": senha_padrao_hash,
-                "role": "admin"
+                "role": "admin",
+                "trocar_senha": False  # Master isento da obrigatoriedade
             }
         }
     }
@@ -90,7 +91,8 @@ def carregar_usuarios_db():
                 cred_dict["usernames"][uname] = {
                     "name": str(u.get("nome_completo", u.get("name", "Usuário"))),
                     "password": senha_db,
-                    "role": str(u.get("role", "estagiario"))
+                    "role": str(u.get("role", "estagiario")),
+                    "trocar_senha": u.get("trocar_senha", True) # Padrão True para novos acessos
                 }
     except Exception:
         pass
@@ -148,7 +150,46 @@ elif authentication_status == True:
     t_rest = TEMPO_MAXIMO - (agora - st.session_state['ultima_atividade'])
     min_res, seg_res = max(0, int(t_rest // 60)), max(0, int(t_rest % 60))
 
-    user_role = credentials["usernames"].get(username, {}).get("role", "estagiario")
+    user_info = credentials["usernames"].get(username, {})
+    user_role = user_info.get("role", "estagiario")
+    
+    # --- BLOQUEIO DE PRIMEIRO ACESSO (TROCA DE SENHA OBRIGATÓRIA) ---
+    precisa_trocar_senha = user_info.get("trocar_senha", False) if username != "master" else False
+
+    if precisa_trocar_senha:
+        st.markdown("<h2 style='text-align: center; color: #D4AF37;'>🔒 PRIMEIRO ACESSO DETECTADO</h2>", unsafe_allow_html=True)
+        st.warning(f"Olá, **{name}**! Por razões de segurança do escritório, você deve cadastrar uma nova senha pessoal antes de acessar o sistema.")
+        
+        col_pa1, col_pa2, col_pa3 = st.columns([1, 2, 1])
+        with col_pa2:
+            with st.form("form_primeiro_acesso"):
+                nova_s = st.text_input("Nova Senha Pessoal", type="password")
+                conf_s = st.text_input("Confirme a Nova Senha", type="password")
+                
+                if st.form_submit_button("Atualizar Senha e Entrar", type="primary"):
+                    if not nova_s or nova_s != conf_s:
+                        st.error("As senhas não coincidem ou estão em branco.")
+                    elif nova_s == "mudar123":
+                        st.error("A nova senha não pode ser igual à senha padrão ('mudar123'). Escolha uma senha segura.")
+                    else:
+                        hash_novo = gerar_hash(nova_s)
+                        try:
+                            supabase.table("usuarios_sistema").update({
+                                "senha_hash": hash_novo,
+                                "password": hash_novo,
+                                "trocar_senha": False
+                            }).eq("username", username).execute()
+                            
+                            registrar_auditoria(username, "Troca de Senha Obrigatória", "Segurança", "Senha alterada com sucesso no primeiro acesso.")
+                            st.cache_data.clear()
+                            st.success("🎉 Senha alterada com sucesso! Liberando acesso ao sistema...")
+                            time.sleep(1)
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"Erro ao atualizar senha no banco: {e}")
+        
+        # Interrompe a renderização do restante da aplicação (Menu e Módulos)
+        st.stop()
 
     if 'pagina_atual' not in st.session_state: st.session_state['pagina_atual'] = "🏠 Página Inicial"
     if 'submenu_atual' not in st.session_state: st.session_state['submenu_atual'] = ""
@@ -539,7 +580,8 @@ elif authentication_status == True:
                                     "name": new_name,
                                     "senha_hash": senha_hash,
                                     "password": senha_hash,
-                                    "role": new_role
+                                    "role": new_role,
+                                    "trocar_senha": True # Exige troca de senha no 1º acesso
                                 }).execute()
                                 registrar_auditoria(username, "Cadastrar Usuário", "Segurança", f"Novo usuário criado: {new_user} ({new_role})")
                                 st.cache_data.clear()
@@ -553,7 +595,7 @@ elif authentication_status == True:
                     res_users = supabase.table("usuarios_sistema").select("*").execute()
                     if res_users.data:
                         df_u = pd.DataFrame(res_users.data)
-                        colunas_visiveis = [c for c in ['id', 'username', 'nome_completo', 'name', 'role'] if c in df_u.columns]
+                        colunas_visiveis = [c for c in ['id', 'username', 'nome_completo', 'name', 'role', 'trocar_senha'] if c in df_u.columns]
                         st.dataframe(df_u[colunas_visiveis], use_container_width=True, hide_index=True)
                         
                         st.markdown("---")
@@ -796,7 +838,7 @@ elif authentication_status == True:
                                     regra_aplicada = "Entrada (Acúmulo)"
                                     taxa = 0.60 if resp_role in ['admin', 'advogado'] else 0.40
                                     val_operador = valor_bruto * taxa
-                                    val_prospectador = val_operador # Visualmente
+                                    val_prospectador = val_operador
                                     saldo -= val_operador
                                     
                                     if valor_bruto > 1000.0:

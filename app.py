@@ -76,7 +76,10 @@ def carregar_usuarios_db():
                 "name": "Administrador Master",
                 "password": senha_padrao_hash,
                 "role": "admin",
-                "trocar_senha": False  # Master isento da obrigatoriedade
+                "trocar_senha": False,
+                "foto_url": None,
+                "telefone": "",
+                "oab": ""
             }
         }
     }
@@ -96,7 +99,11 @@ def carregar_usuarios_db():
                     "name": str(u.get("nome_completo", u.get("name", "Usuário"))),
                     "password": senha_db,
                     "role": str(u.get("role", "estagiario")),
-                    "trocar_senha": u.get("trocar_senha", True) if "trocar_senha" in u else True
+                    "trocar_senha": u.get("trocar_senha", True) if "trocar_senha" in u else True,
+                    "foto_url": u.get("foto_url", None),
+                    "telefone": u.get("telefone", ""),
+                    "oab": u.get("oab", ""),
+                    "observacoes_pessoais": u.get("observacoes_pessoais", "")
                 }
     except Exception:
         pass
@@ -277,6 +284,15 @@ elif authentication_status == True:
         return ''
 
     with st.sidebar:
+        # --- EXIBIÇÃO DA FOTO DE PERFIL ---
+        user_foto = user_info.get("foto_url", None)
+        col_f1, col_f2, col_f3 = st.columns([1, 2, 1])
+        with col_f2:
+            if user_foto:
+                st.image(user_foto, use_container_width=True)
+            else:
+                st.markdown("<h1 style='text-align: center; margin: 0;'>👤</h1>", unsafe_allow_html=True)
+
         st.write(f"Logado como: **{name}**")
         p_txt = {"admin": "👑 Sócio", "advogado": "⚖️ Advogado(a)", "bacharel": "📜 Bacharel(a)"}.get(user_role, "🎓 Estagiário")
         st.caption(f"Perfil: {p_txt}")
@@ -307,7 +323,7 @@ elif authentication_status == True:
                     "Expedientes": "Consultar Expedientes", 
                     "Expedientes TRF": "Consultar Expedientes TRF",
                     "Pendências": "Consultar Pendências",
-                    "Segurança": "Gerenciar Usuários" if user_role == 'admin' else "Alterar Senha",
+                    "Segurança": "Meu Perfil",
                     "Auditoria": "Ver Logs"
                 }.get(pag, "")
                 limpar_flags_cadastro()
@@ -536,7 +552,9 @@ elif authentication_status == True:
             if user_role == 'admin':
                 acoes.append("Excluir Pendência")
         elif menu_principal == "Segurança":
-            acoes = ["Gerenciar Usuários", "Cadastrar Novo Usuário", "Alterar Senha"] if user_role == 'admin' else ["Alterar Senha"]
+            acoes = ["Meu Perfil", "Alterar Senha"]
+            if user_role == 'admin':
+                acoes = ["Meu Perfil", "Gerenciar Usuários", "Cadastrar Novo Usuário", "Alterar Senha"]
         else:
             acoes = []
 
@@ -558,7 +576,49 @@ elif authentication_status == True:
 
         # --- PROCESSAMENTO DOS MÓDULOS ---
         if menu_principal == "Segurança":
-            if sub == "Alterar Senha":
+            if sub == "Meu Perfil":
+                st.header("👤 Meu Perfil de Usuário")
+                st.caption(f"Gerencie suas informações pessoais e foto de perfil ({username}).")
+                
+                col_pf1, col_pf2 = st.columns([1, 2])
+                
+                with col_pf1:
+                    if user_info.get("foto_url"):
+                        st.image(user_info.get("foto_url"), caption="Foto Atual", use_container_width=True)
+                    else:
+                        st.info("Sem foto cadastrada.")
+                
+                with col_pf2:
+                    with st.form("form_meu_perfil"):
+                        p_nome = st.text_input("Nome Completo", value=user_info.get("name", ""))
+                        p_tel = st.text_input("Telefone de Contato", value=user_info.get("telefone", ""))
+                        p_oab = st.text_input("Registro OAB / Identificação Profissional", value=user_info.get("oab", ""))
+                        p_foto = st.text_input("URL da Foto de Perfil (Link de Imagem pública)", value=user_info.get("foto_url", ""))
+                        p_obs = st.text_area("Observações Pessoais", value=user_info.get("observacoes_pessoais", ""))
+                        
+                        if st.form_submit_button("Salvar Alterações no Perfil", type="primary"):
+                            if username == "master":
+                                st.warning("A conta Master de emergência não altera perfil no banco.")
+                            else:
+                                try:
+                                    supabase.table("usuarios_sistema").update({
+                                        "nome_completo": p_nome,
+                                        "name": p_nome,
+                                        "telefone": p_tel,
+                                        "oab": p_oab,
+                                        "foto_url": p_foto,
+                                        "observacoes_pessoais": p_obs
+                                    }).eq("username", username).execute()
+                                    
+                                    registrar_auditoria(username, "Atualizar Perfil", "Segurança", "Dados de perfil e foto atualizados.")
+                                    st.cache_data.clear()
+                                    st.success("✅ Perfil atualizado com sucesso!")
+                                    time.sleep(1)
+                                    st.rerun()
+                                except Exception as e:
+                                    st.error(f"Erro ao salvar perfil no banco de dados: {e}")
+
+            elif sub == "Alterar Senha":
                 st.header("🔐 Alterar Minha Senha")
                 st.caption(f"Alterando senha para o usuário atual: **{username}**")
                 with st.form("form_alt_senha"):
@@ -639,7 +699,7 @@ elif authentication_status == True:
                     res_users = supabase.table("usuarios_sistema").select("*").execute()
                     if res_users.data:
                         df_u = pd.DataFrame(res_users.data)
-                        colunas_visiveis = [c for c in ['id', 'username', 'nome_completo', 'name', 'role', 'trocar_senha'] if c in df_u.columns]
+                        colunas_visiveis = [c for c in ['id', 'username', 'nome_completo', 'name', 'role', 'trocar_senha', 'telefone', 'oab'] if c in df_u.columns]
                         st.dataframe(df_u[colunas_visiveis], use_container_width=True, hide_index=True)
                         
                         st.markdown("---")

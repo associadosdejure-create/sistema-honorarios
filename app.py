@@ -9,6 +9,7 @@ import os
 import bcrypt
 import json
 import base64
+import io
 
 st.set_page_config(page_title="Controle DEJURE ADVOCACIA", layout="wide", page_icon="⚖️")
 
@@ -58,6 +59,23 @@ def converter_imagem_base64(file) -> str:
     encoded = base64.b64encode(file.read()).decode()
     mime_type = file.type
     return f"data:{mime_type};base64,{encoded}"
+
+def exibir_imagem_base64(foto_url, width=120):
+    """Converte string base64 do banco para bytes exibíveis no st.image"""
+    if not foto_url:
+        return False
+    try:
+        if isinstance(foto_url, str) and foto_url.startswith("data:"):
+            header, encoded = foto_url.split(",", 1)
+            image_bytes = base64.b64decode(encoded)
+            st.image(io.BytesIO(image_bytes), width=width)
+            return True
+        else:
+            # Caso seja URL web normal
+            st.image(foto_url, width=width)
+            return True
+    except Exception:
+        return False
 
 def registrar_auditoria(usuario, acao, modulo, detalhes=""):
     try:
@@ -293,13 +311,11 @@ elif authentication_status == True:
         return ''
 
     with st.sidebar:
-        # --- EXIBIÇÃO DA FOTO DE PERFIL ---
+        # --- EXIBIÇÃO DA FOTO DE PERFIL NO SIDEBAR ---
         user_foto = user_info.get("foto_url", None)
         col_f1, col_f2, col_f3 = st.columns([1, 2, 1])
         with col_f2:
-            if user_foto:
-                st.image(user_foto, use_container_width=True)
-            else:
+            if not exibir_imagem_base64(user_foto, width=100):
                 st.markdown("<h1 style='text-align: center; margin: 0;'>👤</h1>", unsafe_allow_html=True)
 
         st.write(f"Logado como: **{name}**")
@@ -372,7 +388,6 @@ elif authentication_status == True:
                 for u in res_users_nasc.data:
                     dt_n = u.get("data_nascimento")
                     if dt_n and len(dt_n) >= 10:
-                        # Compara mês e dia (MM-DD)
                         if dt_n[5:] == hoje_str:
                             aniversariantes_hoje.append(u.get("nome_completo", u.get("name", "Colaborador")))
                 
@@ -435,7 +450,7 @@ elif authentication_status == True:
                 if et.get('status') == 'Pendente' and et.get('data_manifestacao'):
                     dt = datetime.strptime(et['data_manifestacao'], "%Y-%m-%d").date()
                     uid = f"trf_{et.get('id', 0)}"
-                    alertas_expedientes_trf.append(((dt - hoje).days, f"⚖️ Processo: {et['numero_processo']} | Cliente: {e.get('cliente', 'N/D')} | Prazo: {dt.strftime('%d/%m/%Y')} | Resp: {et['responsavel']}", uid, 'expediente_trf'))
+                    alertas_expedientes_trf.append(((dt - hoje).days, f"⚖️ Processo: {et['numero_processo']} | Cliente: {et.get('cliente', 'N/D')} | Prazo: {dt.strftime('%d/%m/%Y')} | Resp: {et['responsavel']}", uid, 'expediente_trf'))
 
             for pc in parcelas_db:
                 if pc.get('status') == 'Pendente' and pc.get('vencimento'):
@@ -537,9 +552,7 @@ elif authentication_status == True:
                     """, unsafe_allow_html=True)
                     
                     foto_dest = obj_destaque.get('foto_url')
-                    if foto_dest:
-                        st.image(foto_dest, width=150)
-                    else:
+                    if not exibir_imagem_base64(foto_dest, width=140):
                         st.markdown("<h1 style='font-size: 60px; margin: 0;'>⭐</h1>", unsafe_allow_html=True)
                     
                     st.markdown(f"<h3 style='color: #D4AF37; margin-top: 10px;'>{obj_destaque.get('nome_completo', obj_destaque.get('name', ''))}</h3>", unsafe_allow_html=True)
@@ -563,9 +576,7 @@ elif authentication_status == True:
                         """, unsafe_allow_html=True)
                         
                         f_url = colab.get('foto_url')
-                        if f_url:
-                            st.image(f_url, width=120)
-                        else:
+                        if not exibir_imagem_base64(f_url, width=110):
                             st.markdown("<h1 style='font-size: 50px; margin: 0;'>👤</h1>", unsafe_allow_html=True)
                         
                         nome_c = colab.get('nome_completo', colab.get('name', ''))
@@ -700,9 +711,7 @@ elif authentication_status == True:
                 col_pf1, col_pf2 = st.columns([1, 2])
                 
                 with col_pf1:
-                    if user_info.get("foto_url"):
-                        st.image(user_info.get("foto_url"), caption="Foto de Perfil Atual", use_container_width=True)
-                    else:
+                    if not exibir_imagem_base64(user_info.get("foto_url"), width=200):
                         st.info("Sem foto cadastrada.")
                 
                 with col_pf2:
@@ -1119,7 +1128,6 @@ elif authentication_status == True:
                             val_leonidas = round(saldo_socios * 0.60, 2)
                             val_nelson = round(saldo_socios * 0.40, 2)
 
-                        # Ajuste de resíduo de centavos no sócio majoritário para fechar prova 100%
                         val_prosp_efetivo = 0.0 if "Acúmulo" in regra_aplicada else (val_prospectador if is_entrada and prosp_name != "Nenhum / Sem Prospectador" else 0.0)
                         soma_distribuida = round(val_prosp_efetivo + val_operador + fundo_colab + val_leonidas + val_nelson, 2)
                         diferenca = round(valor_bruto - soma_distribuida, 2)

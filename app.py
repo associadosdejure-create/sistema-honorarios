@@ -448,8 +448,9 @@ elif authentication_status == True:
             if user_role == 'admin':
                 acoes.insert(4, "Excluir Cliente")
         elif menu_principal == "Pagamentos":
-            acoes = ["Ver Parcelas", "Cadastrar Contrato", "Baixar Parcela", "Extrato de Repasses", "Editar Contrato"]
+            acoes = ["Ver Parcelas", "Cadastrar Contrato", "Baixar Parcela", "Editar Contrato"]
             if user_role == 'admin':
+                acoes.insert(3, "Extrato de Repasses")
                 acoes.append("Excluir Contrato")
         elif menu_principal == "Perícias":
             acoes = ["Ver Perícias", "Cadastrar Perícia", "Importar Excel", "Editar Perícia"]
@@ -857,7 +858,7 @@ elif authentication_status == True:
                             except Exception as e:
                                 st.error(f"Erro ao processar baixa: {e}")
 
-            elif sub == "Extrato de Repasses":
+            elif sub == "Extrato de Repasses" and user_role == 'admin':
                 st.header("📊 Extrato Geral de Repasses (Fee Splitting)")
                 st.caption("Visão financeira completa sobre a divisão de honorários das parcelas baixadas.")
                 

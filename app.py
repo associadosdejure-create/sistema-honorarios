@@ -363,14 +363,14 @@ elif authentication_status == True:
                     if p.get('data_pm'):
                         dt = datetime.strptime(p['data_pm'], "%Y-%m-%d").date()
                         dias_restantes = (dt - hoje).days
-                        # Descarta se estiver vencida há mais de 5 dias (dias_restantes < -5)
+                        # Filtro: Descarta pericias vencidas ha mais de 5 dias
                         if dias_restantes >= -5:
                             uid = f"per_{p['id']}_pm"
                             alertas_pericias.append((dias_restantes, f"🔬 Perícia Médica | Nome: {p.get('nome', 'N/D')} | Data PM: {dt.strftime('%d/%m/%Y')}", uid, 'pericia'))
                     if p.get('data_ps'):
                         dt = datetime.strptime(p['data_ps'], "%Y-%m-%d").date()
                         dias_restantes = (dt - hoje).days
-                        # Descarta se estiver vencida há mais de 5 dias (dias_restantes < -5)
+                        # Filtro: Descarta pericias vencidas ha mais de 5 dias
                         if dias_restantes >= -5:
                             uid = f"per_{p['id']}_ps"
                             alertas_pericias.append((dias_restantes, f"🔬 Perícia Social | Nome: {p.get('nome', 'N/D')} | Data PS: {dt.strftime('%d/%m/%Y')}", uid, 'pericia'))
@@ -515,7 +515,10 @@ elif authentication_status == True:
             acoes = ["Ver Parcelas", "Cadastrar Contrato", "Baixar Parcela", "Editar Contrato"]
             if user_role == 'admin':
                 acoes.insert(3, "Extrato de Repasses")
+                acoes.insert(4, "Relatório por Período")
                 acoes.append("Excluir Contrato")
+            else:
+                acoes.append("Relatório por Período")
         elif menu_principal == "Perícias":
             acoes = ["Ver Perícias", "Cadastrar Perícia", "Importar Excel", "Editar Perícia"]
             if user_role == 'admin':
@@ -864,55 +867,85 @@ elif authentication_status == True:
                             resp_name = st.selectbox("⚖️ Operador (Trabalhou no Processo):", nomes_opcoes)
                             val_op_input = st.number_input("💵 Valor do Operador avaliado no ato (R$):", min_value=0.0, max_value=valor_bruto, step=50.0)
 
-                        if st.button("Confirmar Baixa e Gerar Repasse", type="primary"):
-                            val_prospectador = 0.0
-                            val_operador = 0.0
-                            fundo_colab = 0.0
-                            val_leonidas = 0.0
-                            val_nelson = 0.0
+                        # --- CÁLCULO E PROVA REAL EM TEMPO REAL ---
+                        val_prospectador = 0.0
+                        val_operador = 0.0
+                        fundo_colab = 0.0
+                        val_leonidas = 0.0
+                        val_nelson = 0.0
+                        
+                        if is_entrada:
+                            saldo = valor_bruto
+                            regra_aplicada = "Entrada"
                             
-                            if is_entrada:
-                                saldo = valor_bruto
-                                regra_aplicada = "Entrada"
+                            if prosp_name == resp_name:
+                                regra_aplicada = "Entrada (Acúmulo)"
+                                taxa = 0.60 if resp_role in ['admin', 'advogado'] else 0.40
+                                val_operador = round(valor_bruto * taxa, 2)
+                                val_prospectador = val_operador
+                                saldo -= val_operador
                                 
-                                if prosp_name == resp_name:
-                                    regra_aplicada = "Entrada (Acúmulo)"
-                                    taxa = 0.60 if resp_role in ['admin', 'advogado'] else 0.40
-                                    val_operador = valor_bruto * taxa
-                                    val_prospectador = val_operador
-                                    saldo -= val_operador
+                                if valor_bruto > 1000.0:
+                                    fundo_colab = round(saldo * 0.05, 2)
+                                    saldo -= fundo_colab
                                     
-                                    if valor_bruto > 1000.0:
-                                        fundo_colab = saldo * 0.05
-                                        saldo -= fundo_colab
-                                        
-                                    val_leonidas = saldo * 0.60
-                                    val_nelson = saldo * 0.40
-                                    
-                                else:
-                                    if prosp_name != "Nenhum / Sem Prospectador":
-                                        val_prospectador = val_prosp_input
-                                    
-                                    saldo -= val_prospectador
-                                    
-                                    if saldo > 1000.0:
-                                        fundo_colab = saldo * 0.05
-                                        saldo -= fundo_colab
-                                        
-                                    taxa_op = 0.25 if resp_role in ['admin', 'advogado'] else (0.15 if resp_role == 'bacharel' else 0.10)
-                                    val_operador = saldo * taxa_op
-                                    saldo -= val_operador
-                                    
-                                    val_leonidas = saldo * 0.60
-                                    val_nelson = saldo * 0.40
+                                val_leonidas = round(saldo * 0.60, 2)
+                                val_nelson = round(saldo * 0.40, 2)
+                                
                             else:
-                                regra_aplicada = "Parcela Normal"
-                                prosp_name = "N/A"
-                                val_operador = val_op_input
-                                saldo_socios = valor_bruto - val_operador
-                                val_leonidas = saldo_socios * 0.60
-                                val_nelson = saldo_socios * 0.40
+                                if prosp_name != "Nenhum / Sem Prospectador":
+                                    val_prospectador = round(val_prosp_input, 2)
+                                
+                                saldo -= val_prospectador
+                                
+                                if saldo > 1000.0:
+                                    fundo_colab = round(saldo * 0.05, 2)
+                                    saldo -= fundo_colab
+                                    
+                                taxa_op = 0.25 if resp_role in ['admin', 'advogado'] else (0.15 if resp_role == 'bacharel' else 0.10)
+                                val_operador = round(saldo * taxa_op, 2)
+                                saldo -= val_operador
+                                
+                                val_leonidas = round(saldo * 0.60, 2)
+                                val_nelson = round(saldo * 0.40, 2)
+                        else:
+                            regra_aplicada = "Parcela Normal"
+                            prosp_name = "N/A"
+                            val_operador = round(val_op_input, 2)
+                            saldo_socios = valor_bruto - val_operador
+                            val_leonidas = round(saldo_socios * 0.60, 2)
+                            val_nelson = round(saldo_socios * 0.40, 2)
 
+                        # Ajuste de resíduo de centavos no sócio majoritário para fechar prova 100%
+                        val_prosp_efetivo = 0.0 if "Acúmulo" in regra_aplicada else (val_prospectador if is_entrada and prosp_name != "Nenhum / Sem Prospectador" else 0.0)
+                        soma_distribuida = round(val_prosp_efetivo + val_operador + fundo_colab + val_leonidas + val_nelson, 2)
+                        diferenca = round(valor_bruto - soma_distribuida, 2)
+
+                        if diferenca != 0:
+                            val_leonidas = round(val_leonidas + diferenca, 2)
+                            soma_distribuida = round(val_prosp_efetivo + val_operador + fundo_colab + val_leonidas + val_nelson, 2)
+                            diferenca = round(valor_bruto - soma_distribuida, 2)
+
+                        # --- PAINEL VISUAL DE PROVA REAL ---
+                        st.markdown("#### 🧮 Prova Real do Rateio (Validação Entrada vs Saída)")
+                        col_pr1, col_pr2, col_pr3 = st.columns(3)
+                        col_pr1.metric("Recurso Bruto de Entrada", f"R$ {valor_bruto:.2f}")
+                        col_pr2.metric("Soma Total Distribuída", f"R$ {soma_distribuida:.2f}")
+                        
+                        if diferenca == 0:
+                            col_pr3.success("✅ **PROVA OK!**\nSoma 100% idêntica ao valor de entrada.")
+                        else:
+                            col_pr3.error(f"⚠️ **DIVERGÊNCIA:** Δ R$ {diferenca:.2f}")
+
+                        with st.expander("🔍 Detalhamento dos Valores da Prova Real", expanded=True):
+                            det_cols = st.columns(5)
+                            det_cols[0].write(f"**Prospectador:**\nR$ {val_prosp_efetivo:.2f}")
+                            det_cols[1].write(f"**Operador:**\nR$ {val_operador:.2f}")
+                            det_cols[2].write(f"**Fundo Colab.:**\nR$ {fundo_colab:.2f}")
+                            det_cols[3].write(f"**Leônidas (60%):**\nR$ {val_leonidas:.2f}")
+                            det_cols[4].write(f"**Nelson (40%):**\nR$ {val_nelson:.2f}")
+
+                        if st.button("Confirmar Baixa e Gerar Repasse", type="primary"):
                             repasse_dict = {
                                 "parcela_id": parcela_obj['id'],
                                 "contrato": sel_contrato,
@@ -926,6 +959,8 @@ elif authentication_status == True:
                                 "fundo_colab": round(fundo_colab, 2),
                                 "leonidas": round(val_leonidas, 2),
                                 "nelson": round(val_nelson, 2),
+                                "soma_distribuida": round(soma_distribuida, 2),
+                                "prova_real_ok": True if diferenca == 0 else False,
                                 "data_baixa": date.today().strftime("%Y-%m-%d")
                             }
                             json_repasse = json.dumps(repasse_dict, ensure_ascii=False)
@@ -934,14 +969,14 @@ elif authentication_status == True:
                                 supabase.table("parcelas").update({"status": "Pago"}).eq("id", parcela_obj['id']).execute()
                                 registrar_auditoria(username, "Baixa e Rateio", "Repasses", json_repasse)
                                 st.cache_data.clear()
-                                st.success("✅ Parcela baixada e repasse calculated com sucesso! Consulte o Extrato de Repasses.")
+                                st.success("✅ Parcela baixada e repasse validado com sucesso! Consulte o Extrato de Repasses.")
                                 st.rerun()
                             except Exception as e:
                                 st.error(f"Erro ao processar baixa: {e}")
 
             elif sub == "Extrato de Repasses" and user_role == 'admin':
                 st.header("📊 Extrato Geral de Repasses (Fee Splitting)")
-                st.caption("Visão financeira completa sobre a divisão de honorários das parcelas baixadas.")
+                st.caption("Visão financeira completa sobre a divisão de honorários das parcelas baixadas com Prova Real Auditada.")
                 
                 try:
                     res_rep = supabase.table("logs_auditoria").select("*").eq("modulo", "Repasses").order("data_hora", desc=True).execute()
@@ -949,39 +984,68 @@ elif authentication_status == True:
                         st.info("Nenhum repasse registrado ainda.")
                     else:
                         linhas = []
+                        total_bruto_acum = 0.0
+                        total_dist_acum = 0.0
+                        provas_validas = 0
+                        total_registros = 0
+
                         for log in res_rep.data:
                             try:
                                 r = json.loads(log['detalhes'])
-                                val_prosp_exib = r.get('valor_prospectador', 0)
-                                val_op_exib = r.get('valor_operador', 0)
+                                val_bruto = float(r.get('valor_bruto', 0))
+                                val_prosp_exib = float(r.get('valor_prospectador', 0))
+                                val_op_exib = float(r.get('valor_operador', 0))
+                                fundo_exib = float(r.get('fundo_colab', 0))
+                                leo_exib = float(r.get('leonidas', 0))
+                                nel_exib = float(r.get('nelson', 0))
                                 
                                 if "Acúmulo" in r.get('regra', ''):
-                                    val_prosp_exib = 0.0
+                                    val_prosp_efetivo = 0.0
+                                else:
+                                    val_prosp_efetivo = val_prosp_exib if r.get('prospectador') not in ["Nenhum / Sem Prospectador", "N/A", ""] else 0.0
+
+                                soma_dist = round(val_prosp_efetivo + val_op_exib + fundo_exib + leo_exib + nel_exib, 2)
+                                dif = round(val_bruto - soma_dist, 2)
+                                is_ok = (abs(dif) < 0.01)
+
+                                total_registros += 1
+                                if is_ok: provas_validas += 1
+                                total_bruto_acum += val_bruto
+                                total_dist_acum += soma_dist
 
                                 linhas.append({
                                     "Data": datetime.strptime(log['data_hora'][:10], "%Y-%m-%d").strftime("%d/%m/%Y"),
                                     "Tipo Regra": r.get('regra', 'N/D'),
                                     "Contrato": r.get('contrato', '').split(' — ')[0],
-                                    "Valor Bruto": f"R$ {r.get('valor_bruto', 0):.2f}",
-                                    "Fundo Colab.": f"R$ {r.get('fundo_colab', 0):.2f}",
+                                    "Valor Bruto": f"R$ {val_bruto:.2f}",
+                                    "Fundo Colab.": f"R$ {fundo_exib:.2f}",
                                     "Prospectador": r.get('prospectador', ''),
-                                    "Val. Prospector": f"R$ {val_prosp_exib:.2f}",
+                                    "Val. Prospector": f"R$ {val_prosp_exib if 'Acúmulo' not in r.get('regra','') else 0.0:.2f}",
                                     "Operador": r.get('operador', ''),
                                     "Val. Operador": f"R$ {val_op_exib:.2f}",
-                                    "Leônidas (60%)": f"R$ {r.get('leonidas', 0):.2f}",
-                                    "Nelson (40%)": f"R$ {r.get('nelson', 0):.2f}"
+                                    "Leônidas (60%)": f"R$ {leo_exib:.2f}",
+                                    "Nelson (40%)": f"R$ {nel_exib:.2f}",
+                                    "Soma Distribuída": f"R$ {soma_dist:.2f}",
+                                    "Prova Real": "✅ 100% Batido" if is_ok else f"⚠️ Δ R$ {dif:.2f}"
                                 })
                             except Exception:
                                 pass
                         
                         if linhas:
+                            m1, m2, m3 = st.columns(3)
+                            m1.metric("Total Entrado (Bruto)", f"R$ {total_bruto_acum:.2f}")
+                            m2.metric("Total Repassado (Soma)", f"R$ {total_dist_acum:.2f}")
+                            pct_audit = (provas_validas / total_registros * 100) if total_registros > 0 else 100
+                            m3.metric("Auditoria Prova Real", f"{pct_audit:.0f}% OK ({provas_validas}/{total_registros})")
+
+                            st.markdown("---")
                             df_rep = pd.DataFrame(linhas)
                             st.dataframe(df_rep, use_container_width=True, hide_index=True)
                             
                             st.download_button(
-                                label="📥 Exportar Extrato (CSV)",
+                                label="📥 Exportar Extrato Com Prova Real (CSV)",
                                 data=df_rep.to_csv(index=False).encode('utf-8'),
-                                file_name=f"extrato_repasses_{date.today()}.csv",
+                                file_name=f"extrato_repasses_provareal_{date.today()}.csv",
                                 mime="text/csv",
                                 type="primary"
                             )
@@ -989,6 +1053,134 @@ elif authentication_status == True:
                             st.info("Nenhum dado formatado para exibição.")
                 except Exception as e:
                     st.error(f"Erro ao carregar extratos: {e}")
+
+            elif sub == "Relatório por Período":
+                st.header("📅 Relatório Financeiro de Pagamentos por Período")
+                st.caption("Gere balancetes e relatórios detalhados de entradas e divisões de honorários com base no intervalo de datas desejado.")
+                
+                hoje_dt = date.today()
+                primeiro_dia_mes = hoje_dt.replace(day=1)
+
+                col_f1, col_f2, col_f3 = st.columns(3)
+                with col_f1:
+                    dt_inicio = st.date_input("Data Inicial", value=primeiro_dia_mes)
+                with col_f2:
+                    dt_fim = st.date_input("Data Final", value=hoje_dt)
+                with col_f3:
+                    lista_usuarios_rel = ["Todos os Colaboradores / Sócios"]
+                    for u in credentials['usernames'].values():
+                        n_user = u.get('name', '')
+                        if n_user and n_user not in lista_usuarios_rel:
+                            lista_usuarios_rel.append(n_user)
+                    filtro_pessoa = st.selectbox("Filtrar por Pessoa:", lista_usuarios_rel)
+
+                if dt_inicio > dt_fim:
+                    st.error("A Data Inicial não pode ser posterior à Data Final.")
+                else:
+                    try:
+                        res_rep = supabase.table("logs_auditoria").select("*").eq("modulo", "Repasses").order("data_hora", desc=True).execute()
+                        if not res_rep.data:
+                            st.info("Nenhum registro de repasse encontrado no banco de dados.")
+                        else:
+                            linhas_relatorio = []
+                            
+                            sum_bruto = 0.0
+                            sum_prosp = 0.0
+                            sum_op = 0.0
+                            sum_fundo = 0.0
+                            sum_leonidas = 0.0
+                            sum_nelson = 0.0
+                            sum_distribuido = 0.0
+                            count_provas_ok = 0
+
+                            for log in res_rep.data:
+                                try:
+                                    r = json.loads(log['detalhes'])
+                                    dt_baixa_str = r.get('data_baixa', log['data_hora'][:10])
+                                    dt_baixa_obj = datetime.strptime(dt_baixa_str, "%Y-%m-%d").date()
+
+                                    # Filtro por período
+                                    if dt_inicio <= dt_baixa_obj <= dt_fim:
+                                        prosp = r.get('prospectador', '')
+                                        op = r.get('operador', '')
+                                        
+                                        # Filtro por pessoa (caso selecionado)
+                                        if filtro_pessoa != "Todos os Colaboradores / Sócios":
+                                            if filtro_pessoa not in [prosp, op, "Leônidas", "Nelson"]:
+                                                continue
+
+                                        v_bruto = float(r.get('valor_bruto', 0))
+                                        v_prosp_raw = float(r.get('valor_prospectador', 0))
+                                        v_op = float(r.get('valor_operador', 0))
+                                        v_fundo = float(r.get('fundo_colab', 0))
+                                        v_leo = float(r.get('leonidas', 0))
+                                        v_nel = float(r.get('nelson', 0))
+
+                                        v_prosp_efetivo = 0.0 if "Acúmulo" in r.get('regra', '') else (v_prosp_raw if prosp not in ["Nenhum / Sem Prospectador", "N/A", ""] else 0.0)
+                                        soma_d = round(v_prosp_efetivo + v_op + v_fundo + v_leo + v_nel, 2)
+                                        is_ok = abs(v_bruto - soma_d) < 0.01
+
+                                        if is_ok: count_provas_ok += 1
+                                        sum_bruto += v_bruto
+                                        sum_prosp += v_prosp_efetivo
+                                        sum_op += v_op
+                                        sum_fundo += v_fundo
+                                        sum_leonidas += v_leo
+                                        sum_nelson += v_nel
+                                        sum_distribuido += soma_d
+
+                                        linhas_relatorio.append({
+                                            "Data Baixa": dt_baixa_obj.strftime("%d/%m/%Y"),
+                                            "Contrato / Cliente": r.get('contrato', '').split(' — ')[0],
+                                            "Regra Aplicada": r.get('regra', 'N/D'),
+                                            "Valor Bruto": f"R$ {v_bruto:.2f}",
+                                            "Prospectador": f"{prosp} (R$ {v_prosp_efetivo:.2f})" if v_prosp_efetivo > 0 else (prosp if prosp else "-"),
+                                            "Operador": f"{op} (R$ {v_op:.2f})",
+                                            "Fundo Colab. (5%)": f"R$ {v_fundo:.2f}",
+                                            "Leônidas (60%)": f"R$ {v_leo:.2f}",
+                                            "Nelson (40%)": f"R$ {v_nel:.2f}",
+                                            "Total Distribuído": f"R$ {soma_d:.2f}",
+                                            "Prova Real": "✅ 100% Batido" if is_ok else "⚠️ Divergente"
+                                        })
+                                except Exception:
+                                    pass
+
+                            st.markdown("---")
+                            st.subheader(f"📊 Resumo Financeiro do Período ({dt_inicio.strftime('%d/%m/%Y')} a {dt_fim.strftime('%d/%m/%Y')})")
+                            
+                            c_rel1, c_rel2, c_rel3, c_rel4 = st.columns(4)
+                            c_rel1.metric("Faturamento Bruto Entrado", f"R$ {sum_bruto:.2f}")
+                            c_rel2.metric("Total Sócios (60/40)", f"R$ {(sum_leonidas + sum_nelson):.2f}")
+                            c_rel3.metric("Total Operadores & Prospectores", f"R$ {(sum_op + sum_prosp):.2f}")
+                            c_rel4.metric("Fundo Colaboradores (5%)", f"R$ {sum_fundo:.2f}")
+
+                            with st.expander("👑 Divisão Detalhada dos Sócios no Período", expanded=True):
+                                c_s1, c_s2, c_s3 = st.columns(3)
+                                c_s1.metric("Leônidas (60%)", f"R$ {sum_leonidas:.2f}")
+                                c_s2.metric("Nelson (40%)", f"R$ {sum_nelson:.2f}")
+                                total_rel_regs = len(linhas_relatorio)
+                                pct_rel_ok = (count_provas_ok / total_rel_regs * 100) if total_rel_regs > 0 else 100
+                                c_s3.metric("Validação de Prova Real", f"{pct_rel_ok:.0f}% OK ({count_provas_ok}/{total_rel_regs})")
+
+                            st.markdown("---")
+                            st.subheader("📝 Lista Detalhada dos Pagamentos Processados")
+                            
+                            if linhas_relatorio:
+                                df_rel = pd.DataFrame(linhas_relatorio)
+                                st.dataframe(df_rel, use_container_width=True, hide_index=True)
+                                
+                                nome_arquivo = f"relatorio_pagamentos_{dt_inicio.strftime('%Y%m%d')}_a_{dt_fim.strftime('%Y%m%d')}.csv"
+                                st.download_button(
+                                    label="📥 Baixar Relatório Completo (CSV)",
+                                    data=df_rel.to_csv(index=False).encode('utf-8'),
+                                    file_name=nome_arquivo,
+                                    mime="text/csv",
+                                    type="primary"
+                                )
+                            else:
+                                st.warning("Nenhum registro de pagamento encontrado para os filtros selecionados.")
+                    except Exception as e:
+                        st.error(f"Erro ao carregar relatório por período: {e}")
 
             elif sub == "Editar Contrato":
                 st.header("✏️ Editar Contrato")

@@ -718,7 +718,6 @@ elif authentication_status == True:
 
             elif sub == "Baixar Parcela":
                 st.header("💰 Baixar Parcela e Calcular Rateio")
-                st.caption("Ao dar baixa, o sistema divide automaticamente os honorários entre prospectador, fundo de colaboradores e sócios, conforme as regras estabelecidas.")
                 
                 res_h = carregar_dados("honorarios")
                 if not res_h:
@@ -737,9 +736,8 @@ elif authentication_status == True:
                         valor_bruto = float(parcela_obj['valor'])
                         
                         st.markdown("---")
-                        st.subheader("⚙️ Configurações de Repasse")
                         
-                        # Extrair nomes de usuários e perfis para os selects
+                        # Extrair nomes de usuários
                         lista_usuarios = []
                         for u in credentials['usernames'].values():
                             nome_u = u.get('name', '')
@@ -748,74 +746,91 @@ elif authentication_status == True:
                                 lista_usuarios.append({"nome": nome_u, "papel": papel_u})
                         
                         nomes_opcoes = [u['nome'] for u in lista_usuarios]
-                        
-                        col_r1, col_r2 = st.columns(2)
-                        with col_r1:
-                            prosp_name = st.selectbox("👤 Quem foi o Prospectador?", ["Nenhum / Sem Prospectador", "Prospectador Externo"] + nomes_opcoes)
-                        with col_r2:
-                            resp_name = st.selectbox("⚖️ Quem trabalhou na Peça/Processo? (Operador)", nomes_opcoes)
-                        
-                        val_prosp_input = 0.0
-                        
-                        # Se não houver acúmulo e tiver prospectador, pede o valor fixo liberado pelos sócios
-                        if prosp_name not in ["Nenhum / Sem Prospectador", resp_name]:
-                            val_prosp_input = st.number_input("💵 Valor de Captação deliberado para o Prospectador (R$):", min_value=0.0, step=10.0, max_value=valor_bruto)
-                        elif prosp_name == resp_name:
-                            st.info("📌 **Regra de Acúmulo Ativada:** O Prospectador e o Operador são a mesma pessoa. A comissão (60% ou 40%) incidirá sobre o valor bruto desta parcela.")
 
-                        if st.button("Confirmar Baixa e Gerar Repasse", type="primary"):
+                        # TRAVA DE INTELIGÊNCIA: Verifica se é Entrada ou Parcela Normal
+                        is_entrada = (parcela_obj['numero_parcela'] == "Entrada")
+                        
+                        if is_entrada:
+                            st.subheader("⚙️ Regra de Entrada (Com Prospecção)")
+                            st.info("O sistema detectou que esta é a **Entrada** do contrato. A regra completa será aplicada (prospectador, 5% colaboradores e operador).")
                             
+                            col_r1, col_r2 = st.columns(2)
+                            with col_r1:
+                                prosp_name = st.selectbox("👤 Prospectador:", ["Nenhum / Sem Prospectador", "Prospectador Externo"] + nomes_opcoes)
+                            with col_r2:
+                                resp_name = st.selectbox("⚖️ Operador (Trabalhou no Processo):", nomes_opcoes)
+                            
+                            val_prosp_input = 0.0
+                            if prosp_name not in ["Nenhum / Sem Prospectador", resp_name]:
+                                val_prosp_input = st.number_input("💵 Valor de Captação deliberado (R$):", min_value=0.0, step=10.0, max_value=valor_bruto)
+                            elif prosp_name == resp_name:
+                                st.warning("📌 **Acúmulo Detectado:** O Prospectador e Operador são os mesmos. A comissão incidirá direto no bruto.")
+
                             # Identificar papel do operador
                             resp_role = "estagiario"
                             for u in lista_usuarios:
                                 if u['nome'] == resp_name:
                                     resp_role = u['papel']
                                     break
+                                    
+                        else:
+                            st.subheader("⚙️ Regra de Parcela Normal (Sem Prospecção)")
+                            st.info("O sistema detectou que esta é uma **Parcela Normal**. A prospecção e os 5% não se aplicam aqui. O valor será dividido apenas entre o Operador e os Sócios.")
                             
+                            resp_name = st.selectbox("⚖️ Operador (Trabalhou no Processo):", nomes_opcoes)
+                            val_op_input = st.number_input("💵 Valor do Operador avaliado no ato (R$):", min_value=0.0, max_value=valor_bruto, step=50.0)
+
+                        if st.button("Confirmar Baixa e Gerar Repasse", type="primary"):
                             val_prospectador = 0.0
                             val_operador = 0.0
                             fundo_colab = 0.0
                             val_leonidas = 0.0
                             val_nelson = 0.0
                             
-                            saldo = valor_bruto
-                            regra_aplicada = "Padrão"
-                            
-                            if prosp_name == resp_name:
-                                # REGRA B: ACÚMULO
-                                regra_aplicada = "Acúmulo (Prospectador + Operador)"
-                                taxa = 0.60 if resp_role in ['admin', 'advogado'] else 0.40
-                                val_operador = valor_bruto * taxa
-                                val_prospectador = val_operador # Visualmente ele ganha no bloco do operador
+                            if is_entrada:
+                                saldo = valor_bruto
+                                regra_aplicada = "Entrada"
                                 
-                                saldo -= val_operador
-                                
-                                if valor_bruto > 1000.0:
-                                    fundo_colab = saldo * 0.05
-                                    saldo -= fundo_colab
+                                if prosp_name == resp_name:
+                                    regra_aplicada = "Entrada (Acúmulo)"
+                                    taxa = 0.60 if resp_role in ['admin', 'advogado'] else 0.40
+                                    val_operador = valor_bruto * taxa
+                                    val_prospectador = val_operador # Visualmente
+                                    saldo -= val_operador
                                     
-                                val_leonidas = saldo * 0.60
-                                val_nelson = saldo * 0.40
-                                
+                                    if valor_bruto > 1000.0:
+                                        fundo_colab = saldo * 0.05
+                                        saldo -= fundo_colab
+                                        
+                                    val_leonidas = saldo * 0.60
+                                    val_nelson = saldo * 0.40
+                                    
+                                else:
+                                    if prosp_name != "Nenhum / Sem Prospectador":
+                                        val_prospectador = val_prosp_input
+                                    
+                                    saldo -= val_prospectador
+                                    
+                                    if saldo > 1000.0:
+                                        fundo_colab = saldo * 0.05
+                                        saldo -= fundo_colab
+                                        
+                                    taxa_op = 0.25 if resp_role in ['admin', 'advogado'] else (0.15 if resp_role == 'bacharel' else 0.10)
+                                    val_operador = saldo * taxa_op
+                                    saldo -= val_operador
+                                    
+                                    val_leonidas = saldo * 0.60
+                                    val_nelson = saldo * 0.40
                             else:
-                                # REGRA A: PADRÃO
-                                if prosp_name != "Nenhum / Sem Prospectador":
-                                    val_prospectador = val_prosp_input
-                                
-                                saldo -= val_prospectador
-                                
-                                if saldo > 1000.0:
-                                    fundo_colab = saldo * 0.05
-                                    saldo -= fundo_colab
-                                    
-                                taxa_op = 0.25 if resp_role in ['admin', 'advogado'] else (0.15 if resp_role == 'bacharel' else 0.10)
-                                val_operador = saldo * taxa_op
-                                saldo -= val_operador
-                                
-                                val_leonidas = saldo * 0.60
-                                val_nelson = saldo * 0.40
+                                # Regra simples de parcela
+                                regra_aplicada = "Parcela Normal"
+                                prosp_name = "N/A"
+                                val_operador = val_op_input
+                                saldo_socios = valor_bruto - val_operador
+                                val_leonidas = saldo_socios * 0.60
+                                val_nelson = saldo_socios * 0.40
 
-                            # Salvar Repasse em JSON no Log de Auditoria
+                            # Salvar Repasse
                             repasse_dict = {
                                 "parcela_id": parcela_obj['id'],
                                 "contrato": sel_contrato,
@@ -824,7 +839,7 @@ elif authentication_status == True:
                                 "prospectador": prosp_name,
                                 "valor_prospectador": round(val_prospectador, 2),
                                 "operador": resp_name,
-                                "papel_operador": resp_role,
+                                "papel_operador": resp_role if is_entrada else "N/A",
                                 "valor_operador": round(val_operador, 2),
                                 "fundo_colab": round(fundo_colab, 2),
                                 "leonidas": round(val_leonidas, 2),
@@ -833,7 +848,6 @@ elif authentication_status == True:
                             }
                             json_repasse = json.dumps(repasse_dict, ensure_ascii=False)
                             
-                            # Atualiza status no banco e grava logs
                             try:
                                 supabase.table("parcelas").update({"status": "Pago"}).eq("id", parcela_obj['id']).execute()
                                 registrar_auditoria(username, "Baixa e Rateio", "Repasses", json_repasse)
@@ -855,35 +869,33 @@ elif authentication_status == True:
                         linhas = []
                         for log in res_rep.data:
                             try:
-                                # Tenta ler o JSON do campo detalhes
                                 r = json.loads(log['detalhes'])
+                                val_prosp_exib = r.get('valor_prospectador', 0)
+                                val_op_exib = r.get('valor_operador', 0)
                                 
-                                # Evita duplicar valor de prospecção visualmente na regra de acúmulo
-                                val_prosp_exib = r['valor_prospectador']
-                                val_op_exib = r['valor_operador']
-                                if "Acúmulo" in r['regra']:
-                                    val_prosp_exib = 0.0 # Mostraremos tudo no valor do operador
+                                if "Acúmulo" in r.get('regra', ''):
+                                    val_prosp_exib = 0.0
 
                                 linhas.append({
                                     "Data": datetime.strptime(log['data_hora'][:10], "%Y-%m-%d").strftime("%d/%m/%Y"),
-                                    "Contrato": r.get('contrato', '').split(' — ')[0], # Exibe só nome do cliente para caber melhor
+                                    "Tipo Regra": r.get('regra', 'N/D'),
+                                    "Contrato": r.get('contrato', '').split(' — ')[0],
                                     "Valor Bruto": f"R$ {r.get('valor_bruto', 0):.2f}",
                                     "Fundo Colab.": f"R$ {r.get('fundo_colab', 0):.2f}",
                                     "Prospectador": r.get('prospectador', ''),
                                     "Val. Prospector": f"R$ {val_prosp_exib:.2f}",
-                                    "Operador": f"{r.get('operador', '')} ({r.get('papel_operador', '')})",
+                                    "Operador": r.get('operador', ''),
                                     "Val. Operador": f"R$ {val_op_exib:.2f}",
                                     "Leônidas (60%)": f"R$ {r.get('leonidas', 0):.2f}",
                                     "Nelson (40%)": f"R$ {r.get('nelson', 0):.2f}"
                                 })
                             except Exception:
-                                pass # Ignora logs antigos ou mal formatados se houver
+                                pass
                         
                         if linhas:
                             df_rep = pd.DataFrame(linhas)
                             st.dataframe(df_rep, use_container_width=True, hide_index=True)
                             
-                            # Adicionar Botão de Exportar para Excel/CSV
                             st.download_button(
                                 label="📥 Exportar Extrato (CSV)",
                                 data=df_rep.to_csv(index=False).encode('utf-8'),

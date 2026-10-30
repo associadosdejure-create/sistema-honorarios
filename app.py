@@ -516,11 +516,9 @@ elif authentication_status == True:
             if user_role == 'admin':
                 acoes.insert(4, "Excluir Cliente")
         elif menu_principal == "Pagamentos":
-            acoes = ["Ver Parcelas", "Cadastrar Contrato", "Baixar Parcela", "Editar Contrato"]
+            acoes = ["Ver Parcelas", "Cadastrar Contrato", "Editar Contrato"]
             if user_role == 'admin':
-                acoes.insert(3, "Extrato de Repasses")
-                acoes.insert(4, "Relatório por Período")
-                acoes.append("Excluir Contrato")
+                acoes = ["Ver Parcelas", "Cadastrar Contrato", "Baixar Parcela", "Extrato de Repasses", "Relatório por Período", "Editar Contrato", "Excluir Contrato"]
         elif menu_principal == "Perícias":
             acoes = ["Ver Perícias", "Cadastrar Perícia", "Importar Excel", "Editar Perícia"]
             if user_role == 'admin':
@@ -819,7 +817,7 @@ elif authentication_status == True:
                     else: st.info("Sem parcelas.")
                 else: st.info("Sem contratos.")
 
-            elif sub == "Baixar Parcela":
+            elif sub == "Baixar Parcela" and user_role == 'admin':
                 st.header("💰 Baixar Parcela e Calcular Rateio")
                 
                 res_h = carregar_dados("honorarios")

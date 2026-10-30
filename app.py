@@ -851,9 +851,16 @@ elif authentication_status == True:
 
                 if st.session_state.get('cad_user_sucesso'):
                     st.success("🎉 Usuário cadastrado com sucesso!")
-                    if st.button("➕ Cadastrar Novo Usuário", key="btn_novo_user", type="primary"):
-                        st.session_state['cad_user_sucesso'] = False
-                        st.rerun()
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        if st.button("➕ Cadastrar Novo Usuário", key="btn_novo_user", type="primary", use_container_width=True):
+                            st.session_state['cad_user_sucesso'] = False
+                            st.rerun()
+                    with col2:
+                        if st.button("⬅️ Voltar para Lista", key="btn_vol_user", use_container_width=True):
+                            st.session_state['cad_user_sucesso'] = False
+                            st.session_state['submenu_atual'] = "Gerenciar Usuários"
+                            st.rerun()
 
             elif sub == "Gerenciar Usuários" and user_role == 'admin':
                 st.header("🛡️ Gerenciamento de Usuários Ativos")
@@ -901,9 +908,16 @@ elif authentication_status == True:
 
                 if st.session_state.get('cad_cli_sucesso'):
                     st.success("🎉 Cliente cadastrado com sucesso!")
-                    if st.button("➕ Cadastrar Novo Cliente", key="btn_novo_cli", type="primary"):
-                        st.session_state['cad_cli_sucesso'] = False
-                        st.rerun()
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        if st.button("➕ Cadastrar Novo Cliente", key="btn_novo_cli", type="primary", use_container_width=True):
+                            st.session_state['cad_cli_sucesso'] = False
+                            st.rerun()
+                    with col2:
+                        if st.button("⬅️ Voltar para Base de Clientes", key="btn_vol_cli", use_container_width=True):
+                            st.session_state['cad_cli_sucesso'] = False
+                            st.session_state['submenu_atual'] = "Consultar Clientes"
+                            st.rerun()
 
             elif sub == "Importar Excel":
                 st.header("📥 Importar Clientes via Planilha Excel")
@@ -1019,9 +1033,16 @@ elif authentication_status == True:
 
                 if st.session_state.get('cad_hon_sucesso'):
                     st.success("🎉 Contrato e parcelas gerados com sucesso!")
-                    if st.button("➕ Cadastrar Novo Contrato", key="btn_novo_hon", type="primary"):
-                        st.session_state['cad_hon_sucesso'] = False
-                        st.rerun()
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        if st.button("➕ Cadastrar Novo Contrato", key="btn_novo_hon", type="primary", use_container_width=True):
+                            st.session_state['cad_hon_sucesso'] = False
+                            st.rerun()
+                    with col2:
+                        if st.button("⬅️ Voltar para Parcelas", key="btn_vol_hon", use_container_width=True):
+                            st.session_state['cad_hon_sucesso'] = False
+                            st.session_state['submenu_atual'] = "Ver Parcelas"
+                            st.rerun()
 
             elif sub == "Ver Parcelas":
                 st.header("📋 Visualizar Parcelas")
@@ -1487,9 +1508,16 @@ elif authentication_status == True:
 
                 if st.session_state.get('cad_per_sucesso'):
                     st.success("🎉 Perícia cadastrada com sucesso!")
-                    if st.button("➕ Cadastrar Nova Perícia", key="btn_novo_per", type="primary"):
-                        st.session_state['cad_per_sucesso'] = False
-                        st.rerun()
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        if st.button("➕ Cadastrar Nova Perícia", key="btn_novo_per", type="primary", use_container_width=True):
+                            st.session_state['cad_per_sucesso'] = False
+                            st.rerun()
+                    with col2:
+                        if st.button("⬅️ Voltar para Lista", key="btn_vol_per", use_container_width=True):
+                            st.session_state['cad_per_sucesso'] = False
+                            st.session_state['submenu_atual'] = "Ver Perícias"
+                            st.rerun()
 
             elif sub == "Importar Excel":
                 st.header("📥 Importar Perícias via Excel")
@@ -1609,9 +1637,16 @@ elif authentication_status == True:
 
                 if st.session_state.get('cad_exp_sucesso'):
                     st.success("🎉 Expediente cadastrado com sucesso!")
-                    if st.button("➕ Cadastrar Novo Expediente", key="btn_novo_exp", type="primary"):
-                        st.session_state['cad_exp_sucesso'] = False
-                        st.rerun()
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        if st.button("➕ Cadastrar Novo Expediente", key="btn_novo_exp", type="primary", use_container_width=True):
+                            st.session_state['cad_exp_sucesso'] = False
+                            st.rerun()
+                    with col2:
+                        if st.button("⬅️ Voltar para Lista", key="btn_vol_exp", use_container_width=True):
+                            st.session_state['cad_exp_sucesso'] = False
+                            st.session_state['submenu_atual'] = "Consultar Expedientes"
+                            st.rerun()
 
             elif sub == "Importar Excel":
                 st.header("📥 Importar Expedientes via Excel")
@@ -1690,9 +1725,16 @@ elif authentication_status == True:
 
                 if st.session_state.get('cad_trf_sucesso'):
                     st.success("🎉 Expediente TRF cadastrado com sucesso!")
-                    if st.button("➕ Cadastrar Novo Expediente TRF", key="btn_novo_trf", type="primary"):
-                        st.session_state['cad_trf_sucesso'] = False
-                        st.rerun()
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        if st.button("➕ Cadastrar Novo Expediente TRF", key="btn_novo_trf", type="primary", use_container_width=True):
+                            st.session_state['cad_trf_sucesso'] = False
+                            st.rerun()
+                    with col2:
+                        if st.button("⬅️ Voltar para Lista", key="btn_vol_trf", use_container_width=True):
+                            st.session_state['cad_trf_sucesso'] = False
+                            st.session_state['submenu_atual'] = "Consultar Expedientes TRF"
+                            st.rerun()
 
             elif sub == "Importar Excel":
                 st.header("📥 Importar Expedientes TRF via Excel")
@@ -1778,9 +1820,16 @@ elif authentication_status == True:
 
                 if st.session_state.get('cad_pen_sucesso'):
                     st.success("🎉 Pendência cadastrada com sucesso!")
-                    if st.button("➕ Cadastrar Nova Pendência", key="btn_novo_pen", type="primary"):
-                        st.session_state['cad_pen_sucesso'] = False
-                        st.rerun()
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        if st.button("➕ Cadastrar Nova Pendência", key="btn_novo_pen", type="primary", use_container_width=True):
+                            st.session_state['cad_pen_sucesso'] = False
+                            st.rerun()
+                    with col2:
+                        if st.button("⬅️ Voltar para Lista", key="btn_vol_pen", use_container_width=True):
+                            st.session_state['cad_pen_sucesso'] = False
+                            st.session_state['submenu_atual'] = "Consultar Pendências"
+                            st.rerun()
 
             elif sub == "Importar Excel":
                 st.header("📥 Importar Pendências via Excel")

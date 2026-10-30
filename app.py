@@ -8,6 +8,7 @@ import time
 import os
 import bcrypt
 import json
+import base64
 
 st.set_page_config(page_title="Controle DEJURE ADVOCACIA", layout="wide", page_icon="⚖️")
 
@@ -52,6 +53,11 @@ except Exception:
 
 def gerar_hash(senha: str) -> str:
     return bcrypt.hashpw(senha.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+
+def converter_imagem_base64(file) -> str:
+    encoded = base64.b64encode(file.read()).decode()
+    mime_type = file.type
+    return f"data:{mime_type};base64,{encoded}"
 
 def registrar_auditoria(usuario, acao, modulo, detalhes=""):
     try:
@@ -578,13 +584,13 @@ elif authentication_status == True:
         if menu_principal == "Segurança":
             if sub == "Meu Perfil":
                 st.header("👤 Meu Perfil de Usuário")
-                st.caption(f"Gerencie suas informações pessoais e foto de perfil ({username}).")
+                st.caption(f"Gerencie suas informações pessoais e envie sua foto de perfil diretamente do seu computador ou celular ({username}).")
                 
                 col_pf1, col_pf2 = st.columns([1, 2])
                 
                 with col_pf1:
                     if user_info.get("foto_url"):
-                        st.image(user_info.get("foto_url"), caption="Foto Atual", use_container_width=True)
+                        st.image(user_info.get("foto_url"), caption="Foto de Perfil Atual", use_container_width=True)
                     else:
                         st.info("Sem foto cadastrada.")
                 
@@ -593,7 +599,9 @@ elif authentication_status == True:
                         p_nome = st.text_input("Nome Completo", value=user_info.get("name", ""))
                         p_tel = st.text_input("Telefone de Contato", value=user_info.get("telefone", ""))
                         p_oab = st.text_input("Registro OAB / Identificação Profissional", value=user_info.get("oab", ""))
-                        p_foto = st.text_input("URL da Foto de Perfil (Link de Imagem pública)", value=user_info.get("foto_url", ""))
+                        
+                        file_foto = st.file_uploader("Escolher Foto do Computador ou Celular (.png, .jpg, .jpeg)", type=["png", "jpg", "jpeg"])
+                        
                         p_obs = st.text_area("Observações Pessoais", value=user_info.get("observacoes_pessoais", ""))
                         
                         if st.form_submit_button("Salvar Alterações no Perfil", type="primary"):
@@ -601,16 +609,20 @@ elif authentication_status == True:
                                 st.warning("A conta Master de emergência não altera perfil no banco.")
                             else:
                                 try:
+                                    foto_final = user_info.get("foto_url")
+                                    if file_foto is not None:
+                                        foto_final = converter_imagem_base64(file_foto)
+                                    
                                     supabase.table("usuarios_sistema").update({
                                         "nome_completo": p_nome,
                                         "name": p_nome,
                                         "telefone": p_tel,
                                         "oab": p_oab,
-                                        "foto_url": p_foto,
+                                        "foto_url": foto_final,
                                         "observacoes_pessoais": p_obs
                                     }).eq("username", username).execute()
                                     
-                                    registrar_auditoria(username, "Atualizar Perfil", "Segurança", "Dados de perfil e foto atualizados.")
+                                    registrar_auditoria(username, "Atualizar Perfil", "Segurança", "Dados de perfil e foto atualizados via upload.")
                                     st.cache_data.clear()
                                     st.success("✅ Perfil atualizado com sucesso!")
                                     time.sleep(1)

@@ -187,6 +187,19 @@ elif authentication_status == True:
                             st.rerun()
                         except Exception as e:
                             st.error(f"Erro ao atualizar senha no banco: {e}")
+
+            st.markdown("<br>", unsafe_allow_html=True)
+            if st.button("⬅️ Sair / Voltar para a Tela de Login", use_container_width=True):
+                registrar_auditoria(username, "Logout (Primeiro Acesso)", "Acesso", f"Usuário {username} optou por sair na tela de primeiro acesso.")
+                st.session_state.update({
+                    'authentication_status': None,
+                    'login_registrado': False,
+                    'name': None,
+                    'username': None
+                })
+                if 'ultima_atividade' in st.session_state:
+                    del st.session_state['ultima_atividade']
+                st.rerun()
         
         # Interrompe a renderização do restante da aplicação (Menu e Módulos)
         st.stop()
@@ -895,7 +908,7 @@ elif authentication_status == True:
                                 supabase.table("parcelas").update({"status": "Pago"}).eq("id", parcela_obj['id']).execute()
                                 registrar_auditoria(username, "Baixa e Rateio", "Repasses", json_repasse)
                                 st.cache_data.clear()
-                                st.success("✅ Parcela baixada e repasse calculado com sucesso! Consulte o Extrato de Repasses.")
+                                st.success("✅ Parcela baixada e repasse calculated com sucesso! Consulte o Extrato de Repasses.")
                                 st.rerun()
                             except Exception as e:
                                 st.error(f"Erro ao processar baixa: {e}")

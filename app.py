@@ -62,16 +62,15 @@ def converter_imagem_base64(file) -> str:
 
 def exibir_imagem_base64(foto_url, width=120):
     """Converte string base64 do banco para bytes exibíveis no st.image"""
-    if not foto_url:
+    if not foto_url or not isinstance(foto_url, str):
         return False
     try:
-        if isinstance(foto_url, str) and foto_url.startswith("data:"):
+        if foto_url.startswith("data:"):
             header, encoded = foto_url.split(",", 1)
             image_bytes = base64.b64decode(encoded)
             st.image(io.BytesIO(image_bytes), width=width)
             return True
         else:
-            # Caso seja URL web normal
             st.image(foto_url, width=width)
             return True
     except Exception:
@@ -527,46 +526,57 @@ elif authentication_status == True:
         st.caption("Conheça os profissionais que compõem o nosso escritório e celebre os aniversariantes.")
         
         try:
+            # Busca direta e sem cache na tabela para garantir dados atualizados
             res_usuarios = supabase.table("usuarios_sistema").select("*").execute()
             lista_colabs = res_usuarios.data if res_usuarios.data else []
             
-            # --- QUADRO SUPERIOR: COLABORADOR DO MÊS ---
-            st.markdown("### 🏆 Colaborador(a) em Destaque do Mês")
-            
-            colabs_validos = [u for u in lista_colabs if u.get('username') != 'master']
-            
-            if colabs_validos:
-                if user_role == 'admin':
-                    st.caption("⚙️ Painel do Sócio: Defina quem será o Colaborador do Mês em destaque.")
-                    nomes_c = [c.get('nome_completo', c.get('name', '')) for c in colabs_validos]
-                    destaque_atual = st.selectbox("Selecione o Colaborador do Mês em Destaque:", nomes_c, index=0)
+            # --- DIAGNÓSTICO VISUAL PARA DEBUG ---
+            with st.expander("🛠️ Diagnóstico do Módulo Equipe Dejure (Clique para abrir)", expanded=False):
+                st.write(f"Total de registros encontrados na tabela `usuarios_sistema`: **{len(lista_colabs)}**")
+                if lista_colabs:
+                    st.json(lista_colabs)
                 else:
-                    destaque_atual = colabs_validos[0].get('nome_completo', colabs_validos[0].get('name', ''))
+                    st.warning("A tabela retornou vazia. Verifique se existem usuários cadastrados na tabela do Supabase.")
 
-                obj_destaque = next((c for c in colabs_validos if c.get('nome_completo') == destaque_atual or c.get('name') == destaque_atual), colabs_validos[0])
+            if not lista_colabs:
+                st.warning("⚠️ Nenhum colaborador encontrado na tabela `usuarios_sistema` do Supabase.")
+            else:
+                # --- QUADRO SUPERIOR: COLABORADOR DO MÊS ---
+                st.markdown("### 🏆 Colaborador(a) em Destaque do Mês")
                 
-                col_d1, col_d2, col_d3 = st.columns([1, 2, 1])
-                with col_d2:
-                    st.markdown("""
-                        <div style="background: linear-gradient(135deg, #1F1F1F, #121212); padding: 20px; border-radius: 15px; border: 2px solid #D4AF37; text-align: center; box-shadow: 0px 4px 15px rgba(212, 175, 55, 0.3);">
-                    """, unsafe_allow_html=True)
-                    
-                    foto_dest = obj_destaque.get('foto_url')
-                    if not exibir_imagem_base64(foto_dest, width=140):
-                        st.markdown("<h1 style='font-size: 60px; margin: 0;'>⭐</h1>", unsafe_allow_html=True)
-                    
-                    st.markdown(f"<h3 style='color: #D4AF37; margin-top: 10px;'>{obj_destaque.get('nome_completo', obj_destaque.get('name', ''))}</h3>", unsafe_allow_html=True)
-                    papel_d = {"admin": "👑 Sócio Administrador", "advogado": "⚖️ Advogado(a)", "bacharel": "📜 Bacharel(a)"}.get(obj_destaque.get('role'), "🎓 Estagiário(a)")
-                    st.markdown(f"<p style='color: #E0E0E0; font-weight: bold;'>{papel_d}</p>", unsafe_allow_html=True)
-                    if obj_destaque.get('oab'):
-                        st.markdown(f"<p style='color: #A0A0A0; font-size: 14px;'>OAB: {obj_destaque.get('oab')}</p>", unsafe_allow_html=True)
-                    
-                    st.markdown("</div>", unsafe_allow_html=True)
+                colabs_validos = [u for u in lista_colabs if str(u.get('username', '')).strip().lower() != 'master']
+                
+                if colabs_validos:
+                    if user_role == 'admin':
+                        st.caption("⚙️ Painel do Sócio: Defina quem será o Colaborador do Mês em destaque.")
+                        nomes_c = [c.get('nome_completo', c.get('name', '')) for c in colabs_validos]
+                        destaque_atual = st.selectbox("Selecione o Colaborador do Mês em Destaque:", nomes_c, index=0, key="sel_colab_mes")
+                    else:
+                        destaque_atual = colabs_validos[0].get('nome_completo', colabs_validos[0].get('name', ''))
 
-            st.markdown("---")
-            st.markdown("### 🖼️ Galeria de Profissionais")
-            
-            if lista_colabs:
+                    obj_destaque = next((c for c in colabs_validos if c.get('nome_completo') == destaque_atual or c.get('name') == destaque_atual), colabs_validos[0])
+                    
+                    col_d1, col_d2, col_d3 = st.columns([1, 2, 1])
+                    with col_d2:
+                        st.markdown("""
+                            <div style="background: linear-gradient(135deg, #1F1F1F, #121212); padding: 20px; border-radius: 15px; border: 2px solid #D4AF37; text-align: center; box-shadow: 0px 4px 15px rgba(212, 175, 55, 0.3);">
+                        """, unsafe_allow_html=True)
+                        
+                        foto_dest = obj_destaque.get('foto_url')
+                        if not exibir_imagem_base64(foto_dest, width=140):
+                            st.markdown("<h1 style='font-size: 60px; margin: 0;'>⭐</h1>", unsafe_allow_html=True)
+                        
+                        st.markdown(f"<h3 style='color: #D4AF37; margin-top: 10px;'>{obj_destaque.get('nome_completo', obj_destaque.get('name', ''))}</h3>", unsafe_allow_html=True)
+                        papel_d = {"admin": "👑 Sócio Administrador", "advogado": "⚖️ Advogado(a)", "bacharel": "📜 Bacharel(a)"}.get(obj_destaque.get('role'), "🎓 Estagiário(a)")
+                        st.markdown(f"<p style='color: #E0E0E0; font-weight: bold;'>{papel_d}</p>", unsafe_allow_html=True)
+                        if obj_destaque.get('oab'):
+                            st.markdown(f"<p style='color: #A0A0A0; font-size: 14px;'>OAB: {obj_destaque.get('oab')}</p>", unsafe_allow_html=True)
+                        
+                        st.markdown("</div>", unsafe_allow_html=True)
+
+                st.markdown("---")
+                st.markdown("### 🖼️ Galeria de Profissionais")
+                
                 cols_galeria = st.columns(3)
                 for idx, colab in enumerate(lista_colabs):
                     col_atual = cols_galeria[idx % 3]
@@ -600,8 +610,6 @@ elif authentication_status == True:
                                 pass
                         
                         st.markdown("</div>", unsafe_allow_html=True)
-            else:
-                st.info("Nenhum usuário cadastrado na equipe.")
         except Exception as e:
             st.error(f"Erro ao carregar a galeria da equipe: {e}")
 
@@ -1079,7 +1087,6 @@ elif authentication_status == True:
                             resp_name = st.selectbox("⚖️ Operador (Trabalhou no Processo):", nomes_opcoes)
                             val_op_input = st.number_input("💵 Valor do Operador avaliado no ato (R$):", min_value=0.0, max_value=valor_bruto, step=50.0)
 
-                        # --- CÁLCULO E PROVA REAL EM TEMPO REAL ---
                         val_prospectador = 0.0
                         val_operador = 0.0
                         fundo_colab = 0.0
@@ -1793,6 +1800,8 @@ elif authentication_status == True:
                             supabase.table("pendencias").update({"cliente": ec, "processo": ep, "documento_devido": ed}).eq("id", obj['id']).execute()
                             registrar_auditoria(username, "Editar Pendência", "Pendências", f"ID: {obj['id']}")
                             st.cache_data.clear(); st.success("Atualizado!"); st.rerun()
+            elif sub == "Editar Pendência":
+                pass
             elif sub == "Excluir Pendência" and user_role == 'admin':
                 st.header("🗑️ Excluir Pendência")
                 res = carregar_dados("pendencias")

@@ -283,7 +283,7 @@ elif authentication_status == True:
             alertas_expedientes_trf = []
             alertas_pagamentos = []
 
-            # Perícias
+            # Perícias (Separando explicitamente em Perícia Médica e Perícia Social para clareza)
             for p in per:
                 if p.get('status') == 'Pendente':
                     if p.get('data_pm'):

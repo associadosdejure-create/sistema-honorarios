@@ -85,7 +85,8 @@ def carregar_usuarios_db():
                 "trocar_senha": False,
                 "foto_url": None,
                 "telefone": "",
-                "oab": ""
+                "oab": "",
+                "destaque_mes": False
             }
         }
     }
@@ -109,7 +110,8 @@ def carregar_usuarios_db():
                     "foto_url": u.get("foto_url", None),
                     "telefone": u.get("telefone", ""),
                     "oab": u.get("oab", ""),
-                    "observacoes_pessoais": u.get("observacoes_pessoais", "")
+                    "observacoes_pessoais": u.get("observacoes_pessoais", ""),
+                    "destaque_mes": u.get("destaque_mes", False)
                 }
     except Exception:
         pass
@@ -170,7 +172,6 @@ elif authentication_status == True:
     user_info = credentials["usernames"].get(username, {})
     user_role = user_info.get("role", "estagiario")
     
-    # --- BLOQUEIO DE PRIMEIRO ACESSO (TROCA DE SENHA OBRIGATÓRIA) ---
     precisa_trocar_senha = user_info.get("trocar_senha", False) if username != "master" else False
 
     if precisa_trocar_senha:
@@ -290,7 +291,6 @@ elif authentication_status == True:
         return ''
 
     with st.sidebar:
-        # --- EXIBIÇÃO DA FOTO DE PERFIL ---
         user_foto = user_info.get("foto_url", None)
         col_f1, col_f2, col_f3 = st.columns([1, 2, 1])
         with col_f2:
@@ -590,40 +590,113 @@ elif authentication_status == True:
             if sub == "Nossa Equipe":
                 st.header("🧑‍⚖️ Equipe Dejure")
                 st.caption("Conheça os profissionais que fazem parte do nosso escritório.")
-                st.markdown("---")
-
+                
+                # Prepara a lista de usuários com o 'username' injetado para controle
                 usuarios_equipe = []
                 for uname, uinfo in credentials["usernames"].items():
                     if uname != "master" and uinfo.get("name"):
-                        usuarios_equipe.append(uinfo)
+                        u_copy = uinfo.copy()
+                        u_copy["username"] = uname
+                        usuarios_equipe.append(u_copy)
                 
                 if not usuarios_equipe:
                     st.info("Nenhum membro da equipe encontrado.")
                 else:
-                    cols = st.columns(4)
-                    for i, u in enumerate(usuarios_equipe):
-                        col = cols[i % 4]
-                        with col:
+                    # ÁREA DE ADMINISTRAÇÃO: ESCOLHER O DESTAQUE
+                    if user_role == 'admin':
+                        with st.expander("⭐ Definir Destaque do Mês (Apenas Administrador)"):
+                            opcoes_destaque = {"Nenhum Destaque / Remover": ""}
+                            for u in usuarios_equipe:
+                                opcoes_destaque[u['name']] = u['username']
+                            
+                            sel_destaque = st.selectbox("Selecione o Colaborador:", list(opcoes_destaque.keys()))
+                            
+                            if st.button("Salvar Destaque", type="primary"):
+                                try:
+                                    # 1. Reseta o destaque de todo mundo
+                                    supabase.table("usuarios_sistema").update({"destaque_mes": False}).neq("username", "master").execute()
+                                    
+                                    # 2. Atribui o destaque para o selecionado (se houver)
+                                    user_selecionado = opcoes_destaque[sel_destaque]
+                                    if user_selecionado:
+                                        supabase.table("usuarios_sistema").update({"destaque_mes": True}).eq("username", user_selecionado).execute()
+                                        registrar_auditoria(username, "Destaque do Mês", "Equipe", f"Destaque definido para: {sel_destaque}")
+                                    
+                                    st.cache_data.clear()
+                                    st.success("Destaque atualizado com sucesso! Recarregando...")
+                                    time.sleep(1)
+                                    st.rerun()
+                                except Exception as e:
+                                    st.error(f"Erro ao salvar: {e}\n(Dica: Verifique se você criou a coluna 'destaque_mes' no Supabase).")
+                    
+                    st.markdown("---")
+                    
+                    # SEPARA O DESTAQUE DO RESTANTE
+                    destaque = next((u for u in usuarios_equipe if u.get("destaque_mes")), None)
+                    outros = [u for u in usuarios_equipe if not u.get("destaque_mes")]
+
+                    # RENDERIZA O DESTAQUE MAIOR NO TOPO
+                    if destaque:
+                        col_d1, col_d2, col_d3 = st.columns([1, 2, 1])
+                        with col_d2:
+                            # Define o Título Dinâmico com base no Perfil (role)
+                            titulo_destaque = {
+                                "admin": "SÓCIO(A) DO MÊS", 
+                                "advogado": "ADVOGADO(A) DO MÊS", 
+                                "bacharel": "BACHAREL(A) DO MÊS"
+                            }.get(destaque.get("role"), "ESTAGIÁRIO(A) DO MÊS")
+
                             with st.container(border=True):
-                                foto = u.get("foto_url")
+                                st.markdown(f"<h3 style='text-align: center; color: #0A0A0A; background-color: #D4AF37; margin-top: 0; padding: 10px; border-radius: 5px;'>🏆 {titulo_destaque} 🏆</h3>", unsafe_allow_html=True)
+                                
+                                foto = destaque.get("foto_url")
                                 if foto:
                                     st.image(foto, use_container_width=True)
                                 else:
-                                    st.markdown("<h1 style='text-align: center; margin: 0; padding: 40px 0; background-color: #1A1A1A; border-radius: 5px;'>👤</h1>", unsafe_allow_html=True)
+                                    st.markdown("<h1 style='text-align: center; margin: 0; padding: 60px 0; background-color: #1A1A1A; border-radius: 5px;'>👤</h1>", unsafe_allow_html=True)
                                 
-                                st.markdown(f"<h4 style='text-align: center; color: #D4AF37; margin-bottom: 0px;'>{u.get('name')}</h4>", unsafe_allow_html=True)
-                                papel_formatado = {"admin": "👑 Sócio", "advogado": "⚖️ Advogado(a)", "bacharel": "📜 Bacharel(a)"}.get(u.get("role"), "🎓 Estagiário")
-                                st.markdown(f"<p style='text-align: center; margin-bottom: 5px;'><b>{papel_formatado}</b></p>", unsafe_allow_html=True)
+                                st.markdown(f"<h2 style='text-align: center; color: #E0E0E0; margin-bottom: 5px;'>{destaque.get('name')}</h2>", unsafe_allow_html=True)
                                 
-                                if u.get("oab"):
-                                    st.markdown(f"<p style='text-align: center; font-size: 0.9em; margin-bottom: 0;'>OAB: {u.get('oab')}</p>", unsafe_allow_html=True)
-                                if u.get("telefone"):
-                                    st.markdown(f"<p style='text-align: center; font-size: 0.9em; margin-bottom: 0;'>📞 {u.get('telefone')}</p>", unsafe_allow_html=True)
+                                if destaque.get("oab"):
+                                    st.markdown(f"<p style='text-align: center; font-size: 1.1em; margin-bottom: 0;'>OAB: {destaque.get('oab')}</p>", unsafe_allow_html=True)
+                                if destaque.get("telefone"):
+                                    st.markdown(f"<p style='text-align: center; font-size: 1.1em; margin-bottom: 0;'>📞 {destaque.get('telefone')}</p>", unsafe_allow_html=True)
                                 
-                                st.write("")
-                                if u.get("observacoes_pessoais"):
-                                    with st.expander("Ver perfil detalhado"):
-                                        st.write(u.get("observacoes_pessoais"))
+                                if destaque.get("observacoes_pessoais"):
+                                    st.write("")
+                                    st.info(destaque.get("observacoes_pessoais"))
+                        
+                        st.markdown("---")
+
+                    # RENDERIZA O RESTANTE DA EQUIPE NA GRADE (GRID)
+                    if outros:
+                        if destaque:
+                            st.subheader("👥 Demais Integrantes da Equipe")
+                            
+                        cols = st.columns(4)
+                        for i, u in enumerate(outros):
+                            col = cols[i % 4]
+                            with col:
+                                with st.container(border=True):
+                                    foto = u.get("foto_url")
+                                    if foto:
+                                        st.image(foto, use_container_width=True)
+                                    else:
+                                        st.markdown("<h1 style='text-align: center; margin: 0; padding: 40px 0; background-color: #1A1A1A; border-radius: 5px;'>👤</h1>", unsafe_allow_html=True)
+                                    
+                                    st.markdown(f"<h4 style='text-align: center; color: #D4AF37; margin-bottom: 0px;'>{u.get('name')}</h4>", unsafe_allow_html=True)
+                                    papel_formatado = {"admin": "👑 Sócio", "advogado": "⚖️ Advogado(a)", "bacharel": "📜 Bacharel(a)"}.get(u.get("role"), "🎓 Estagiário")
+                                    st.markdown(f"<p style='text-align: center; margin-bottom: 5px;'><b>{papel_formatado}</b></p>", unsafe_allow_html=True)
+                                    
+                                    if u.get("oab"):
+                                        st.markdown(f"<p style='text-align: center; font-size: 0.9em; margin-bottom: 0;'>OAB: {u.get('oab')}</p>", unsafe_allow_html=True)
+                                    if u.get("telefone"):
+                                        st.markdown(f"<p style='text-align: center; font-size: 0.9em; margin-bottom: 0;'>📞 {u.get('telefone')}</p>", unsafe_allow_html=True)
+                                    
+                                    st.write("")
+                                    if u.get("observacoes_pessoais"):
+                                        with st.expander("Ver perfil detalhado"):
+                                            st.write(u.get("observacoes_pessoais"))
 
         elif menu_principal == "Segurança":
             if sub == "Meu Perfil":

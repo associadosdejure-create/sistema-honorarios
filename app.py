@@ -86,6 +86,7 @@ def carregar_usuarios_db():
                 "foto_url": None,
                 "telefone": "",
                 "oab": "",
+                "data_nascimento": None,
                 "destaque_mes": False
             }
         }
@@ -110,6 +111,7 @@ def carregar_usuarios_db():
                     "foto_url": u.get("foto_url", None),
                     "telefone": u.get("telefone", ""),
                     "oab": u.get("oab", ""),
+                    "data_nascimento": u.get("data_nascimento", None),
                     "observacoes_pessoais": u.get("observacoes_pessoais", ""),
                     "destaque_mes": u.get("destaque_mes", False)
                 }
@@ -295,7 +297,7 @@ elif authentication_status == True:
         col_f1, col_f2, col_f3 = st.columns([1, 2, 1])
         with col_f2:
             if user_foto:
-                st.image(user_foto, use_container_width=True)
+                st.markdown(f"<div style='width: 100%; height: 120px; border-radius: 50%; overflow: hidden;'><img src='{user_foto}' style='width: 100%; height: 100%; object-fit: cover;'></div>", unsafe_allow_html=True)
             else:
                 st.markdown("<h1 style='text-align: center; margin: 0;'>👤</h1>", unsafe_allow_html=True)
 
@@ -591,7 +593,6 @@ elif authentication_status == True:
                 st.header("🧑‍⚖️ Equipe Dejure")
                 st.caption("Conheça os profissionais que fazem parte do nosso escritório.")
                 
-                # Prepara a lista de usuários com o 'username' injetado para controle
                 usuarios_equipe = []
                 for uname, uinfo in credentials["usernames"].items():
                     if uname != "master" and uinfo.get("name"):
@@ -602,7 +603,6 @@ elif authentication_status == True:
                 if not usuarios_equipe:
                     st.info("Nenhum membro da equipe encontrado.")
                 else:
-                    # ÁREA DE ADMINISTRAÇÃO: ESCOLHER O DESTAQUE
                     if user_role == 'admin':
                         with st.expander("⭐ Definir Destaque do Mês (Apenas Administrador)"):
                             opcoes_destaque = {"Nenhum Destaque / Remover": ""}
@@ -613,10 +613,7 @@ elif authentication_status == True:
                             
                             if st.button("Salvar Destaque", type="primary"):
                                 try:
-                                    # 1. Reseta o destaque de todo mundo
                                     supabase.table("usuarios_sistema").update({"destaque_mes": False}).neq("username", "master").execute()
-                                    
-                                    # 2. Atribui o destaque para o selecionado (se houver)
                                     user_selecionado = opcoes_destaque[sel_destaque]
                                     if user_selecionado:
                                         supabase.table("usuarios_sistema").update({"destaque_mes": True}).eq("username", user_selecionado).execute()
@@ -627,19 +624,16 @@ elif authentication_status == True:
                                     time.sleep(1)
                                     st.rerun()
                                 except Exception as e:
-                                    st.error(f"Erro ao salvar: {e}\n(Dica: Verifique se você criou a coluna 'destaque_mes' no Supabase).")
+                                    st.error(f"Erro ao salvar: {e}")
                     
                     st.markdown("---")
                     
-                    # SEPARA O DESTAQUE DO RESTANTE
                     destaque = next((u for u in usuarios_equipe if u.get("destaque_mes")), None)
                     outros = [u for u in usuarios_equipe if not u.get("destaque_mes")]
 
-                    # RENDERIZA O DESTAQUE MAIOR NO TOPO
                     if destaque:
                         col_d1, col_d2, col_d3 = st.columns([1, 2, 1])
                         with col_d2:
-                            # Define o Título Dinâmico com base no Perfil (role)
                             titulo_destaque = {
                                 "admin": "SÓCIO(A) DO MÊS", 
                                 "advogado": "ADVOGADO(A) DO MÊS", 
@@ -650,17 +644,27 @@ elif authentication_status == True:
                                 st.markdown(f"<h3 style='text-align: center; color: #0A0A0A; background-color: #D4AF37; margin-top: 0; padding: 10px; border-radius: 5px;'>🏆 {titulo_destaque} 🏆</h3>", unsafe_allow_html=True)
                                 
                                 foto = destaque.get("foto_url")
+                                # Aqui injetamos um HTML/CSS para forçar a imagem a ter exatamente 320px de altura e não distorcer (object-fit: cover)
                                 if foto:
-                                    st.image(foto, use_container_width=True)
+                                    st.markdown(f"""
+                                        <div style='width: 100%; height: 320px; overflow: hidden; border-radius: 5px; margin-bottom: 15px;'>
+                                            <img src='{foto}' style='width: 100%; height: 100%; object-fit: cover;'>
+                                        </div>
+                                    """, unsafe_allow_html=True)
                                 else:
-                                    st.markdown("<h1 style='text-align: center; margin: 0; padding: 60px 0; background-color: #1A1A1A; border-radius: 5px;'>👤</h1>", unsafe_allow_html=True)
+                                    st.markdown("<div style='width: 100%; height: 320px; display: flex; align-items: center; justify-content: center; background-color: #1A1A1A; border-radius: 5px; margin-bottom: 15px;'><h1 style='margin:0; font-size: 5em;'>👤</h1></div>", unsafe_allow_html=True)
                                 
                                 st.markdown(f"<h2 style='text-align: center; color: #E0E0E0; margin-bottom: 5px;'>{destaque.get('name')}</h2>", unsafe_allow_html=True)
                                 
                                 if destaque.get("oab"):
                                     st.markdown(f"<p style='text-align: center; font-size: 1.1em; margin-bottom: 0;'>OAB: {destaque.get('oab')}</p>", unsafe_allow_html=True)
-                                if destaque.get("telefone"):
-                                    st.markdown(f"<p style='text-align: center; font-size: 1.1em; margin-bottom: 0;'>📞 {destaque.get('telefone')}</p>", unsafe_allow_html=True)
+                                
+                                # Aniversário formatado
+                                if destaque.get("data_nascimento"):
+                                    try:
+                                        dt_obj = datetime.strptime(destaque.get("data_nascimento"), "%Y-%m-%d")
+                                        st.markdown(f"<p style='text-align: center; font-size: 1.1em; margin-bottom: 0; color: #D4AF37;'>🎂 Aniversário: {dt_obj.strftime('%d/%m')}</p>", unsafe_allow_html=True)
+                                    except: pass
                                 
                                 if destaque.get("observacoes_pessoais"):
                                     st.write("")
@@ -668,7 +672,6 @@ elif authentication_status == True:
                         
                         st.markdown("---")
 
-                    # RENDERIZA O RESTANTE DA EQUIPE NA GRADE (GRID)
                     if outros:
                         if destaque:
                             st.subheader("👥 Demais Integrantes da Equipe")
@@ -679,19 +682,29 @@ elif authentication_status == True:
                             with col:
                                 with st.container(border=True):
                                     foto = u.get("foto_url")
+                                    # Imagens da grade com altura fixa de 220px, mantendo o enquadramento perfeito
                                     if foto:
-                                        st.image(foto, use_container_width=True)
+                                        st.markdown(f"""
+                                            <div style='width: 100%; height: 220px; overflow: hidden; border-radius: 5px; margin-bottom: 10px;'>
+                                                <img src='{foto}' style='width: 100%; height: 100%; object-fit: cover;'>
+                                            </div>
+                                        """, unsafe_allow_html=True)
                                     else:
-                                        st.markdown("<h1 style='text-align: center; margin: 0; padding: 40px 0; background-color: #1A1A1A; border-radius: 5px;'>👤</h1>", unsafe_allow_html=True)
+                                        st.markdown("<div style='width: 100%; height: 220px; display: flex; align-items: center; justify-content: center; background-color: #1A1A1A; border-radius: 5px; margin-bottom: 10px;'><h1 style='margin:0; font-size: 4em;'>👤</h1></div>", unsafe_allow_html=True)
                                     
-                                    st.markdown(f"<h4 style='text-align: center; color: #D4AF37; margin-bottom: 0px;'>{u.get('name')}</h4>", unsafe_allow_html=True)
+                                    st.markdown(f"<h4 style='text-align: center; color: #D4AF37; margin-bottom: 0px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;'>{u.get('name')}</h4>", unsafe_allow_html=True)
                                     papel_formatado = {"admin": "👑 Sócio", "advogado": "⚖️ Advogado(a)", "bacharel": "📜 Bacharel(a)"}.get(u.get("role"), "🎓 Estagiário")
                                     st.markdown(f"<p style='text-align: center; margin-bottom: 5px;'><b>{papel_formatado}</b></p>", unsafe_allow_html=True)
                                     
                                     if u.get("oab"):
                                         st.markdown(f"<p style='text-align: center; font-size: 0.9em; margin-bottom: 0;'>OAB: {u.get('oab')}</p>", unsafe_allow_html=True)
-                                    if u.get("telefone"):
-                                        st.markdown(f"<p style='text-align: center; font-size: 0.9em; margin-bottom: 0;'>📞 {u.get('telefone')}</p>", unsafe_allow_html=True)
+                                        
+                                    # Aniversário na grade
+                                    if u.get("data_nascimento"):
+                                        try:
+                                            dt_obj = datetime.strptime(u.get("data_nascimento"), "%Y-%m-%d")
+                                            st.markdown(f"<p style='text-align: center; font-size: 0.9em; margin-bottom: 0; color: #D4AF37;'>🎂 Aniversário: {dt_obj.strftime('%d/%m')}</p>", unsafe_allow_html=True)
+                                        except: pass
                                     
                                     st.write("")
                                     if u.get("observacoes_pessoais"):
@@ -707,7 +720,11 @@ elif authentication_status == True:
                 
                 with col_pf1:
                     if user_info.get("foto_url"):
-                        st.image(user_info.get("foto_url"), caption="Foto de Perfil Atual", use_container_width=True)
+                        st.markdown(f"""
+                            <div style='width: 100%; max-width: 300px; margin: 0 auto; height: 300px; border-radius: 10px; overflow: hidden; border: 2px solid #333;'>
+                                <img src='{user_info.get("foto_url")}' style='width: 100%; height: 100%; object-fit: cover;'>
+                            </div>
+                        """, unsafe_allow_html=True)
                     else:
                         st.info("Sem foto cadastrada.")
                 
@@ -717,9 +734,21 @@ elif authentication_status == True:
                         p_tel = st.text_input("Telefone de Contato", value=user_info.get("telefone", ""))
                         p_oab = st.text_input("Registro OAB / Identificação Profissional", value=user_info.get("oab", ""))
                         
+                        # Processando Data de Nascimento atual
+                        dt_nasc_atual = user_info.get("data_nascimento")
+                        if dt_nasc_atual:
+                            try:
+                                val_data = datetime.strptime(dt_nasc_atual, "%Y-%m-%d").date()
+                            except:
+                                val_data = None
+                        else:
+                            val_data = None
+                        
+                        p_nasc = st.date_input("Data de Nascimento", value=val_data, min_value=date(1920, 1, 1), max_value=date.today(), format="DD/MM/YYYY")
+                        
                         file_foto = st.file_uploader("Escolher Foto do Computador ou Celular (.png, .jpg, .jpeg)", type=["png", "jpg", "jpeg"])
                         
-                        p_obs = st.text_area("Observações Pessoais", value=user_info.get("observacoes_pessoais", ""))
+                        p_obs = st.text_area("Observações Pessoais (Minicurrículo, Gostos, etc.)", value=user_info.get("observacoes_pessoais", ""))
                         
                         if st.form_submit_button("Salvar Alterações no Perfil", type="primary"):
                             if username == "master":
@@ -730,16 +759,20 @@ elif authentication_status == True:
                                     if file_foto is not None:
                                         foto_final = converter_imagem_base64(file_foto)
                                     
+                                    # Pega a data formatada, ou None se estiver vazia
+                                    str_nasc = p_nasc.strftime("%Y-%m-%d") if p_nasc else None
+
                                     supabase.table("usuarios_sistema").update({
                                         "nome_completo": p_nome,
                                         "name": p_nome,
                                         "telefone": p_tel,
                                         "oab": p_oab,
+                                        "data_nascimento": str_nasc,
                                         "foto_url": foto_final,
                                         "observacoes_pessoais": p_obs
                                     }).eq("username", username).execute()
                                     
-                                    registrar_auditoria(username, "Atualizar Perfil", "Segurança", "Dados de perfil e foto atualizados via upload.")
+                                    registrar_auditoria(username, "Atualizar Perfil", "Segurança", "Dados de perfil (incluindo nascimento e foto) atualizados.")
                                     st.cache_data.clear()
                                     st.success("✅ Perfil atualizado com sucesso!")
                                     time.sleep(1)

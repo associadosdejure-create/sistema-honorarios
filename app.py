@@ -629,7 +629,14 @@ elif authentication_status == True:
                     st.markdown("---")
                     
                     destaque = next((u for u in usuarios_equipe if u.get("destaque_mes")), None)
-                    outros = [u for u in usuarios_equipe if not u.get("destaque_mes")]
+                    outros_brutos = [u for u in usuarios_equipe if not u.get("destaque_mes")]
+
+                    # ORDENAÇÃO POR HIERARQUIA: admin -> advogado -> bacharel -> estagiario, seguidos por ordem alfabética do nome
+                    ordem_cargos = {"admin": 1, "advogado": 2, "bacharel": 3, "estagiario": 4}
+                    outros = sorted(
+                        outros_brutos, 
+                        key=lambda x: (ordem_cargos.get(x.get("role", "estagiario"), 5), str(x.get("name", "")).lower())
+                    )
 
                     if destaque:
                         col_d1, col_d2, col_d3 = st.columns([1, 2, 1])
@@ -647,16 +654,16 @@ elif authentication_status == True:
                                 else:
                                     st.markdown("<div style='width: 100%; height: 320px; display: flex; align-items: center; justify-content: center; background-color: #1A1A1A; border-radius: 5px; margin-bottom: 15px;'><h1 style='margin:0; font-size: 5em;'>👤</h1></div>", unsafe_allow_html=True)
                                 
-                                st.markdown(f"<h2 style='text-align: center; color: #E0E0E0; margin-bottom: 5px;'>{destaque.get('name')}</h2>", unsafe_allow_html=True)
+                                st.markdown(f"<h3 style='text-align: center; color: #E0E0E0; margin-bottom: 5px; font-size: 1.25rem;'>{destaque.get('name')}</h3>", unsafe_allow_html=True)
                                 
                                 if destaque.get("oab"):
-                                    st.markdown(f"<p style='text-align: center; font-size: 1.1em; margin-bottom: 0;'>OAB: {destaque.get('oab')}</p>", unsafe_allow_html=True)
+                                    st.markdown(f"<p style='text-align: center; font-size: 1.0em; margin-bottom: 0;'>OAB: {destaque.get('oab')}</p>", unsafe_allow_html=True)
                                 
                                 # Aniversário formatado
                                 if destaque.get("data_nascimento"):
                                     try:
                                         dt_obj = datetime.strptime(destaque.get("data_nascimento"), "%Y-%m-%d")
-                                        st.markdown(f"<p style='text-align: center; font-size: 1.1em; margin-bottom: 0; color: #D4AF37;'>🎂 Aniversário: {dt_obj.strftime('%d/%m')}</p>", unsafe_allow_html=True)
+                                        st.markdown(f"<p style='text-align: center; font-size: 1.0em; margin-bottom: 0; color: #D4AF37;'>🎂 Aniversário: {dt_obj.strftime('%d/%m')}</p>", unsafe_allow_html=True)
                                     except: pass
                                 
                                 if destaque.get("observacoes_pessoais"):
@@ -684,16 +691,17 @@ elif authentication_status == True:
                                     else:
                                         st.markdown("<div style='width: 100%; height: 220px; display: flex; align-items: center; justify-content: center; background-color: #1A1A1A; border-radius: 5px; margin-bottom: 10px;'><h1 style='margin:0; font-size: 4em;'>👤</h1></div>", unsafe_allow_html=True)
                                     
-                                    st.markdown(f"<h4 style='text-align: center; color: #D4AF37; margin-bottom: 5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;'>{u.get('name')}</h4>", unsafe_allow_html=True)
+                                    # Nome padronizado, fonte menor e com quebra automática garantida
+                                    st.markdown(f"<p style='text-align: center; color: #D4AF37; margin-bottom: 5px; font-size: 0.95rem; font-weight: bold; word-wrap: break-word; overflow-wrap: break-word;'>{u.get('name')}</p>", unsafe_allow_html=True)
                                     
                                     if u.get("oab"):
-                                        st.markdown(f"<p style='text-align: center; font-size: 0.9em; margin-bottom: 5px;'>OAB: {u.get('oab')}</p>", unsafe_allow_html=True)
+                                        st.markdown(f"<p style='text-align: center; font-size: 0.85em; margin-bottom: 5px;'>OAB: {u.get('oab')}</p>", unsafe_allow_html=True)
                                         
                                     # Aniversário na grade
                                     if u.get("data_nascimento"):
                                         try:
                                             dt_obj = datetime.strptime(u.get("data_nascimento"), "%Y-%m-%d")
-                                            st.markdown(f"<p style='text-align: center; font-size: 0.9em; margin-bottom: 5px; color: #D4AF37;'>🎂 Aniversário: {dt_obj.strftime('%d/%m')}</p>", unsafe_allow_html=True)
+                                            st.markdown(f"<p style='text-align: center; font-size: 0.85em; margin-bottom: 5px; color: #D4AF37;'>🎂 Aniversário: {dt_obj.strftime('%d/%m')}</p>", unsafe_allow_html=True)
                                         except: pass
                                     
                                     if u.get("observacoes_pessoais"):

@@ -266,13 +266,20 @@ elif authentication_status == True:
         try:
             cli, hon, per, exp, exp_trf, pen = carregar_dados("clientes_cadastrados"), carregar_dados("honorarios"), carregar_dados("pericias"), carregar_dados("expedientes"), carregar_dados("expedientes_trf"), carregar_dados("pendencias")
             parcelas_db = carregar_dados("parcelas")
+            
+            # Conta perícias pendentes apenas se possuírem alguma data agendada (data_pm ou data_ps preenchidas)
+            per_pendentes_com_data = 0
+            for p in per:
+                if p.get('status') == 'Pendente' and (p.get('data_pm') or p.get('data_ps')):
+                    per_pendentes_com_data += 1
+
             c1, c2, c3, c4, c5, c6 = st.columns(6)
             c1.metric("Clientes", len(cli))
             c2.metric("Contratos", len(hon))
-            c3.metric("Perícias Pend.", len([p for p in per if p.get('status') == 'Pendente']))
-            c4.metric("Expedientes Pend.", len([e for e in exp if e.get('status') == 'Pendente']))
-            c5.metric("Exp. TRF Pend.", len([et for et in exp_trf if et.get('status') == 'Pendente']))
-            c6.metric("Parcelas Pend.", len([pc for pc in parcelas_db if pc.get('status') == 'Pendente']))
+            c3.metric("Perícias Pend.", per_pendentes_com_data)
+            c4.metric("Expedientes Pend.", len([e for e in exp if e.get('status') == 'Pendente' and e.get('data_manifestacao')]))
+            c5.metric("Exp. TRF Pend.", len([et for et in exp_trf if et.get('status') == 'Pendente' and et.get('data_manifestacao')]))
+            c6.metric("Parcelas Pend.", len([pc for pc in parcelas_db if pc.get('status') == 'Pendente' and pc.get('vencimento')]))
         except Exception: pass
 
         st.markdown("---")
@@ -283,7 +290,7 @@ elif authentication_status == True:
             alertas_expedientes_trf = []
             alertas_pagamentos = []
 
-            # Perícias (Separando explicitamente em Perícia Médica e Perícia Social para clareza)
+            # Perícias com data agendada
             for p in per:
                 if p.get('status') == 'Pendente':
                     if p.get('data_pm'):

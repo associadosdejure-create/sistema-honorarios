@@ -1,3 +1,4 @@
+import streamlit as str_app
 import streamlit as st
 import streamlit_authenticator as stauth
 from supabase import create_client
@@ -575,55 +576,75 @@ elif authentication_status == True:
                     st.dataframe(df_dist, use_container_width=True, hide_index=True)
 
                 st.markdown("---")
-                st.subheader("⚖️ Distribuir Processo para Colaborador")
                 
-                pendentes_dist = [d for d in lista_dist if d.get('status') == 'Pendente']
-                if not pendentes_dist:
-                    st.success("🎉 Todos os processos da fila já foram distribuídos!")
-                else:
-                    dict_pendentes = {f"ID: {p['id']} | Cliente: {p['cliente_nome']} (CPF: {p.get('cpf_cnpj', 'N/D')})": p for p in pendentes_dist}
-                    sel_dist_str = st.selectbox("Selecione o Cliente / Processo para Distribuir:", list(dict_pendentes.keys()))
-                    obj_sel_dist = dict_pendentes[sel_dist_str]
+                # --- ABAS PARA DISTRIBUIR OU EXCLUIR ---
+                tab_dist_cad, tab_dist_exc = st.tabs(["⚖️ Distribuir Processo", "🗑️ Excluir da Fila"])
+                
+                with tab_dist_cad:
+                    pendentes_dist = [d for d in lista_dist if d.get('status') == 'Pendente']
+                    if not pendentes_dist:
+                        st.success("🎉 Todos os processos da fila já foram distribuídos!")
+                    else:
+                        dict_pendentes = {f"ID: {p['id']} | Cliente: {p['cliente_nome']} (CPF: {p.get('cpf_cnpj', 'N/D')})": p for p in pendentes_dist}
+                        sel_dist_str = st.selectbox("Selecione o Cliente / Processo para Distribuir:", list(dict_pendentes.keys()), key="sel_dist_proc_atribuir")
+                        obj_sel_dist = dict_pendentes[sel_dist_str]
 
-                    lista_usuarios_dist = []
-                    for u in credentials['usernames'].values():
-                        n_u = u.get('name', '')
-                        if n_u:
-                            lista_usuarios_dist.append(n_u)
+                        lista_usuarios_dist = []
+                        for u in credentials['usernames'].values():
+                            n_u = u.get('name', '')
+                            if n_u:
+                                lista_usuarios_dist.append(n_u)
 
-                    col_d1, col_d2 = st.columns(2)
-                    with col_d1:
-                        adv_responsavel = st.selectbox("Selecione o Responsável:", lista_usuarios_dist)
-                    with col_d2:
-                        obs_dist = st.text_input("Observações da Distribuição", value="")
+                        col_d1, col_d2 = st.columns(2)
+                        with col_d1:
+                            adv_responsavel = st.selectbox("Selecione o Responsável:", lista_usuarios_dist, key="sel_resp_distribuicao")
+                        with col_d2:
+                            obs_dist = st.text_input("Observações da Distribuição", value="", key="input_obs_distrib")
 
-                    if st.button("Confirmar e Distribuir Processo", type="primary"):
-                        try:
-                            # 1. Atualiza a tabela de distribuição
-                            supabase.table("distribuicao_processos").update({
-                                "responsavel": adv_responsavel,
-                                "status": "Distribuído",
-                                "data_distribuicao": date.today().strftime("%Y-%m-%d"),
-                                "observacoes_distribuicao": obs_dist
-                            }).eq("id", obj_sel_dist['id']).execute()
+                        if st.button("Confirmar e Distribuir Processo", type="primary", key="btn_conf_distrib"):
+                            try:
+                                supabase.table("distribuicao_processos").update({
+                                    "responsavel": adv_responsavel,
+                                    "status": "Distribuído",
+                                    "data_distribuicao": date.today().strftime("%Y-%m-%d"),
+                                    "observacoes_distribuicao": obs_dist
+                                }).eq("id", obj_sel_dist['id']).execute()
 
-                            # 2. CRIA AUTOMATICAMENTE NO MÓDULO 'MEUS PROCESSOS' DO RESPONSÁVEL
-                            supabase.table("meus_processos").insert({
-                                "numero_processo": obj_sel_dist.get('cpf_cnpj', 'N/D'),
-                                "cliente": obj_sel_dist.get('cliente_nome', 'Cliente'),
-                                "descricao": f"Processo distribuído por {name}. Obs: {obs_dist}",
-                                "status": "Aguardando Documentação",
-                                "responsavel": adv_responsavel,
-                                "solicitou_revisao": False
-                            }).execute()
+                                supabase.table("meus_processos").insert({
+                                    "numero_processo": obj_sel_dist.get('cpf_cnpj', 'N/D'),
+                                    "cliente": obj_sel_dist.get('cliente_nome', 'Cliente'),
+                                    "cliente_nome": obj_sel_dist.get('cliente_nome', 'Cliente'),
+                                    "descricao": f"Processo distribuído por {name}. Obs: {obs_dist}",
+                                    "status": "Aguardando Documentação",
+                                    "responsavel": adv_responsavel,
+                                    "solicitou_revisao": False
+                                }).execute()
 
-                            registrar_auditoria(username, "Distribuir Processo", "Distribuição", f"Cliente {obj_sel_dist['cliente_nome']} atribuído a {adv_responsavel}")
-                            st.cache_data.clear()
-                            st.success(f"✅ Processo distribuído e enviado automaticamente para 'Meus Processos' de **{adv_responsavel}**!")
-                            time.sleep(1)
-                            st.rerun()
-                        except Exception as e:
-                            st.error(f"Erro ao distribuir processo: {e}")
+                                registrar_auditoria(username, "Distribuir Processo", "Distribuição", f"Cliente {obj_sel_dist['cliente_nome']} atribuído a {adv_responsavel}")
+                                st.cache_data.clear()
+                                st.success(f"✅ Processo distribuído e enviado automaticamente para 'Meus Processos' de **{adv_responsavel}**!")
+                                time.sleep(1)
+                                st.rerun()
+                            except Exception as e:
+                                st.error(f"Erro ao distribuir processo: {e}")
+
+                with tab_dist_exc:
+                    st.subheader("🗑️ Remover Registro da Fila de Distribuição")
+                    dict_all_dist = {f"ID: {d['id']} | Cliente: {d['cliente_nome']} (Status: {d.get('status', 'Pendente')})": d['id'] for d in lista_dist}
+                    sel_exc_dist_str = st.selectbox("Selecione o registro para excluir:", list(dict_all_dist.keys()), key="sel_exc_fila_dist")
+                    id_para_excluir = dict_all_dist[sel_exc_dist_str]
+
+                    if st.checkbox("Confirmo a exclusão permanente deste registro da fila de distribuição.", key="chk_conf_exc_dist"):
+                        if st.button("🗑️ EXCLUIR REGISTRO SELECIONADO", type="primary", key="btn_exec_exc_dist"):
+                            try:
+                                supabase.table("distribuicao_processos").delete().eq("id", id_para_excluir).execute()
+                                registrar_auditoria(username, "Excluir da Fila de Distribuição", "Distribuição", f"Registro ID {id_para_excluir} excluído.")
+                                st.cache_data.clear()
+                                st.success("✅ Registro excluído da fila com sucesso!")
+                                time.sleep(1)
+                                st.rerun()
+                            except Exception as e:
+                                st.error(f"Erro ao excluir registro: {e}")
         except Exception as e:
             st.error(f"Erro ao carregar fila de distribuição: {e}")
 
@@ -1155,6 +1176,7 @@ elif authentication_status == True:
                                 supabase.table("meus_processos").insert({
                                     "numero_processo": c_proc.strip(),
                                     "cliente": c_cli.strip(),
+                                    "cliente_nome": c_cli.strip(),
                                     "descricao": c_desc.strip(),
                                     "status": "Aguardando Documentação",
                                     "responsavel": c_resp.strip(),
@@ -1170,7 +1192,6 @@ elif authentication_status == True:
             elif sub == "Consultar Meus Processos":
                 st.header("📋 Meus Processos & Fluxo de Trabalho")
                 
-                # Usuários comuns veem apenas seus processos; Administradores podem ver todos ou gerenciar
                 try:
                     if user_role == 'admin':
                         res_mp = carregar_dados("meus_processos")
@@ -1256,9 +1277,20 @@ elif authentication_status == True:
                         sel_r_str = st.selectbox("Selecione o Processo para Revisar:", list(dict_rev.keys()))
                         obj_r = dict_rev[sel_r_str]
 
-                        st.info(f"**Cliente:** {obj_r.get('cliente')} | **Responsável:** {obj_r.get('responsavel')} \n\n **Descrição/Peça:** {obj_r.get('descricao')}")
+                        st.info(f"**Cliente:** {obj_r.get('cliente')} | **Responsável Atual:** {obj_r.get('responsavel')} \n\n **Descrição/Peça:** {obj_r.get('descricao')}")
 
                         obs_admin = st.text_input("Feedback / Observações da Revisão para o Colaborador:")
+
+                        lista_usuarios_rev = []
+                        for u in credentials['usernames'].values():
+                            n_u = u.get('name', '')
+                            if n_u:
+                                lista_usuarios_rev.append(n_u)
+
+                        resp_atual = obj_r.get('responsavel', name)
+                        idx_resp_init = lista_usuarios_rev.index(resp_atual) if resp_atual in lista_usuarios_rev else 0
+
+                        novo_responsavel_devolucao = st.selectbox("Devolver para o Colaborador Responsável:", lista_usuarios_rev, index=idx_resp_init)
 
                         col_rev1, col_rev2 = st.columns(2)
                         with col_rev1:
@@ -1266,12 +1298,14 @@ elif authentication_status == True:
                                 try:
                                     supabase.table("meus_processos").update({
                                         "status": "Produzindo Peça",
+                                        "responsavel": novo_responsavel_devolucao,
                                         "solicitou_revisao": False,
                                         "observacoes_revisao": obs_admin
                                     }).eq("id", obj_r['id']).execute()
-                                    registrar_auditoria(username, "Revisar e Devolver", "Meus Processos", f"Proc ID {obj_r['id']} devolvido com sucesso.")
+                                    registrar_auditoria(username, "Revisar e Devolver", "Meus Processos", f"Proc ID {obj_r['id']} devolvido para {novo_responsavel_devolucao}.")
                                     st.cache_data.clear()
-                                    st.success("✅ Processo revisado e devolvido ao colaborador!")
+                                    st.success(f"✅ Processo revisado e devolvido para **{novo_responsavel_devolucao}**!")
+                                    time.sleep(1)
                                     st.rerun()
                                 except Exception as e:
                                     st.error(f"Erro ao devolver processo: {e}")
@@ -1281,12 +1315,14 @@ elif authentication_status == True:
                                 try:
                                     supabase.table("meus_processos").update({
                                         "status": "Aguardando Documentação",
+                                        "responsavel": novo_responsavel_devolucao,
                                         "solicitou_revisao": False,
                                         "observacoes_revisao": obs_admin
                                     }).eq("id", obj_r['id']).execute()
-                                    registrar_auditoria(username, "Devolver com Ajustes", "Meus Processos", f"Proc ID {obj_r['id']} devolvido para ajustes.")
+                                    registrar_auditoria(username, "Devolver com Ajustes", "Meus Processos", f"Proc ID {obj_r['id']} devolvido para ajustes a {novo_responsavel_devolucao}.")
                                     st.cache_data.clear()
-                                    st.warning("⚠️ Processo devolvido para ajustes do colaborador.")
+                                    st.warning(f"⚠️ Processo devolvido para ajustes de **{novo_responsavel_devolucao}**.")
+                                    time.sleep(1)
                                     st.rerun()
                                 except Exception as e:
                                     st.error(f"Erro ao processar devolução: {e}")

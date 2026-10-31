@@ -599,6 +599,7 @@ elif authentication_status == True:
 
                     if st.button("Confirmar e Distribuir Processo", type="primary"):
                         try:
+                            # 1. Atualiza a tabela de distribuição
                             supabase.table("distribuicao_processos").update({
                                 "responsavel": adv_responsavel,
                                 "status": "Distribuído",
@@ -606,9 +607,19 @@ elif authentication_status == True:
                                 "observacoes_distribuicao": obs_dist
                             }).eq("id", obj_sel_dist['id']).execute()
 
+                            # 2. CRIA AUTOMATICAMENTE NO MÓDULO 'MEUS PROCESSOS' DO RESPONSÁVEL
+                            supabase.table("meus_processos").insert({
+                                "numero_processo": obj_sel_dist.get('cpf_cnpj', 'N/D'),
+                                "cliente": obj_sel_dist.get('cliente_nome', 'Cliente'),
+                                "descricao": f"Processo distribuído por {name}. Obs: {obs_dist}",
+                                "status": "Aguardando Documentação",
+                                "responsavel": adv_responsavel,
+                                "solicitou_revisao": False
+                            }).execute()
+
                             registrar_auditoria(username, "Distribuir Processo", "Distribuição", f"Cliente {obj_sel_dist['cliente_nome']} atribuído a {adv_responsavel}")
                             st.cache_data.clear()
-                            st.success(f"✅ Processo distribuído com sucesso para **{adv_responsavel}**!")
+                            st.success(f"✅ Processo distribuído e enviado automaticamente para 'Meus Processos' de **{adv_responsavel}**!")
                             time.sleep(1)
                             st.rerun()
                         except Exception as e:
@@ -1729,7 +1740,7 @@ elif authentication_status == True:
 
                             val_prosp_input = 0.0
                             if prosp_name not in ["Nenhum / Sem Prospectador", resp_name]:
-                                val_prosp_input = st.number_input("💵 Valor de Captação do Prospectador (R$):", min_value=0.0, step=10.0, max_value=val_total_contrato)
+                                val_prosp_input = st.number_input("💵 Valor de Captação do Prospectador (R$):", min_value=0.0, max_value=val_total_contrato, step=10.0)
 
                             val_op_input = st.number_input("💵 Valor do Operador avaliado para esta parcela (R$):", min_value=0.0, max_value=valor_bruto, step=50.0)
 

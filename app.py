@@ -703,7 +703,9 @@ elif authentication_status == True:
             if user_role == 'admin': acoes.insert(4, "Excluir Cliente")
         elif menu_principal == "Meus Processos":
             acoes = ["Consultar Meus Processos", "Cadastrar Processo"]
-            if user_role == 'admin': acoes.append("Central de Revisões")
+            if user_role == 'admin': 
+                acoes.append("Central de Revisões")
+                acoes.append("Excluir Processo (Admin)")
         elif menu_principal == "Pagamentos":
             acoes = ["Ver Parcelas", "Cadastrar Contrato", "Editar Contrato"]
             if user_role == 'admin': acoes = ["Ver Parcelas", "Cadastrar Contrato", "Baixar Parcela", "Extrato de Repasses", "Relatório por Período", "Editar Contrato", "Excluir Contrato"]
@@ -1216,7 +1218,7 @@ elif authentication_status == True:
                     st.markdown("---")
                     st.subheader("⚡ Gerenciar Processo Selecionado")
 
-                    dict_ps = {f"ID: {p['id']} | Proc: {p['numero_processo']} - Cliente: {p['cliente']} (Status: {p['status']})": p for p in res_mp}
+                    dict_ps = {f"ID: {p['id']} | Proc: {p['numero_processo']} - Cliente: {p['cliente']} (Resp: {p.get('responsavel', 'N/D')})": p for p in res_mp}
                     sel_proc_str = st.selectbox("Selecione o Processo:", list(dict_ps.keys()))
                     obj_proc = dict_ps[sel_proc_str]
 
@@ -1329,6 +1331,36 @@ elif authentication_status == True:
 
                 except Exception as e:
                     st.error(f"Erro ao carregar central de revisões: {e}")
+
+            elif sub == "Excluir Processo (Admin)" and user_role == 'admin':
+                st.header("🗑️ Excluir Processo de Qualquer Usuário")
+                st.caption("Módulo administrativo para remoção permanente de registros da tabela 'Meus Processos'.")
+
+                try:
+                    res_todos_mp = supabase.table("meus_processos").select("*").execute()
+                    lista_todos_mp = res_todos_mp.data if res_todos_mp.data else []
+
+                    if not lista_todos_mp:
+                        st.info("Nenhum processo cadastrado no sistema no momento.")
+                    else:
+                        dict_mp_todos = {f"ID: {p['id']} | Proc: {p['numero_processo']} | Cliente: {p['cliente']} (Resp: {p.get('responsavel', 'N/D')})": p['id'] for p in lista_todos_mp}
+                        
+                        sel_exc_mp_str = st.selectbox("Selecione o Processo para Excluir:", list(dict_mp_todos.keys()))
+                        id_mp_para_excluir = dict_mp_todos[sel_exc_mp_str]
+
+                        if st.checkbox("Confirmo a exclusão permanente deste processo (de qualquer usuário)."):
+                            if st.button("🗑️ EXCLUIR PROCESSO SELECIONADO", type="primary"):
+                                try:
+                                    supabase.table("meus_processos").delete().eq("id", id_mp_para_excluir).execute()
+                                    registrar_auditoria(username, "Excluir Processo (Admin)", "Meus Processos", f"Processo ID {id_mp_para_excluir} excluído pelo administrador.")
+                                    st.cache_data.clear()
+                                    st.success("✅ Processo excluído com sucesso do sistema!")
+                                    time.sleep(1)
+                                    st.rerun()
+                                except Exception as e:
+                                    st.error(f"Erro ao excluir processo: {e}")
+                except Exception as e:
+                    st.error(f"Erro ao carregar processos: {e}")
 
         # --- MÓDULO EQUIPE ---
         elif menu_principal == "Equipe Dejure":

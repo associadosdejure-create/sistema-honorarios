@@ -1,3 +1,4 @@
+
 import streamlit as st
 import streamlit_authenticator as stauth
 from supabase import create_client
@@ -92,6 +93,12 @@ def validar_telefone_fixo(v):
 def validar_celular(v):
     nums = re.sub(r'\D', '', str(v))
     return len(nums) == 11 and nums[2] == '9'
+
+def validar_email(email):
+    if not email or not email.strip():
+        return True
+    padrao = r'^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$'
+    return bool(re.match(padrao, email.strip()))
 
 def carregar_usuarios_db():
     senha_padrao_hash = gerar_hash('mudar123')
@@ -611,7 +618,12 @@ elif authentication_status == True:
                 st.header("👤 Cadastro Completo de Cliente")
                 st.caption("Preencha as informações do cliente. Campos marcados com (*) são obrigatórios.")
                 
-                # Seletor posicionado fora do st.form para permitir atualização visual reativa em tempo real
+                # Inicializa session_state para persistência de dados em caso de erro
+                campos_cli = ['cli_nome', 'cli_doc', 'cli_prof', 'cli_ec', 'cli_tfixo', 'cli_cel', 'cli_email', 'cli_end', 'cli_cid', 'cli_uf', 'cli_gov', 'cli_obs']
+                for campo in campos_cli:
+                    if campo not in st.session_state:
+                        st.session_state[campo] = ""
+
                 c_top1, c_top2 = st.columns(2)
                 with c_top1:
                     prospectador_sel = st.selectbox("Prospectador / Indicado Por *", lista_prospectadores, key="cad_cli_prosp_select")
@@ -628,126 +640,141 @@ elif authentication_status == True:
                         tel_prosp_ext_val = st.text_input("Telefone do Prospectador Externo (com DDD) *", key="cad_cli_pe_tel")
                     st.markdown("---")
 
-                with st.form("fc_cli", clear_on_submit=True):
-                    st.subheader("📋 Informações Pessoais & Profissionais")
-                    c1, c2 = st.columns(2)
-                    with c1:
-                        n = st.text_input("Nome Completo *")
-                        doc = st.text_input("CPF / CNPJ *")
-                        profissao = st.text_input("Profissão *")
-                    with c2:
-                        estado_civil = st.selectbox("Estado Civil *", estados_civis)
-
-                    st.subheader("📞 Contatos & Endereço")
-                    c3, c4 = st.columns(2)
-                    with c3:
-                        tel_fixo = st.text_input("Telefone Fixo (Opcional - ex: 8432221100)")
-                        celular = st.text_input("Celular / WhatsApp (com DDD, ex: 84999887766) *")
-                        email = st.text_input("E-mail")
-                    with c4:
-                        end = st.text_input("Endereço *")
-                        cid = st.text_input("Cidade *")
-                        uf = st.selectbox("Estado (UF) *", ufs, index=ufs.index("RN") if "RN" in ufs else 0)
-
-                    st.subheader("🔐 Acesso & Observações")
-                    c5, c6 = st.columns(2)
-                    with c5:
-                        gov = st.text_input("Senha Gov.br")
-                    with c6:
-                        obs = st.text_area("Observações")
+                st.subheader("📋 Informações Pessoais & Profissionais")
+                c1, c2 = st.columns(2)
+                with c1:
+                    n = st.text_input("Nome Completo *", key="cli_nome")
+                    doc = st.text_input("CPF / CNPJ *", key="cli_doc")
                     
-                    col_b_cad, col_b_vol = st.columns(2)
-                    with col_b_cad:
-                        salvar_cli = st.form_submit_button("Salvar Cliente", type="primary", use_container_width=True)
-                    with col_b_vol:
-                        voltar_cli = st.form_submit_button("⬅️ Voltar", use_container_width=True)
+                    # Validação em tempo real do CPF/CNPJ
+                    doc_limpo = ''.join(filter(str.isdigit, str(doc)))
+                    if doc.strip():
+                        if len(doc_limpo) == 11:
+                            if not validar_cpf(doc_limpo):
+                                st.error("⚠️ CPF inválido!")
+                            else:
+                                st.success("✅ CPF válido.")
+                        elif len(doc_limpo) == 14:
+                            st.success("✅ CNPJ informado.")
+                        elif len(doc_limpo) > 0:
+                            st.warning("⚠️ CPF/CNPJ incompleto (deve ter 11 ou 14 dígitos).")
 
-                    if salvar_cli:
-                        errs = []
-                        if not n.strip(): errs.append("O campo **Nome Completo** é obrigatório.")
-                        if not profissao.strip(): errs.append("O campo **Profissão** é obrigatório.")
-                        if not end.strip(): errs.append("O campo **Endereço** é obrigatório.")
-                        if not cid.strip(): errs.append("O campo **Cidade** é obrigatório.")
+                    profissao = st.text_input("Profissão *", key="cli_prof")
+                with c2:
+                    estado_civil = st.selectbox("Estado Civil *", estados_civis, key="cli_ec")
+
+                st.subheader("📞 Contatos & Endereço")
+                c3, c4 = st.columns(2)
+                with c3:
+                    tel_fixo = st.text_input("Telefone Fixo (Opcional - ex: 8432221100)", key="cli_tfixo")
+                    celular = st.text_input("Celular / WhatsApp (com DDD, ex: 84999887766) *", key="cli_cel")
+                    email = st.text_input("E-mail", key="cli_email")
+                    
+                    # Validação em tempo real do E-mail
+                    if email.strip():
+                        if not validar_email(email):
+                            st.error("⚠️ Formato de e-mail inválido (ex: nome@dominio.com)")
+                        else:
+                            st.success("✅ E-mail válido.")
+
+                with c4:
+                    end = st.text_input("Endereço *", key="cli_end")
+                    cid = st.text_input("Cidade *", key="cli_cid")
+                    uf = st.selectbox("Estado (UF) *", ufs, index=ufs.index("RN") if "RN" in ufs else 0, key="cli_uf")
+
+                st.subheader("🔐 Acesso & Observações")
+                c5, c6 = st.columns(2)
+                with c5:
+                    gov = st.text_input("Senha Gov.br", key="cli_gov")
+                with c6:
+                    obs = st.text_area("Observações", key="cli_obs")
+                
+                col_b_cad, col_b_vol = st.columns(2)
+                with col_b_cad:
+                    salvar_cli = st.button("Salvar Cliente", type="primary", use_container_width=True)
+                with col_b_vol:
+                    voltar_cli = st.button("⬅️ Voltar", use_container_width=True)
+
+                if voltar_cli:
+                    st.session_state['submenu_atual'] = "Consultar Clientes"
+                    st.rerun()
+
+                if salvar_cli:
+                    errs = []
+                    if not n.strip(): errs.append("O campo **Nome Completo** é obrigatório.")
+                    if not profissao.strip(): errs.append("O campo **Profissão** é obrigatório.")
+                    if not end.strip(): errs.append("O campo **Endereço** é obrigatório.")
+                    if not cid.strip(): errs.append("O campo **Cidade** é obrigatório.")
+                    
+                    if tel_fixo.strip() and not validar_telefone_fixo(tel_fixo):
+                        errs.append("O **Telefone Fixo** informado deve conter exatamente 10 dígitos (DDD + 8 números).")
                         
-                        if tel_fixo.strip() and not validar_telefone_fixo(tel_fixo):
-                            errs.append("O **Telefone Fixo** informado deve conter exatamente 10 dígitos (DDD + 8 números). Ex: (84) 3222-1100")
+                    if not celular.strip():
+                        errs.append("O campo **Celular / WhatsApp** é obrigatório.")
+                    elif not validar_celular(celular):
+                        errs.append("O **Celular** deve conter 11 dígitos no padrão (DDD + 9 + 8 números).")
+
+                    if email.strip() and not validar_email(email):
+                        errs.append("O **E-mail** informado possui formato inválido.")
+
+                    if doc.strip():
+                        doc_l = ''.join(filter(str.isdigit, str(doc)))
+                        if len(doc_l) == 11 and not validar_cpf(doc_l): 
+                            errs.append("O **CPF** informado é inválido!")
+                        elif len(doc_l) != 11 and len(doc_l) != 14:
+                            errs.append("O **CPF/CNPJ** deve conter exatamente 11 dígitos (CPF) ou 14 dígitos (CNPJ).")
+                    else:
+                        errs.append("O campo **CPF/CNPJ** é obrigatório.")
+
+                    if prospectador_sel == "Prospectador Externo":
+                        if not nome_prosp_ext_val.strip():
+                            errs.append("O campo **Nome do Prospectador Externo** é obrigatório.")
+                        if not tel_prosp_ext_val.strip():
+                            errs.append("O campo **Telefone do Prospectador Externo** é obrigatório.")
+                        elif not (validar_telefone_fixo(tel_prosp_ext_val) or validar_celular(tel_prosp_ext_val)):
+                            errs.append("O **Telefone do Prospectador Externo** deve conter DDD + número válido (10 ou 11 dígitos).")
+
+                    if errs:
+                        for e in errs:
+                            st.error(f"⚠️ {e}")
+                    else:
+                        try:
+                            tel_f_fmt = formatar_telefone(tel_fixo) if tel_fixo.strip() else None
+                            cel_fmt = formatar_telefone(celular)
+
+                            prosp_final = prospectador_sel
+                            if prospectador_sel == "Prospectador Externo":
+                                tel_prosp_fmt = formatar_telefone(tel_prosp_ext_val)
+                                prosp_final = f"Prospectador Externo: {nome_prosp_ext_val.strip()} ({tel_prosp_fmt})"
+
+                            payload = {
+                                "nome": n.strip(),
+                                "cpf_cnpj": doc.strip(),
+                                "telefone": tel_f_fmt,
+                                "celular": cel_fmt,
+                                "email": email.strip() if email.strip() else None,
+                                "endereco": end.strip(),
+                                "cidade": cid.strip(),
+                                "uf": uf,
+                                "profissao": profissao.strip(),
+                                "estado_civil": estado_civil,
+                                "indicado_por": prosp_final if prosp_final else None,
+                                "senha_gov": gov.strip() if gov.strip() else None,
+                                "observacoes": obs.strip() if obs.strip() else None
+                            }
+
+                            supabase.table("clientes_cadastrados").insert(payload).execute()
+
+                            registrar_auditoria(username, "Cadastrar Cliente", "Clientes", f"Cliente: {n.strip()}")
+                            st.cache_data.clear()
                             
-                        if not celular.strip():
-                            errs.append("O campo **Celular / WhatsApp** é obrigatório.")
-                        elif not validar_celular(celular):
-                            errs.append("O **Celular** deve conter 11 dígitos no padrão (DDD + 9 + 8 números). Ex: (84) 99988-7766")
+                            for campo in campos_cli:
+                                st.session_state[campo] = ""
 
-                        if doc.strip():
-                            doc_l = ''.join(filter(str.isdigit, str(doc)))
-                            if len(doc_l) == 11 and not validar_cpf(doc_l): 
-                                errs.append("O **CPF** informado é inválido!")
-                            elif len(doc_l) != 11 and len(doc_l) != 14:
-                                errs.append("O **CPF/CNPJ** deve conter exatamente 11 dígitos (CPF) ou 14 dígitos (CNPJ).")
-                        else:
-                            errs.append("O campo **CPF/CNPJ** é obrigatório.")
-
-                        if prospectador_sel == "Prospectador Externo":
-                            if not nome_prosp_ext_val.strip():
-                                errs.append("O campo **Nome do Prospectador Externo** é obrigatório.")
-                            if not tel_prosp_ext_val.strip():
-                                errs.append("O campo **Telefone do Prospectador Externo** é obrigatório.")
-                            elif not (validar_telefone_fixo(tel_prosp_ext_val) or validar_celular(tel_prosp_ext_val)):
-                                errs.append("O **Telefone do Prospectador Externo** deve conter DDD + número válido (10 ou 11 dígitos).")
-
-                        if errs:
-                            for e in errs:
-                                st.error(f"⚠️ {e}")
-                        else:
-                            try:
-                                tel_f_fmt = formatar_telefone(tel_fixo) if tel_fixo.strip() else None
-                                cel_fmt = formatar_telefone(celular)
-
-                                prosp_final = prospectador_sel
-                                if prospectador_sel == "Prospectador Externo":
-                                    tel_prosp_fmt = formatar_telefone(tel_prosp_ext_val)
-                                    prosp_final = f"Prospectador Externo: {nome_prosp_ext_val.strip()} ({tel_prosp_fmt})"
-
-                                payload = {
-                                    "nome": n.strip(),
-                                    "cpf_cnpj": doc.strip(),
-                                    "telefone": tel_f_fmt,
-                                    "celular": cel_fmt,
-                                    "email": email.strip() if email.strip() else None,
-                                    "endereco": end.strip(),
-                                    "cidade": cid.strip(),
-                                    "uf": uf,
-                                    "profissao": profissao.strip(),
-                                    "estado_civil": estado_civil,
-                                    "indicado_por": prosp_final if prosp_final else None,
-                                    "senha_gov": gov.strip() if gov.strip() else None,
-                                    "observacoes": obs.strip() if obs.strip() else None
-                                }
-
-                                supabase.table("clientes_cadastrados").insert(payload).execute()
-
-                                registrar_auditoria(username, "Cadastrar Cliente", "Clientes", f"Cliente: {n.strip()}")
-                                st.cache_data.clear()
-                                st.session_state['cad_cli_sucesso'] = True
-                                st.rerun()
-                            except Exception as ex:
-                                st.error(f"⚠️ Erro ao salvar no banco de dados. Verifique o painel do Supabase: {ex}")
-
-                    if voltar_cli:
-                        st.session_state['submenu_atual'] = "Consultar Clientes"
-                        st.rerun()
-
-                if st.session_state.get('cad_cli_sucesso'):
-                    st.success("🎉 Cliente cadastrado com sucesso!")
-                    col1, col2 = st.columns(2)
-                    with col1:
-                        if st.button("➕ Cadastrar Novo Cliente", key="btn_novo_cli", type="primary", use_container_width=True):
-                            st.session_state['cad_cli_sucesso'] = False
+                            st.session_state['cad_cli_sucesso'] = True
                             st.rerun()
-                    with col2:
-                        if st.button("⬅️ Voltar para Base de Clientes", key="btn_vol_cli", use_container_width=True):
-                            st.session_state['cad_cli_sucesso'] = False
-                            st.session_state['submenu_atual'] = "Consultar Clientes"
-                            st.rerun()
+                        except Exception as ex:
+                            st.error(f"⚠️ Erro ao salvar no banco de dados. Verifique o painel do Supabase: {ex}")
 
             elif sub == "Importar Excel":
                 st.header("📥 Importar Clientes via Planilha Excel")
@@ -811,7 +838,7 @@ elif authentication_status == True:
                         with c1:
                             en = st.text_input("Nome Completo *", value=obj.get('nome',''))
                             edoc = st.text_input("CPF / CNPJ *", value=obj.get('cpf_cnpj',''))
-                            eprofissao = st.text_input("Profissão *", value=obj.get('profissao',''))
+                            eprofi = st.text_input("Profissão *", value=obj.get('profissao',''))
                         with c2:
                             idx_ec = estados_civis.index(obj.get('estado_civil')) if obj.get('estado_civil') in estados_civis else 0
                             eestado_civil = st.selectbox("Estado Civil *", estados_civis, index=idx_ec)
@@ -844,7 +871,7 @@ elif authentication_status == True:
                         if atualizar_cli:
                             errs = []
                             if not en.strip(): errs.append("O campo **Nome Completo** é obrigatório.")
-                            if not eprofissao.strip(): errs.append("O campo **Profissão** é obrigatório.")
+                            if not eprofi.strip(): errs.append("O campo **Profissão** é obrigatório.")
                             if not eend.strip(): errs.append("O campo **Endereço** é obrigatório.")
                             if not ecid.strip(): errs.append("O campo **Cidade** é obrigatório.")
                             
@@ -855,6 +882,9 @@ elif authentication_status == True:
                                 errs.append("O campo **Celular / WhatsApp** é obrigatório.")
                             elif not validar_celular(ecelular):
                                 errs.append("O **Celular** deve conter 11 dígitos com o 9 na frente.")
+
+                            if eemail.strip() and not validar_email(eemail):
+                                errs.append("O **E-mail** informado possui formato inválido.")
 
                             if edoc.strip():
                                 doc_l = ''.join(filter(str.isdigit, str(edoc)))
@@ -892,7 +922,7 @@ elif authentication_status == True:
                                         "endereco": eend.strip(),
                                         "cidade": ecid.strip(),
                                         "uf": euf,
-                                        "profissao": eprofissao.strip(),
+                                        "profissao": eprofi.strip(),
                                         "estado_civil": eestado_civil,
                                         "indicado_por": eprosp_final,
                                         "senha_gov": egov.strip() if egov.strip() else None,
@@ -2302,3 +2332,4 @@ elif authentication_status == True:
                             registrar_auditoria(username, "EXCLUIR TODAS AS PENDÊNCIAS", "Pendências", "Exclusão em massa.")
                             st.cache_data.clear(); st.success("Todas as pendências foram excluídas!"); st.rerun()
                 else: st.info("Sem pendências cadastradas.")
+```

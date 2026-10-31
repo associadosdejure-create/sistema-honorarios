@@ -602,8 +602,7 @@ elif authentication_status == True:
         st.markdown("---")
         sub = st.session_state['submenu_atual']
 
-        # --- PROCESSAMENTO DOS MÓDULOS ---
-        
+        # --- PROCESSAMENTO DO MÓDULO CLIENTES ---
         if menu_principal == "Clientes":
             lista_prospectadores = ["Nenhum / Sem Prospectador", "Prospectador Externo"]
             for u in credentials['usernames'].values():
@@ -628,6 +627,14 @@ elif authentication_status == True:
                     with c2:
                         estado_civil = st.selectbox("Estado Civil *", estados_civis)
                         prospectador = st.selectbox("Prospectador / Indicado Por *", lista_prospectadores)
+                        
+                        nome_prosp_ext = ""
+                        tel_prosp_ext = ""
+                        if prospectador == "Prospectador Externo":
+                            st.markdown("---")
+                            st.markdown("##### 🤝 Dados do Prospectador Externo")
+                            nome_prosp_ext = st.text_input("Nome do Prospectador Externo *")
+                            tel_prosp_ext = st.text_input("Telefone do Prospectador Externo (com DDD) *")
 
                     st.subheader("📞 Contatos & Endereço")
                     c3, c4 = st.columns(2)
@@ -679,12 +686,25 @@ elif authentication_status == True:
                         else:
                             errs.append("O campo **CPF/CNPJ** é obrigatório.")
 
+                        if prospectador == "Prospectador Externo":
+                            if not nome_prosp_ext.strip():
+                                errs.append("O campo **Nome do Prospectador Externo** é obrigatório.")
+                            if not tel_prosp_ext.strip():
+                                errs.append("O campo **Telefone do Prospectador Externo** é obrigatório.")
+                            elif not (validar_telefone_fixo(tel_prosp_ext) or validar_celular(tel_prosp_ext)):
+                                errs.append("O **Telefone do Prospectador Externo** deve conter DDD + número válido (10 ou 11 dígitos).")
+
                         if errs:
                             for e in errs:
                                 st.error(f"⚠️ {e}")
                         else:
                             tel_f_fmt = formatar_telefone(tel_fixo)
                             cel_fmt = formatar_telefone(celular)
+
+                            prosp_final = prospectador
+                            if prospectador == "Prospectador Externo":
+                                tel_prosp_fmt = formatar_telefone(tel_prosp_ext)
+                                prosp_final = f"Prospectador Externo: {nome_prosp_ext.strip()} ({tel_prosp_fmt})"
 
                             supabase.table("clientes_cadastrados").insert({
                                 "nome": n.strip(),
@@ -697,7 +717,7 @@ elif authentication_status == True:
                                 "uf": uf,
                                 "profissao": profissao.strip(),
                                 "estado_civil": estado_civil,
-                                "indicado_por": prospectador,
+                                "indicado_por": prosp_final,
                                 "senha_gov": gov.strip(),
                                 "observacoes": obs.strip()
                             }).execute()
@@ -748,6 +768,23 @@ elif authentication_status == True:
                     sel = st.selectbox("Selecione o Cliente:", list(cdict.keys()))
                     obj = cdict[sel]
 
+                    prosp_salvo = obj.get('indicado_por', '')
+                    is_prosp_ext_salvo = str(prosp_salvo).startswith("Prospectador Externo:")
+
+                    nome_ext_init = ""
+                    tel_ext_init = ""
+                    if is_prosp_ext_salvo:
+                        idx_sel_prosp = lista_prospectadores.index("Prospectador Externo")
+                        try:
+                            match = re.search(r"Prospectador Externo:\s*(.*?)\s*\((.*?)\)", prosp_salvo)
+                            if match:
+                                nome_ext_init = match.group(1)
+                                tel_ext_init = match.group(2)
+                        except:
+                            pass
+                    else:
+                        idx_sel_prosp = lista_prospectadores.index(prosp_salvo) if prosp_salvo in lista_prospectadores else 0
+
                     with st.form("fe_cli"):
                         st.subheader("📋 Informações Pessoais & Profissionais")
                         c1, c2 = st.columns(2)
@@ -759,8 +796,15 @@ elif authentication_status == True:
                             idx_ec = estados_civis.index(obj.get('estado_civil')) if obj.get('estado_civil') in estados_civis else 0
                             eestado_civil = st.selectbox("Estado Civil *", estados_civis, index=idx_ec)
                             
-                            idx_p = lista_prospectadores.index(obj.get('indicado_por')) if obj.get('indicado_por') in lista_prospectadores else 0
-                            eprospectador = st.selectbox("Prospectador / Indicado Por *", lista_prospectadores, index=idx_p)
+                            eprospectador = st.selectbox("Prospectador / Indicado Por *", lista_prospectadores, index=idx_sel_prosp)
+
+                            enome_prosp_ext = ""
+                            etel_prosp_ext = ""
+                            if eprospectador == "Prospectador Externo":
+                                st.markdown("---")
+                                st.markdown("##### 🤝 Dados do Prospectador Externo")
+                                enome_prosp_ext = st.text_input("Nome do Prospectador Externo *", value=nome_ext_init)
+                                etel_prosp_ext = st.text_input("Telefone do Prospectador Externo (com DDD) *", value=tel_ext_init)
 
                         st.subheader("📞 Contatos & Endereço")
                         c3, c4 = st.columns(2)
@@ -813,10 +857,23 @@ elif authentication_status == True:
                             else:
                                 errs.append("O campo **CPF/CNPJ** é obrigatório.")
 
+                            if eprospectador == "Prospectador Externo":
+                                if not enome_prosp_ext.strip():
+                                    errs.append("O campo **Nome do Prospectador Externo** é obrigatório.")
+                                if not etel_prosp_ext.strip():
+                                    errs.append("O campo **Telefone do Prospectador Externo** é obrigatório.")
+                                elif not (validar_telefone_fixo(etel_prosp_ext) or validar_celular(etel_prosp_ext)):
+                                    errs.append("O **Telefone do Prospectador Externo** deve conter DDD + número válido (10 ou 11 dígitos).")
+
                             if errs:
                                 for e in errs:
                                     st.error(f"⚠️ {e}")
                             else:
+                                eprosp_final = eprospectador
+                                if eprospectador == "Prospectador Externo":
+                                    etel_ext_fmt = formatar_telefone(etel_prosp_ext)
+                                    eprosp_final = f"Prospectador Externo: {enome_prosp_ext.strip()} ({etel_ext_fmt})"
+
                                 supabase.table("clientes_cadastrados").update({
                                     "nome": en.strip(),
                                     "cpf_cnpj": edoc.strip(),
@@ -828,7 +885,7 @@ elif authentication_status == True:
                                     "uf": euf,
                                     "profissao": eprofissao.strip(),
                                     "estado_civil": eestado_civil,
-                                    "indicado_por": eprospectador,
+                                    "indicado_por": eprosp_final,
                                     "senha_gov": egov.strip(),
                                     "observacoes": eobs.strip()
                                 }).eq("id", obj['id']).execute()

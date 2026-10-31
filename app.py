@@ -297,7 +297,7 @@ elif authentication_status == True:
         col_f1, col_f2, col_f3 = st.columns([1, 2, 1])
         with col_f2:
             if user_foto:
-                st.image(user_foto, use_container_width=True) # Foto no formato retangular original
+                st.image(user_foto, use_container_width=True)
             else:
                 st.markdown("<h1 style='text-align: center; margin: 0;'>👤</h1>", unsafe_allow_html=True)
 
@@ -305,7 +305,6 @@ elif authentication_status == True:
         p_txt = {"admin": "👑 Sócio", "advogado": "⚖️ Advogado(a)", "bacharel": "📜 Bacharel(a)"}.get(user_role, "🎓 Estagiário")
         st.caption(f"Perfil: {p_txt}")
         
-        # BOTÃO SAIR LOGO ABAIXO DO PERFIL DO USUÁRIO
         if st.button("🚪 Sair", use_container_width=True):
             registrar_auditoria(username, "Logout", "Acesso", f"Usuário {name} ({username}) efetuou logout do sistema.")
             st.session_state.update({'authentication_status': None, 'login_registrado': False})
@@ -631,7 +630,6 @@ elif authentication_status == True:
                     destaque = next((u for u in usuarios_equipe if u.get("destaque_mes")), None)
                     outros_brutos = [u for u in usuarios_equipe if not u.get("destaque_mes")]
 
-                    # ORDENAÇÃO POR HIERARQUIA: admin -> advogado -> bacharel -> estagiario, seguidos por ordem alfabética do nome
                     ordem_cargos = {"admin": 1, "advogado": 2, "bacharel": 3, "estagiario": 4}
                     outros = sorted(
                         outros_brutos, 
@@ -659,7 +657,6 @@ elif authentication_status == True:
                                 if destaque.get("oab"):
                                     st.markdown(f"<p style='text-align: center; font-size: 1.0em; margin-bottom: 0;'>OAB: {destaque.get('oab')}</p>", unsafe_allow_html=True)
                                 
-                                # Aniversário formatado
                                 if destaque.get("data_nascimento"):
                                     try:
                                         dt_obj = datetime.strptime(destaque.get("data_nascimento"), "%Y-%m-%d")
@@ -691,13 +688,11 @@ elif authentication_status == True:
                                     else:
                                         st.markdown("<div style='width: 100%; height: 220px; display: flex; align-items: center; justify-content: center; background-color: #1A1A1A; border-radius: 5px; margin-bottom: 10px;'><h1 style='margin:0; font-size: 4em;'>👤</h1></div>", unsafe_allow_html=True)
                                     
-                                    # Nome padronizado, fonte menor e com quebra automática garantida
                                     st.markdown(f"<p style='text-align: center; color: #D4AF37; margin-bottom: 5px; font-size: 0.95rem; font-weight: bold; word-wrap: break-word; overflow-wrap: break-word;'>{u.get('name')}</p>", unsafe_allow_html=True)
                                     
                                     if u.get("oab"):
                                         st.markdown(f"<p style='text-align: center; font-size: 0.85em; margin-bottom: 5px;'>OAB: {u.get('oab')}</p>", unsafe_allow_html=True)
                                         
-                                    # Aniversário na grade
                                     if u.get("data_nascimento"):
                                         try:
                                             dt_obj = datetime.strptime(u.get("data_nascimento"), "%Y-%m-%d")
@@ -732,7 +727,6 @@ elif authentication_status == True:
                         p_tel = st.text_input("Telefone de Contato", value=user_info.get("telefone", ""))
                         p_oab = st.text_input("Registro OAB / Identificação Profissional", value=user_info.get("oab", ""))
                         
-                        # Processando Data de Nascimento atual
                         dt_nasc_atual = user_info.get("data_nascimento")
                         if dt_nasc_atual:
                             try:
@@ -757,7 +751,6 @@ elif authentication_status == True:
                                     if file_foto is not None:
                                         foto_final = converter_imagem_base64(file_foto)
                                     
-                                    # Pega a data formatada, ou None se estiver vazia
                                     str_nasc = p_nasc.strftime("%Y-%m-%d") if p_nasc else None
 
                                     supabase.table("usuarios_sistema").update({
@@ -1090,16 +1083,18 @@ elif authentication_status == True:
                 else: st.info("Sem contratos.")
 
             elif sub == "Baixar Parcela" and user_role == 'admin':
-                st.header("💰 Baixar Parcela e Calcular Rateio")
+                st.header("💰 Baixar Parcela e Calcular Rateio com Rateio dos Colaboradores")
                 
                 res_h = carregar_dados("honorarios")
                 if not res_h:
                     st.info("Nenhum contrato cadastrado.")
                 else:
-                    cdict = {f"{h['cliente']} — {h['servico']}": h['id'] for h in res_h}
-                    sel_contrato = st.selectbox("1. Selecione o Contrato:", list(cdict.keys()))
+                    cdict_h = {f"{h['cliente']} — {h['servico']}": h for h in res_h}
+                    sel_contrato_str = st.selectbox("1. Selecione o Contrato:", list(cdict_h.keys()))
+                    obj_contrato = cdict_h[sel_contrato_str]
+                    val_total_contrato = float(obj_contrato.get('valor_total', 0.0))
                     
-                    res_p = supabase.table("parcelas").select("*").eq("honorario_id", cdict[sel_contrato]).eq("status", "Pendente").execute()
+                    res_p = supabase.table("parcelas").select("*").eq("honorario_id", obj_contrato['id']).eq("status", "Pendente").execute()
                     if not res_p.data:
                         st.success("✅ Este contrato não possui parcelas pendentes.")
                     else:
@@ -1123,7 +1118,7 @@ elif authentication_status == True:
                         
                         if is_entrada:
                             st.subheader("⚙️ Regra de Entrada (Com Prospecção)")
-                            st.info("O sistema detectou que esta é a **Entrada** do contrato. A regra completa será aplicada (prospectador, 5% colaboradores e operador).")
+                            st.info("Ordem: 1º Prospectador ➔ 2º Operador ➔ 3º Fundo 5% Colaboradores (dividido entre não-operadores) ➔ 4º Sócios (60/40).")
                             
                             col_r1, col_r2 = st.columns(2)
                             with col_r1:
@@ -1144,11 +1139,33 @@ elif authentication_status == True:
                                     break
                                     
                         else:
-                            st.subheader("⚙️ Regra de Parcela Normal (Sem Prospecção)")
-                            st.info("O sistema detectou que esta é uma **Parcela Normal**. A prospecção e os 5% não se aplicam aqui. O valor será dividido apenas entre o Operador e os Sócios.")
+                            st.subheader("⚙️ Regra de Parcelamento de Saldo (5% do Saldo Total Negociado)")
+                            st.info("📌 **Fundo de Colaboradores:** Calculado em 5% sobre o **Saldo Total Negociado** após dedução do Prospectador Externo.")
                             
-                            resp_name = st.selectbox("⚖️ Operador (Trabalhou no Processo):", nomes_opcoes)
-                            val_op_input = st.number_input("💵 Valor do Operador avaliado no ato (R$):", min_value=0.0, max_value=valor_bruto, step=50.0)
+                            col_ps1, col_ps2 = st.columns(2)
+                            with col_ps1:
+                                prosp_name = st.selectbox("👤 Prospectador Externo (Se Houver):", ["Nenhum / Sem Prospectador", "Prospectador Externo"] + nomes_opcoes)
+                            with col_ps2:
+                                resp_name = st.selectbox("⚖️ Operador (Trabalhou no Processo):", nomes_opcoes)
+
+                            val_prosp_input = 0.0
+                            if prosp_name not in ["Nenhum / Sem Prospectador", resp_name]:
+                                val_prosp_input = st.number_input("💵 Valor de Captação do Prospectador (R$):", min_value=0.0, step=10.0, max_value=val_total_contrato)
+
+                            val_op_input = st.number_input("💵 Valor do Operador avaliado para esta parcela (R$):", min_value=0.0, max_value=valor_bruto, step=50.0)
+
+                            resp_role = "estagiario"
+                            for u in lista_usuarios:
+                                if u['nome'] == resp_name:
+                                    resp_role = u['papel']
+                                    break
+
+                        # --- IDENTIFICAÇÃO DOS COLABORADORES QUE NÃO TRABALHARAM NO PROCESSO ---
+                        # Exclui: Sócios (admin/master), Prospectador e o próprio Operador do processo
+                        colaboradores_fundo = []
+                        for u in lista_usuarios:
+                            if u['papel'] in ['advogado', 'bacharel', 'estagiario'] and u['nome'] != resp_name:
+                                colaboradores_fundo.append(u['nome'])
 
                         # --- CÁLCULO E PROVA REAL EM TEMPO REAL ---
                         val_prospectador = 0.0
@@ -1168,7 +1185,7 @@ elif authentication_status == True:
                                 val_prospectador = val_operador
                                 saldo -= val_operador
                                 
-                                if valor_bruto > 1000.0:
+                                if saldo > 1000.0:
                                     fundo_colab = round(saldo * 0.05, 2)
                                     saldo -= fundo_colab
                                     
@@ -1181,23 +1198,36 @@ elif authentication_status == True:
                                 
                                 saldo -= val_prospectador
                                 
-                                if saldo > 1000.0:
-                                    fundo_colab = round(saldo * 0.05, 2)
-                                    saldo -= fundo_colab
-                                    
                                 taxa_op = 0.25 if resp_role in ['admin', 'advogado'] else (0.15 if resp_role == 'bacharel' else 0.10)
                                 val_operador = round(saldo * taxa_op, 2)
                                 saldo -= val_operador
                                 
+                                if saldo > 1000.0:
+                                    fundo_colab = round(saldo * 0.05, 2)
+                                    saldo -= fundo_colab
+                                    
                                 val_leonidas = round(saldo * 0.60, 2)
                                 val_nelson = round(saldo * 0.40, 2)
                         else:
-                            regra_aplicada = "Parcela Normal"
-                            prosp_name = "N/A"
+                            regra_aplicada = "Parcelamento de Saldo (5% Saldo Total)"
+                            
+                            val_prosp_total = round(val_prosp_input, 2) if prosp_name != "Nenhum / Sem Prospectador" else 0.0
+                            saldo_negociado_liquido = max(0.0, val_total_contrato - val_prosp_total)
+                            
+                            fundo_colab_total = round(saldo_negociado_liquido * 0.05, 2)
+                            proporcao_parcela = (valor_bruto / val_total_contrato) if val_total_contrato > 0 else 1.0
+                            fundo_colab = round(fundo_colab_total * proporcao_parcela, 2)
+                            
                             val_operador = round(val_op_input, 2)
-                            saldo_socios = valor_bruto - val_operador
-                            val_leonidas = round(saldo_socios * 0.60, 2)
-                            val_nelson = round(saldo_socios * 0.40, 2)
+                            
+                            saldo_remanescente_parcela = max(0.0, valor_bruto - val_operador - fundo_colab)
+                            val_leonidas = round(saldo_remanescente_parcela * 0.60, 2)
+                            val_nelson = round(saldo_remanescente_parcela * 0.40, 2)
+
+                        # DIVISÃO IGUALITÁRIA DO FUNDO DE 5% ENTRE OS OUTROS COLABORADORES
+                        qtd_colab = len(colaboradores_fundo)
+                        cota_individual_fundo = round(fundo_colab / qtd_colab, 2) if qtd_colab > 0 else 0.0
+                        detalhes_rateio_colab = {c: cota_individual_fundo for c in colaboradores_fundo}
 
                         # Ajuste de resíduo de centavos no sócio majoritário para fechar prova 100%
                         val_prosp_efetivo = 0.0 if "Acúmulo" in regra_aplicada else (val_prospectador if is_entrada and prosp_name != "Nenhum / Sem Prospectador" else 0.0)
@@ -1212,7 +1242,7 @@ elif authentication_status == True:
                         # --- PAINEL VISUAL DE PROVA REAL ---
                         st.markdown("#### 🧮 Prova Real do Rateio (Validação Entrada vs Saída)")
                         col_pr1, col_pr2, col_pr3 = st.columns(3)
-                        col_pr1.metric("Recurso Bruto de Entrada", f"R$ {valor_bruto:.2f}")
+                        col_pr1.metric("Recurso Bruto da Parcela", f"R$ {valor_bruto:.2f}")
                         col_pr2.metric("Soma Total Distribuída", f"R$ {soma_distribuida:.2f}")
                         
                         if diferenca == 0:
@@ -1223,23 +1253,34 @@ elif authentication_status == True:
                         with st.expander("🔍 Detalhamento dos Valores da Prova Real", expanded=True):
                             det_cols = st.columns(5)
                             det_cols[0].write(f"**Prospectador:**\nR$ {val_prosp_efetivo:.2f}")
-                            det_cols[1].write(f"**Operador:**\nR$ {val_operador:.2f}")
-                            det_cols[2].write(f"**Fundo Colab.:**\nR$ {fundo_colab:.2f}")
+                            det_cols[1].write(f"**Operador ({resp_name}):**\nR$ {val_operador:.2f}")
+                            det_cols[2].write(f"**Fundo Colab. Total (5%):**\nR$ {fundo_colab:.2f}")
                             det_cols[3].write(f"**Leônidas (60%):**\nR$ {val_leonidas:.2f}")
                             det_cols[4].write(f"**Nelson (40%):**\nR$ {val_nelson:.2f}")
+
+                        # --- EXIBIÇÃO DA DIVISÃO ENTRE OS OUTROS COLABORADORES ---
+                        st.markdown("##### 👥 Divisão Igualitária dos 5% entre Colaboradores que Não Trabalharam no Processo")
+                        if colaboradores_fundo:
+                            cols_colab = st.columns(min(len(colaboradores_fundo), 4))
+                            for idx, c_nome in enumerate(colaboradores_fundo):
+                                cols_colab[idx % 4].info(f"**{c_nome}**\nRecebe: R$ {cota_individual_fundo:.2f}")
+                        else:
+                            st.warning("⚠️ Nenhum outro colaborador ativo (advogado/bacharel/estagiário) cadastrado para receber a fatia do fundo.")
 
                         if st.button("Confirmar Baixa e Gerar Repasse", type="primary"):
                             repasse_dict = {
                                 "parcela_id": parcela_obj['id'],
-                                "contrato": sel_contrato,
+                                "contrato": sel_contrato_str,
                                 "regra": regra_aplicada,
                                 "valor_bruto": round(valor_bruto, 2),
                                 "prospectador": prosp_name,
                                 "valor_prospectador": round(val_prospectador, 2),
                                 "operador": resp_name,
-                                "papel_operador": resp_role if is_entrada else "N/A",
+                                "papel_operador": resp_role,
                                 "valor_operador": round(val_operador, 2),
                                 "fundo_colab": round(fundo_colab, 2),
+                                "rateio_colaboradores": detalhes_rateio_colab,
+                                "cota_por_colaborador": cota_individual_fundo,
                                 "leonidas": round(val_leonidas, 2),
                                 "nelson": round(val_nelson, 2),
                                 "soma_distribuida": round(soma_distribuida, 2),
@@ -1282,6 +1323,9 @@ elif authentication_status == True:
                                 leo_exib = float(r.get('leonidas', 0))
                                 nel_exib = float(r.get('nelson', 0))
                                 
+                                rateio_colab = r.get('rateio_colaboradores', {})
+                                txt_rateio_colab = ", ".join([f"{k}: R$ {v:.2f}" for k, v in rateio_colab.items()]) if rateio_colab else "-"
+
                                 if "Acúmulo" in r.get('regra', ''):
                                     val_prosp_efetivo = 0.0
                                 else:
@@ -1301,11 +1345,12 @@ elif authentication_status == True:
                                     "Tipo Regra": r.get('regra', 'N/D'),
                                     "Contrato": r.get('contrato', '').split(' — ')[0],
                                     "Valor Bruto": f"R$ {val_bruto:.2f}",
-                                    "Fundo Colab.": f"R$ {fundo_exib:.2f}",
                                     "Prospectador": r.get('prospectador', ''),
                                     "Val. Prospector": f"R$ {val_prosp_exib if 'Acúmulo' not in r.get('regra','') else 0.0:.2f}",
                                     "Operador": r.get('operador', ''),
                                     "Val. Operador": f"R$ {val_op_exib:.2f}",
+                                    "Fundo Colab. (5%)": f"R$ {fundo_exib:.2f}",
+                                    "Rateio Colaboradores (Não Operadores)": txt_rateio_colab,
                                     "Leônidas (60%)": f"R$ {leo_exib:.2f}",
                                     "Nelson (40%)": f"R$ {nel_exib:.2f}",
                                     "Soma Distribuída": f"R$ {soma_dist:.2f}",
@@ -1375,6 +1420,7 @@ elif authentication_status == True:
                             sum_nelson = 0.0
                             sum_distribuido = 0.0
                             count_provas_ok = 0
+                            totais_por_colaborador = {}
 
                             for log in res_rep.data:
                                 try:
@@ -1382,14 +1428,13 @@ elif authentication_status == True:
                                     dt_baixa_str = r.get('data_baixa', log['data_hora'][:10])
                                     dt_baixa_obj = datetime.strptime(dt_baixa_str, "%Y-%m-%d").date()
 
-                                    # Filtro por período
                                     if dt_inicio <= dt_baixa_obj <= dt_fim:
                                         prosp = r.get('prospectador', '')
                                         op = r.get('operador', '')
+                                        rateio_colab = r.get('rateio_colaboradores', {})
                                         
-                                        # Filtro por pessoa (caso selecionado)
                                         if filtro_pessoa != "Todos os Colaboradores / Sócios":
-                                            if filtro_pessoa not in [prosp, op, "Leônidas", "Nelson"]:
+                                            if filtro_pessoa not in [prosp, op, "Leônidas", "Nelson"] and filtro_pessoa not in rateio_colab:
                                                 continue
 
                                         v_bruto = float(r.get('valor_bruto', 0))
@@ -1412,6 +1457,11 @@ elif authentication_status == True:
                                         sum_nelson += v_nel
                                         sum_distribuido += soma_d
 
+                                        for colab_name, colab_val in rateio_colab.items():
+                                            totais_por_colaborador[colab_name] = totais_por_colaborador.get(colab_name, 0.0) + float(colab_val)
+
+                                        txt_colab_det = ", ".join([f"{k}: R$ {v:.2f}" for k, v in rateio_colab.items()]) if rateio_colab else "-"
+
                                         linhas_relatorio.append({
                                             "Data Baixa": dt_baixa_obj.strftime("%d/%m/%Y"),
                                             "Contrato / Cliente": r.get('contrato', '').split(' — ')[0],
@@ -1420,6 +1470,7 @@ elif authentication_status == True:
                                             "Prospectador": f"{prosp} (R$ {v_prosp_efetivo:.2f})" if v_prosp_efetivo > 0 else (prosp if prosp else "-"),
                                             "Operador": f"{op} (R$ {v_op:.2f})",
                                             "Fundo Colab. (5%)": f"R$ {v_fundo:.2f}",
+                                            "Rateio Individual Colaboradores": txt_colab_det,
                                             "Leônidas (60%)": f"R$ {v_leo:.2f}",
                                             "Nelson (40%)": f"R$ {v_nel:.2f}",
                                             "Total Distribuído": f"R$ {soma_d:.2f}",
@@ -1437,13 +1488,20 @@ elif authentication_status == True:
                             c_rel3.metric("Total Operadores & Prospectores", f"R$ {(sum_op + sum_prosp):.2f}")
                             c_rel4.metric("Fundo Colaboradores (5%)", f"R$ {sum_fundo:.2f}")
 
-                            with st.expander("👑 Divisão Detalhada dos Sócios no Período", expanded=True):
+                            with st.expander("👑 Divisão Detalhada dos Sócios e Fundo de Colaboradores no Período", expanded=True):
                                 c_s1, c_s2, c_s3 = st.columns(3)
                                 c_s1.metric("Leônidas (60%)", f"R$ {sum_leonidas:.2f}")
                                 c_s2.metric("Nelson (40%)", f"R$ {sum_nelson:.2f}")
                                 total_rel_regs = len(linhas_relatorio)
                                 pct_rel_ok = (count_provas_ok / total_rel_regs * 100) if total_rel_regs > 0 else 100
                                 c_s3.metric("Validação de Prova Real", f"{pct_rel_ok:.0f}% OK ({count_provas_ok}/{total_rel_regs})")
+
+                                if totais_por_colaborador:
+                                    st.markdown("---")
+                                    st.markdown("##### 💵 Acumulado Recebido do Fundo (5%) Por Colaborador no Período:")
+                                    cols_tot_c = st.columns(min(len(totais_por_colaborador), 4))
+                                    for idx, (c_name, c_tot) in enumerate(totais_por_colaborador.items()):
+                                        cols_tot_c[idx % 4].metric(c_name, f"R$ {c_tot:.2f}")
 
                             st.markdown("---")
                             st.subheader("📝 Lista Detalhada dos Pagamentos Processados")

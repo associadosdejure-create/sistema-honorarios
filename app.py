@@ -76,6 +76,7 @@ def limpar_flags_cadastro():
         st.session_state[k] = False
 
 def formatar_telefone(v):
+    if not v: return ""
     nums = re.sub(r'\D', '', str(v))
     if len(nums) == 10:
         return f"({nums[:2]}) {nums[2:6]}-{nums[6:]}"
@@ -84,6 +85,7 @@ def formatar_telefone(v):
     return v
 
 def validar_telefone_fixo(v):
+    if not v or not str(v).strip(): return True
     nums = re.sub(r'\D', '', str(v))
     return len(nums) == 10
 
@@ -617,6 +619,23 @@ elif authentication_status == True:
                 st.header("👤 Cadastro Completo de Cliente")
                 st.caption("Preencha as informações do cliente. Campos marcados com (*) são obrigatórios.")
                 
+                # Seletor de Prospectador posicionado fora do st.form para ter REATIVIDADE EM TEMPO REAL ao alterar a opção
+                c_top1, c_top2 = st.columns(2)
+                with c_top1:
+                    prospectador_sel = st.selectbox("Prospectador / Indicado Por *", lista_prospectadores, key="cad_cli_prosp_select")
+
+                nome_prosp_ext_val = ""
+                tel_prosp_ext_val = ""
+
+                if prospectador_sel == "Prospectador Externo":
+                    st.markdown("##### 🤝 Informações do Prospectador Externo")
+                    cp_e1, cp_e2 = st.columns(2)
+                    with cp_e1:
+                        nome_prosp_ext_val = st.text_input("Nome do Prospectador Externo *", key="cad_cli_pe_nome")
+                    with cp_e2:
+                        tel_prosp_ext_val = st.text_input("Telefone do Prospectador Externo (com DDD) *", key="cad_cli_pe_tel")
+                    st.markdown("---")
+
                 with st.form("fc_cli", clear_on_submit=True):
                     st.subheader("📋 Informações Pessoais & Profissionais")
                     c1, c2 = st.columns(2)
@@ -626,25 +645,11 @@ elif authentication_status == True:
                         profissao = st.text_input("Profissão *")
                     with c2:
                         estado_civil = st.selectbox("Estado Civil *", estados_civis)
-                        prospectador = st.selectbox("Prospectador / Indicado Por *", lista_prospectadores, key="sel_cad_prosp")
-
-                    # EXIBIÇÃO REATIVA DINÂMICA DENTRO DO FORMULÁRIO SE "Prospectador Externo" FOR SELECIONADO
-                    nome_prosp_ext = ""
-                    tel_prosp_ext = ""
-                    if st.session_state.get("sel_cad_prosp") == "Prospectador Externo":
-                        st.markdown("---")
-                        st.markdown("##### 🤝 Informações Obrigatórias do Prospectador Externo")
-                        col_pe1, col_pe2 = st.columns(2)
-                        with col_pe1:
-                            nome_prosp_ext = st.text_input("Nome Completo do Prospectador Externo *")
-                        with col_pe2:
-                            tel_prosp_ext = st.text_input("Telefone de Contato do Prospectador Externo (com DDD) *")
-                        st.markdown("---")
 
                     st.subheader("📞 Contatos & Endereço")
                     c3, c4 = st.columns(2)
                     with c3:
-                        tel_fixo = st.text_input("Telefone Fixo (com DDD, ex: 8432221100) *")
+                        tel_fixo = st.text_input("Telefone Fixo (Opcional - ex: 8432221100)")
                         celular = st.text_input("Celular / WhatsApp (com DDD, ex: 84999887766) *")
                         email = st.text_input("E-mail")
                     with c4:
@@ -672,10 +677,9 @@ elif authentication_status == True:
                         if not end.strip(): errs.append("O campo **Endereço** é obrigatório.")
                         if not cid.strip(): errs.append("O campo **Cidade** é obrigatório.")
                         
-                        if not tel_fixo.strip():
-                            errs.append("O campo **Telefone Fixo** é obrigatório.")
-                        elif not validar_telefone_fixo(tel_fixo):
-                            errs.append("O **Telefone Fixo** deve conter exatamente 10 dígitos (DDD + 8 números). Ex: (84) 3222-1100")
+                        # Telefone Fixo deixado como Opcional
+                        if tel_fixo.strip() and not validar_telefone_fixo(tel_fixo):
+                            errs.append("O **Telefone Fixo** informado deve conter exatamente 10 dígitos (DDD + 8 números). Ex: (84) 3222-1100")
                             
                         if not celular.strip():
                             errs.append("O campo **Celular / WhatsApp** é obrigatório.")
@@ -691,25 +695,25 @@ elif authentication_status == True:
                         else:
                             errs.append("O campo **CPF/CNPJ** é obrigatório.")
 
-                        if prospectador == "Prospectador Externo":
-                            if not nome_prosp_ext.strip():
+                        if prospectador_sel == "Prospectador Externo":
+                            if not nome_prosp_ext_val.strip():
                                 errs.append("O campo **Nome do Prospectador Externo** é obrigatório.")
-                            if not tel_prosp_ext.strip():
+                            if not tel_prosp_ext_val.strip():
                                 errs.append("O campo **Telefone do Prospectador Externo** é obrigatório.")
-                            elif not (validar_telefone_fixo(tel_prosp_ext) or validar_celular(tel_prosp_ext)):
+                            elif not (validar_telefone_fixo(tel_prosp_ext_val) or validar_celular(tel_prosp_ext_val)):
                                 errs.append("O **Telefone do Prospectador Externo** deve conter DDD + número válido (10 ou 11 dígitos).")
 
                         if errs:
                             for e in errs:
                                 st.error(f"⚠️ {e}")
                         else:
-                            tel_f_fmt = formatar_telefone(tel_fixo)
+                            tel_f_fmt = formatar_telefone(tel_fixo) if tel_fixo.strip() else ""
                             cel_fmt = formatar_telefone(celular)
 
-                            prosp_final = prospectador
-                            if prospectador == "Prospectador Externo":
-                                tel_prosp_fmt = formatar_telefone(tel_prosp_ext)
-                                prosp_final = f"Prospectador Externo: {nome_prosp_ext.strip()} ({tel_prosp_fmt})"
+                            prosp_final = prospectador_sel
+                            if prospectador_sel == "Prospectador Externo":
+                                tel_prosp_fmt = formatar_telefone(tel_prosp_ext_val)
+                                prosp_final = f"Prospectador Externo: {nome_prosp_ext_val.strip()} ({tel_prosp_fmt})"
 
                             supabase.table("clientes_cadastrados").insert({
                                 "nome": n.strip(),
@@ -790,6 +794,21 @@ elif authentication_status == True:
                     else:
                         idx_sel_prosp = lista_prospectadores.index(prosp_salvo) if prosp_salvo in lista_prospectadores else 0
 
+                    c_top_ed1, c_top_ed2 = st.columns(2)
+                    with c_top_ed1:
+                        eprospectador_sel = st.selectbox("Prospectador / Indicado Por *", lista_prospectadores, index=idx_sel_prosp, key="ed_cli_prosp_select")
+
+                    enome_prosp_ext_val = ""
+                    etel_prosp_ext_val = ""
+                    if eprospectador_sel == "Prospectador Externo":
+                        st.markdown("##### 🤝 Informações do Prospectador Externo")
+                        cep_e1, cep_e2 = st.columns(2)
+                        with cep_e1:
+                            enome_prosp_ext_val = st.text_input("Nome do Prospectador Externo *", value=nome_ext_init, key="ed_cli_pe_nome")
+                        with cep_e2:
+                            etel_prosp_ext_val = st.text_input("Telefone do Prospectador Externo (com DDD) *", value=tel_ext_init, key="ed_cli_pe_tel")
+                        st.markdown("---")
+
                     with st.form("fe_cli"):
                         st.subheader("📋 Informações Pessoais & Profissionais")
                         c1, c2 = st.columns(2)
@@ -800,25 +819,11 @@ elif authentication_status == True:
                         with c2:
                             idx_ec = estados_civis.index(obj.get('estado_civil')) if obj.get('estado_civil') in estados_civis else 0
                             eestado_civil = st.selectbox("Estado Civil *", estados_civis, index=idx_ec)
-                            
-                            eprospectador = st.selectbox("Prospectador / Indicado Por *", lista_prospectadores, index=idx_sel_prosp, key="sel_ed_prosp")
-
-                        enome_prosp_ext = ""
-                        etel_prosp_ext = ""
-                        if st.session_state.get("sel_ed_prosp") == "Prospectador Externo":
-                            st.markdown("---")
-                            st.markdown("##### 🤝 Informações Obrigatórias do Prospectador Externo")
-                            col_pe1, col_pe2 = st.columns(2)
-                            with col_pe1:
-                                enome_prosp_ext = st.text_input("Nome Completo do Prospectador Externo *", value=nome_ext_init)
-                            with col_pe2:
-                                etel_prosp_ext = st.text_input("Telefone do Prospectador Externo (com DDD) *", value=tel_ext_init)
-                            st.markdown("---")
 
                         st.subheader("📞 Contatos & Endereço")
                         c3, c4 = st.columns(2)
                         with c3:
-                            etel_fixo = st.text_input("Telefone Fixo *", value=obj.get('telefone',''))
+                            etel_fixo = st.text_input("Telefone Fixo (Opcional)", value=obj.get('telefone',''))
                             ecelular = st.text_input("Celular / WhatsApp *", value=obj.get('celular',''))
                             eemail = st.text_input("E-mail", value=obj.get('email',''))
                         with c4:
@@ -847,9 +852,7 @@ elif authentication_status == True:
                             if not eend.strip(): errs.append("O campo **Endereço** é obrigatório.")
                             if not ecid.strip(): errs.append("O campo **Cidade** é obrigatório.")
                             
-                            if not etel_fixo.strip():
-                                errs.append("O campo **Telefone Fixo** é obrigatório.")
-                            elif not validar_telefone_fixo(etel_fixo):
+                            if etel_fixo.strip() and not validar_telefone_fixo(etel_fixo):
                                 errs.append("O **Telefone Fixo** deve conter exatamente 10 dígitos.")
 
                             if not ecelular.strip():
@@ -866,27 +869,27 @@ elif authentication_status == True:
                             else:
                                 errs.append("O campo **CPF/CNPJ** é obrigatório.")
 
-                            if eprospectador == "Prospectador Externo":
-                                if not enome_prosp_ext.strip():
+                            if eprospectador_sel == "Prospectador Externo":
+                                if not enome_prosp_ext_val.strip():
                                     errs.append("O campo **Nome do Prospectador Externo** é obrigatório.")
-                                if not etel_prosp_ext.strip():
+                                if not etel_prosp_ext_val.strip():
                                     errs.append("O campo **Telefone do Prospectador Externo** é obrigatório.")
-                                elif not (validar_telefone_fixo(etel_prosp_ext) or validar_celular(etel_prosp_ext)):
+                                elif not (validar_telefone_fixo(etel_prosp_ext_val) or validar_celular(etel_prosp_ext_val)):
                                     errs.append("O **Telefone do Prospectador Externo** deve conter DDD + número válido (10 ou 11 dígitos).")
 
                             if errs:
                                 for e in errs:
                                     st.error(f"⚠️ {e}")
                             else:
-                                eprosp_final = eprospectador
-                                if eprospectador == "Prospectador Externo":
-                                    etel_ext_fmt = formatar_telefone(etel_prosp_ext)
-                                    eprosp_final = f"Prospectador Externo: {enome_prosp_ext.strip()} ({etel_ext_fmt})"
+                                eprosp_final = eprospectador_sel
+                                if eprospectador_sel == "Prospectador Externo":
+                                    etel_ext_fmt = formatar_telefone(etel_prosp_ext_val)
+                                    eprosp_final = f"Prospectador Externo: {enome_prosp_ext_val.strip()} ({etel_ext_fmt})"
 
                                 supabase.table("clientes_cadastrados").update({
                                     "nome": en.strip(),
                                     "cpf_cnpj": edoc.strip(),
-                                    "telefone": formatar_telefone(etel_fixo),
+                                    "telefone": formatar_telefone(etel_fixo) if etel_fixo.strip() else "",
                                     "celular": formatar_telefone(ecelular),
                                     "email": eemail.strip(),
                                     "endereco": eend.strip(),
@@ -1308,7 +1311,6 @@ elif authentication_status == True:
                     obj_contrato = cdict_h[sel_contrato_str]
                     val_total_contrato = float(obj_contrato.get('valor_total', 0.0))
                     
-                    # Identificar se o cliente do contrato tem prospectador externo vindo da tabela Clientes
                     cli_nome_contrato = obj_contrato.get('cliente', '')
                     prosp_automatico_cli = "Nenhum / Sem Prospectador"
                     

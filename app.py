@@ -623,6 +623,12 @@ elif authentication_status == True:
                     if campo not in st.session_state:
                         st.session_state[campo] = ""
 
+                # Se o cadastro acabou de ser realizado com sucesso, limpa o state ANTES de instanciar os inputs
+                if st.session_state.get('cad_cli_sucesso_ok'):
+                    for campo in campos_cli:
+                        st.session_state[campo] = ""
+                    st.session_state['cad_cli_sucesso_ok'] = False
+
                 c_top1, c_top2 = st.columns(2)
                 with c_top1:
                     prospectador_sel = st.selectbox("Prospectador / Indicado Por *", lista_prospectadores, key="cad_cli_prosp_select")
@@ -767,10 +773,9 @@ elif authentication_status == True:
                             registrar_auditoria(username, "Cadastrar Cliente", "Clientes", f"Cliente: {n.strip()}")
                             st.cache_data.clear()
                             
-                            for campo in campos_cli:
-                                st.session_state[campo] = ""
-
-                            st.session_state['cad_cli_sucesso'] = True
+                            st.session_state['cad_cli_sucesso_ok'] = True
+                            st.success("🎉 Cliente cadastrado com sucesso!")
+                            time.sleep(1)
                             st.rerun()
                         except Exception as ex:
                             st.error(f"⚠️ Erro ao salvar no banco de dados. Verifique o painel do Supabase: {ex}")

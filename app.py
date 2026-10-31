@@ -76,13 +76,13 @@ def limpar_flags_cadastro():
         st.session_state[k] = False
 
 def formatar_telefone(v):
-    if not v: return ""
+    if not v: return None
     nums = re.sub(r'\D', '', str(v))
     if len(nums) == 10:
         return f"({nums[:2]}) {nums[2:6]}-{nums[6:]}"
     elif len(nums) == 11:
         return f"({nums[:2]}) {nums[2:7]}-{nums[7:]}"
-    return v
+    return v if v.strip() else None
 
 def validar_telefone_fixo(v):
     if not v or not str(v).strip(): return True
@@ -557,40 +557,32 @@ elif authentication_status == True:
 
         if menu_principal == "Clientes":
             acoes = ["Consultar Clientes", "Cadastrar Cliente", "Importar Excel", "Editar Cliente", "Exportar Base (Backup)"]
-            if user_role == 'admin':
-                acoes.insert(4, "Excluir Cliente")
+            if user_role == 'admin': acoes.insert(4, "Excluir Cliente")
         elif menu_principal == "Pagamentos":
             acoes = ["Ver Parcelas", "Cadastrar Contrato", "Editar Contrato"]
-            if user_role == 'admin':
-                acoes = ["Ver Parcelas", "Cadastrar Contrato", "Baixar Parcela", "Extrato de Repasses", "Relatório por Período", "Editar Contrato", "Excluir Contrato"]
+            if user_role == 'admin': acoes = ["Ver Parcelas", "Cadastrar Contrato", "Baixar Parcela", "Extrato de Repasses", "Relatório por Período", "Editar Contrato", "Excluir Contrato"]
         elif menu_principal == "Perícias":
             acoes = ["Ver Perícias", "Cadastrar Perícia", "Importar Excel", "Editar Perícia"]
-            if user_role == 'admin':
-                acoes.append("Excluir Perícia")
+            if user_role == 'admin': acoes.append("Excluir Perícia")
         elif menu_principal == "Expedientes":
             acoes = ["Consultar Expedientes", "Cadastrar Expediente", "Importar Excel", "Editar Expediente"]
-            if user_role == 'admin':
-                acoes.append("Excluir Expediente")
+            if user_role == 'admin': acoes.append("Excluir Expediente")
         elif menu_principal == "Expedientes TRF":
             acoes = ["Consultar Expedientes TRF", "Cadastrar Expediente TRF", "Importar Excel", "Editar Expediente TRF"]
-            if user_role == 'admin':
-                acoes.append("Excluir Expediente TRF")
+            if user_role == 'admin': acoes.append("Excluir Expediente TRF")
         elif menu_principal == "Pendências":
             acoes = ["Consultar Pendências", "Cadastrar Pendência", "Importar Excel", "Editar Pendência"]
-            if user_role == 'admin':
-                acoes.append("Excluir Pendência")
+            if user_role == 'admin': acoes.append("Excluir Pendência")
         elif menu_principal == "Equipe Dejure":
             acoes = ["Nossa Equipe"]
         elif menu_principal == "Segurança":
             acoes = ["Meu Perfil", "Alterar Senha"]
-            if user_role == 'admin':
-                acoes = ["Meu Perfil", "Gerenciar Usuários", "Cadastrar Novo Usuário", "Alterar Senha"]
+            if user_role == 'admin': acoes = ["Meu Perfil", "Gerenciar Usuários", "Cadastrar Novo Usuário", "Alterar Senha"]
         else:
             acoes = []
 
         if not st.session_state['submenu_atual'] or st.session_state['submenu_atual'] not in acoes:
-            if acoes:
-                st.session_state['submenu_atual'] = acoes[0]
+            if acoes: st.session_state['submenu_atual'] = acoes[0]
 
         if acoes:
             cols = st.columns(len(acoes))
@@ -604,7 +596,7 @@ elif authentication_status == True:
         st.markdown("---")
         sub = st.session_state['submenu_atual']
 
-        # --- PROCESSAMENTO DO MÓDULO CLIENTES ---
+        # --- MÓDULO CLIENTES ---
         if menu_principal == "Clientes":
             lista_prospectadores = ["Nenhum / Sem Prospectador", "Prospectador Externo"]
             for u in credentials['usernames'].values():
@@ -619,7 +611,7 @@ elif authentication_status == True:
                 st.header("👤 Cadastro Completo de Cliente")
                 st.caption("Preencha as informações do cliente. Campos marcados com (*) são obrigatórios.")
                 
-                # Seletor de Prospectador posicionado fora do st.form para ter REATIVIDADE EM TEMPO REAL ao alterar a opção
+                # Seletor posicionado fora do st.form para permitir atualização visual reativa em tempo real
                 c_top1, c_top2 = st.columns(2)
                 with c_top1:
                     prospectador_sel = st.selectbox("Prospectador / Indicado Por *", lista_prospectadores, key="cad_cli_prosp_select")
@@ -628,7 +620,7 @@ elif authentication_status == True:
                 tel_prosp_ext_val = ""
 
                 if prospectador_sel == "Prospectador Externo":
-                    st.markdown("##### 🤝 Informações do Prospectador Externo")
+                    st.markdown("##### 🤝 Informações Obrigatórias do Prospectador Externo")
                     cp_e1, cp_e2 = st.columns(2)
                     with cp_e1:
                         nome_prosp_ext_val = st.text_input("Nome do Prospectador Externo *", key="cad_cli_pe_nome")
@@ -677,7 +669,6 @@ elif authentication_status == True:
                         if not end.strip(): errs.append("O campo **Endereço** é obrigatório.")
                         if not cid.strip(): errs.append("O campo **Cidade** é obrigatório.")
                         
-                        # Telefone Fixo deixado como Opcional
                         if tel_fixo.strip() and not validar_telefone_fixo(tel_fixo):
                             errs.append("O **Telefone Fixo** informado deve conter exatamente 10 dígitos (DDD + 8 números). Ex: (84) 3222-1100")
                             
@@ -707,34 +698,39 @@ elif authentication_status == True:
                             for e in errs:
                                 st.error(f"⚠️ {e}")
                         else:
-                            tel_f_fmt = formatar_telefone(tel_fixo) if tel_fixo.strip() else ""
-                            cel_fmt = formatar_telefone(celular)
+                            try:
+                                tel_f_fmt = formatar_telefone(tel_fixo) if tel_fixo.strip() else None
+                                cel_fmt = formatar_telefone(celular)
 
-                            prosp_final = prospectador_sel
-                            if prospectador_sel == "Prospectador Externo":
-                                tel_prosp_fmt = formatar_telefone(tel_prosp_ext_val)
-                                prosp_final = f"Prospectador Externo: {nome_prosp_ext_val.strip()} ({tel_prosp_fmt})"
+                                prosp_final = prospectador_sel
+                                if prospectador_sel == "Prospectador Externo":
+                                    tel_prosp_fmt = formatar_telefone(tel_prosp_ext_val)
+                                    prosp_final = f"Prospectador Externo: {nome_prosp_ext_val.strip()} ({tel_prosp_fmt})"
 
-                            supabase.table("clientes_cadastrados").insert({
-                                "nome": n.strip(),
-                                "cpf_cnpj": doc.strip(),
-                                "telefone": tel_f_fmt,
-                                "celular": cel_fmt,
-                                "email": email.strip(),
-                                "endereco": end.strip(),
-                                "cidade": cid.strip(),
-                                "uf": uf,
-                                "profissao": profissao.strip(),
-                                "estado_civil": estado_civil,
-                                "indicado_por": prosp_final,
-                                "senha_gov": gov.strip(),
-                                "observacoes": obs.strip()
-                            }).execute()
+                                payload = {
+                                    "nome": n.strip(),
+                                    "cpf_cnpj": doc.strip(),
+                                    "telefone": tel_f_fmt,
+                                    "celular": cel_fmt,
+                                    "email": email.strip() if email.strip() else None,
+                                    "endereco": end.strip(),
+                                    "cidade": cid.strip(),
+                                    "uf": uf,
+                                    "profissao": profissao.strip(),
+                                    "estado_civil": estado_civil,
+                                    "indicado_por": prosp_final if prosp_final else None,
+                                    "senha_gov": gov.strip() if gov.strip() else None,
+                                    "observacoes": obs.strip() if obs.strip() else None
+                                }
 
-                            registrar_auditoria(username, "Cadastrar Cliente", "Clientes", f"Cliente: {n.strip()}")
-                            st.cache_data.clear()
-                            st.session_state['cad_cli_sucesso'] = True
-                            st.rerun()
+                                supabase.table("clientes_cadastrados").insert(payload).execute()
+
+                                registrar_auditoria(username, "Cadastrar Cliente", "Clientes", f"Cliente: {n.strip()}")
+                                st.cache_data.clear()
+                                st.session_state['cad_cli_sucesso'] = True
+                                st.rerun()
+                            except Exception as ex:
+                                st.error(f"⚠️ Erro ao salvar no banco de dados. Verifique o painel do Supabase: {ex}")
 
                     if voltar_cli:
                         st.session_state['submenu_atual'] = "Consultar Clientes"
@@ -823,9 +819,9 @@ elif authentication_status == True:
                         st.subheader("📞 Contatos & Endereço")
                         c3, c4 = st.columns(2)
                         with c3:
-                            etel_fixo = st.text_input("Telefone Fixo (Opcional)", value=obj.get('telefone',''))
+                            etel_fixo = st.text_input("Telefone Fixo (Opcional)", value=obj.get('telefone','') or '')
                             ecelular = st.text_input("Celular / WhatsApp *", value=obj.get('celular',''))
-                            eemail = st.text_input("E-mail", value=obj.get('email',''))
+                            eemail = st.text_input("E-mail", value=obj.get('email','') or '')
                         with c4:
                             eend = st.text_input("Endereço *", value=obj.get('endereco',''))
                             ecid = st.text_input("Cidade *", value=obj.get('cidade',''))
@@ -835,9 +831,9 @@ elif authentication_status == True:
                         st.subheader("🔐 Acesso & Observações")
                         c5, c6 = st.columns(2)
                         with c5:
-                            egov = st.text_input("Senha Gov.br", value=obj.get('senha_gov',''))
+                            egov = st.text_input("Senha Gov.br", value=obj.get('senha_gov','') or '')
                         with c6:
-                            eobs = st.text_area("Observações", value=obj.get('observacoes',''))
+                            eobs = st.text_area("Observações", value=obj.get('observacoes','') or '')
 
                         col_e1, col_e2 = st.columns(2)
                         with col_e1:
@@ -881,32 +877,37 @@ elif authentication_status == True:
                                 for e in errs:
                                     st.error(f"⚠️ {e}")
                             else:
-                                eprosp_final = eprospectador_sel
-                                if eprospectador_sel == "Prospectador Externo":
-                                    etel_ext_fmt = formatar_telefone(etel_prosp_ext_val)
-                                    eprosp_final = f"Prospectador Externo: {enome_prosp_ext_val.strip()} ({etel_ext_fmt})"
+                                try:
+                                    eprosp_final = eprospectador_sel
+                                    if eprospectador_sel == "Prospectador Externo":
+                                        etel_ext_fmt = formatar_telefone(etel_prosp_ext_val)
+                                        eprosp_final = f"Prospectador Externo: {enome_prosp_ext_val.strip()} ({etel_ext_fmt})"
 
-                                supabase.table("clientes_cadastrados").update({
-                                    "nome": en.strip(),
-                                    "cpf_cnpj": edoc.strip(),
-                                    "telefone": formatar_telefone(etel_fixo) if etel_fixo.strip() else "",
-                                    "celular": formatar_telefone(ecelular),
-                                    "email": eemail.strip(),
-                                    "endereco": eend.strip(),
-                                    "cidade": ecid.strip(),
-                                    "uf": euf,
-                                    "profissao": eprofissao.strip(),
-                                    "estado_civil": eestado_civil,
-                                    "indicado_por": eprosp_final,
-                                    "senha_gov": egov.strip(),
-                                    "observacoes": eobs.strip()
-                                }).eq("id", obj['id']).execute()
+                                    payload_ed = {
+                                        "nome": en.strip(),
+                                        "cpf_cnpj": edoc.strip(),
+                                        "telefone": formatar_telefone(etel_fixo) if etel_fixo.strip() else None,
+                                        "celular": formatar_telefone(ecelular),
+                                        "email": eemail.strip() if eemail.strip() else None,
+                                        "endereco": eend.strip(),
+                                        "cidade": ecid.strip(),
+                                        "uf": euf,
+                                        "profissao": eprofissao.strip(),
+                                        "estado_civil": eestado_civil,
+                                        "indicado_por": eprosp_final,
+                                        "senha_gov": egov.strip() if egov.strip() else None,
+                                        "observacoes": eobs.strip() if eobs.strip() else None
+                                    }
 
-                                registrar_auditoria(username, "Editar Cliente", "Clientes", f"ID: {obj['id']} - {en.strip()}")
-                                st.cache_data.clear()
-                                st.success("🎉 Cliente atualizado com sucesso!")
-                                time.sleep(1)
-                                st.rerun()
+                                    supabase.table("clientes_cadastrados").update(payload_ed).eq("id", obj['id']).execute()
+
+                                    registrar_auditoria(username, "Editar Cliente", "Clientes", f"ID: {obj['id']} - {en.strip()}")
+                                    st.cache_data.clear()
+                                    st.success("🎉 Cliente atualizado com sucesso!")
+                                    time.sleep(1)
+                                    st.rerun()
+                                except Exception as ex:
+                                    st.error(f"⚠️ Erro ao atualizar no Supabase: {ex}")
 
                         if voltar_ed_cli:
                             st.session_state['submenu_atual'] = "Consultar Clientes"
@@ -1773,6 +1774,7 @@ elif authentication_status == True:
                         if voltar_ed_hon:
                             st.session_state['submenu_atual'] = "Ver Parcelas"
                             st.rerun()
+
             elif sub == "Excluir Contrato" and user_role == 'admin':
                 st.header("🗑️ Excluir Contrato")
                 res_h = carregar_dados("honorarios")

@@ -9,6 +9,7 @@ import os
 import bcrypt
 import json
 import base64
+import re
 
 st.set_page_config(page_title="Controle DEJURE ADVOCACIA", layout="wide", page_icon="⚖️")
 
@@ -73,6 +74,22 @@ def registrar_auditoria(usuario, acao, modulo, detalhes=""):
 def limpar_flags_cadastro():
     for k in ['cad_cli_sucesso', 'cad_hon_sucesso', 'cad_per_sucesso', 'cad_exp_sucesso', 'cad_trf_sucesso', 'cad_pen_sucesso', 'cad_user_sucesso']:
         st.session_state[k] = False
+
+def formatar_telefone(v):
+    nums = re.sub(r'\D', '', str(v))
+    if len(nums) == 10:
+        return f"({nums[:2]}) {nums[2:6]}-{nums[6:]}"
+    elif len(nums) == 11:
+        return f"({nums[:2]}) {nums[2:7]}-{nums[7:]}"
+    return v
+
+def validar_telefone_fixo(v):
+    nums = re.sub(r'\D', '', str(v))
+    return len(nums) == 10
+
+def validar_celular(v):
+    nums = re.sub(r'\D', '', str(v))
+    return len(nums) == 11 and nums[2] == '9'
 
 def carregar_usuarios_db():
     senha_padrao_hash = gerar_hash('mudar123')
@@ -485,7 +502,7 @@ elif authentication_status == True:
                 st.info("🎉 Nenhum alerta de prazo ou pagamento pendente para hoje!")
         except Exception as e: 
             st.error(f"Erro ao carregar central de alertas: {e}")
-    
+
     elif menu_escolha == "Auditoria" and user_role == 'admin':
         st.title("🛡️ Central de Auditoria do Sistema")
         st.caption("Acompanhe as ações gerais do sistema e os registros de acesso dos usuários.")
@@ -587,7 +604,276 @@ elif authentication_status == True:
 
         # --- PROCESSAMENTO DOS MÓDULOS ---
         
-        if menu_principal == "Equipe Dejure":
+        if menu_principal == "Clientes":
+            lista_prospectadores = ["Nenhum / Sem Prospectador", "Prospectador Externo"]
+            for u in credentials['usernames'].values():
+                nome_u = u.get('name', '')
+                if nome_u and nome_u not in lista_prospectadores:
+                    lista_prospectadores.append(nome_u)
+
+            ufs = ["AC", "AL", "AP", "AM", "BA", "CE", "DF", "ES", "GO", "MA", "MT", "MS", "MG", "PA", "PB", "PR", "PE", "PI", "RJ", "RN", "RS", "RO", "RR", "SC", "SP", "SE", "TO"]
+            estados_civis = ["Solteiro(a)", "Casado(a)", "Divorciado(a)", "Viúvo(a)", "União Estável"]
+
+            if sub == "Cadastrar Cliente":
+                st.header("👤 Cadastro Completo de Cliente")
+                st.caption("Preencha as informações do cliente. Campos marcados com (*) são obrigatórios.")
+                
+                with st.form("fc_cli", clear_on_submit=True):
+                    st.subheader("📋 Informações Pessoais & Profissionais")
+                    c1, c2 = st.columns(2)
+                    with c1:
+                        n = st.text_input("Nome Completo *")
+                        doc = st.text_input("CPF / CNPJ *")
+                        profissao = st.text_input("Profissão *")
+                    with c2:
+                        estado_civil = st.selectbox("Estado Civil *", estados_civis)
+                        prospectador = st.selectbox("Prospectador / Indicado Por *", lista_prospectadores)
+
+                    st.subheader("📞 Contatos & Endereço")
+                    c3, c4 = st.columns(2)
+                    with c3:
+                        tel_fixo = st.text_input("Telefone Fixo (com DDD, ex: 8432221100) *")
+                        celular = st.text_input("Celular / WhatsApp (com DDD, ex: 84999887766) *")
+                        email = st.text_input("E-mail")
+                    with c4:
+                        end = st.text_input("Endereço *")
+                        cid = st.text_input("Cidade *")
+                        uf = st.selectbox("Estado (UF) *", ufs, index=ufs.index("RN") if "RN" in ufs else 0)
+
+                    st.subheader("🔐 Acesso & Observações")
+                    c5, c6 = st.columns(2)
+                    with c5:
+                        gov = st.text_input("Senha Gov.br")
+                    with c6:
+                        obs = st.text_area("Observações")
+                    
+                    col_b_cad, col_b_vol = st.columns(2)
+                    with col_b_cad:
+                        salvar_cli = st.form_submit_button("Salvar Cliente", type="primary", use_container_width=True)
+                    with col_b_vol:
+                        voltar_cli = st.form_submit_button("⬅️ Voltar", use_container_width=True)
+
+                    if salvar_cli:
+                        errs = []
+                        if not n.strip(): errs.append("O campo **Nome Completo** é obrigatório.")
+                        if not profissao.strip(): errs.append("O campo **Profissão** é obrigatório.")
+                        if not end.strip(): errs.append("O campo **Endereço** é obrigatório.")
+                        if not cid.strip(): errs.append("O campo **Cidade** é obrigatório.")
+                        
+                        if not tel_fixo.strip():
+                            errs.append("O campo **Telefone Fixo** é obrigatório.")
+                        elif not validar_telefone_fixo(tel_fixo):
+                            errs.append("O **Telefone Fixo** deve conter exatamente 10 dígitos (DDD + 8 números). Ex: (84) 3222-1100")
+                            
+                        if not celular.strip():
+                            errs.append("O campo **Celular / WhatsApp** é obrigatório.")
+                        elif not validar_celular(celular):
+                            errs.append("O **Celular** deve conter 11 dígitos no padrão (DDD + 9 + 8 números). Ex: (84) 99988-7766")
+
+                        if doc.strip():
+                            doc_l = ''.join(filter(str.isdigit, str(doc)))
+                            if len(doc_l) == 11 and not validar_cpf(doc_l): 
+                                errs.append("O **CPF** informado é inválido!")
+                            elif len(doc_l) != 11 and len(doc_l) != 14:
+                                errs.append("O **CPF/CNPJ** deve conter exatamente 11 dígitos (CPF) ou 14 dígitos (CNPJ).")
+                        else:
+                            errs.append("O campo **CPF/CNPJ** é obrigatório.")
+
+                        if errs:
+                            for e in errs:
+                                st.error(f"⚠️ {e}")
+                        else:
+                            tel_f_fmt = formatar_telefone(tel_fixo)
+                            cel_fmt = formatar_telefone(celular)
+
+                            supabase.table("clientes_cadastrados").insert({
+                                "nome": n.strip(),
+                                "cpf_cnpj": doc.strip(),
+                                "telefone": tel_f_fmt,
+                                "celular": cel_fmt,
+                                "email": email.strip(),
+                                "endereco": end.strip(),
+                                "cidade": cid.strip(),
+                                "uf": uf,
+                                "profissao": profissao.strip(),
+                                "estado_civil": estado_civil,
+                                "indicado_por": prospectador,
+                                "senha_gov": gov.strip(),
+                                "observacoes": obs.strip()
+                            }).execute()
+
+                            registrar_auditoria(username, "Cadastrar Cliente", "Clientes", f"Cliente: {n.strip()}")
+                            st.cache_data.clear()
+                            st.session_state['cad_cli_sucesso'] = True
+                            st.rerun()
+
+                    if voltar_cli:
+                        st.session_state['submenu_atual'] = "Consultar Clientes"
+                        st.rerun()
+
+                if st.session_state.get('cad_cli_sucesso'):
+                    st.success("🎉 Cliente cadastrado com sucesso!")
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        if st.button("➕ Cadastrar Novo Cliente", key="btn_novo_cli", type="primary", use_container_width=True):
+                            st.session_state['cad_cli_sucesso'] = False
+                            st.rerun()
+                    with col2:
+                        if st.button("⬅️ Voltar para Base de Clientes", key="btn_vol_cli", use_container_width=True):
+                            st.session_state['cad_cli_sucesso'] = False
+                            st.session_state['submenu_atual'] = "Consultar Clientes"
+                            st.rerun()
+
+            elif sub == "Importar Excel":
+                st.header("📥 Importar Clientes via Planilha Excel")
+                st.caption("O arquivo deve conter as colunas: nome, cpf_cnpj, telefone, celular, email, endereco, cidade, uf, profissao, estado_civil, indicado_por, senha_gov, observacoes")
+                file_up = st.file_uploader("Envie a planilha (.xlsx ou .csv)", type=["xlsx", "csv"], key="up_cli")
+                if file_up and st.button("Confirmar Importação", type="primary"):
+                    importar_excel_para_supabase("clientes_cadastrados", file_up)
+
+            elif sub == "Consultar Clientes":
+                st.header("📋 Base Completa de Clientes")
+                res = carregar_dados("clientes_cadastrados")
+                if res: 
+                    df_cli = pd.DataFrame(res)
+                    st.dataframe(df_cli, use_container_width=True, hide_index=True)
+                else: 
+                    st.info("Nenhum cliente cadastrado.")
+
+            elif sub == "Editar Cliente":
+                st.header("✏️ Editar Cadastro de Cliente")
+                res = carregar_dados("clientes_cadastrados")
+                if res:
+                    cdict = {f"ID: {c['id']} — {c['nome']}": c for c in res}
+                    sel = st.selectbox("Selecione o Cliente:", list(cdict.keys()))
+                    obj = cdict[sel]
+
+                    with st.form("fe_cli"):
+                        st.subheader("📋 Informações Pessoais & Profissionais")
+                        c1, c2 = st.columns(2)
+                        with c1:
+                            en = st.text_input("Nome Completo *", value=obj.get('nome',''))
+                            edoc = st.text_input("CPF / CNPJ *", value=obj.get('cpf_cnpj',''))
+                            eprofissao = st.text_input("Profissão *", value=obj.get('profissao',''))
+                        with c2:
+                            idx_ec = estados_civis.index(obj.get('estado_civil')) if obj.get('estado_civil') in estados_civis else 0
+                            eestado_civil = st.selectbox("Estado Civil *", estados_civis, index=idx_ec)
+                            
+                            idx_p = lista_prospectadores.index(obj.get('indicado_por')) if obj.get('indicado_por') in lista_prospectadores else 0
+                            eprospectador = st.selectbox("Prospectador / Indicado Por *", lista_prospectadores, index=idx_p)
+
+                        st.subheader("📞 Contatos & Endereço")
+                        c3, c4 = st.columns(2)
+                        with c3:
+                            etel_fixo = st.text_input("Telefone Fixo *", value=obj.get('telefone',''))
+                            ecelular = st.text_input("Celular / WhatsApp *", value=obj.get('celular',''))
+                            eemail = st.text_input("E-mail", value=obj.get('email',''))
+                        with c4:
+                            eend = st.text_input("Endereço *", value=obj.get('endereco',''))
+                            ecid = st.text_input("Cidade *", value=obj.get('cidade',''))
+                            idx_uf = ufs.index(obj.get('uf')) if obj.get('uf') in ufs else 0
+                            euf = st.selectbox("Estado (UF) *", ufs, index=idx_uf)
+
+                        st.subheader("🔐 Acesso & Observações")
+                        c5, c6 = st.columns(2)
+                        with c5:
+                            egov = st.text_input("Senha Gov.br", value=obj.get('senha_gov',''))
+                        with c6:
+                            eobs = st.text_area("Observações", value=obj.get('observacoes',''))
+
+                        col_e1, col_e2 = st.columns(2)
+                        with col_e1:
+                            atualizar_cli = st.form_submit_button("Atualizar Cliente", type="primary", use_container_width=True)
+                        with col_e2:
+                            voltar_ed_cli = st.form_submit_button("⬅️ Voltar", use_container_width=True)
+
+                        if atualizar_cli:
+                            errs = []
+                            if not en.strip(): errs.append("O campo **Nome Completo** é obrigatório.")
+                            if not eprofissao.strip(): errs.append("O campo **Profissão** é obrigatório.")
+                            if not eend.strip(): errs.append("O campo **Endereço** é obrigatório.")
+                            if not ecid.strip(): errs.append("O campo **Cidade** é obrigatório.")
+                            
+                            if not etel_fixo.strip():
+                                errs.append("O campo **Telefone Fixo** é obrigatório.")
+                            elif not validar_telefone_fixo(etel_fixo):
+                                errs.append("O **Telefone Fixo** deve conter exatamente 10 dígitos.")
+
+                            if not ecelular.strip():
+                                errs.append("O campo **Celular / WhatsApp** é obrigatório.")
+                            elif not validar_celular(ecelular):
+                                errs.append("O **Celular** deve conter 11 dígitos com o 9 na frente.")
+
+                            if edoc.strip():
+                                doc_l = ''.join(filter(str.isdigit, str(edoc)))
+                                if len(doc_l) == 11 and not validar_cpf(doc_l): 
+                                    errs.append("O **CPF** informado é inválido!")
+                                elif len(doc_l) != 11 and len(doc_l) != 14:
+                                    errs.append("O **CPF/CNPJ** deve conter exatamente 11 dígitos (CPF) ou 14 dígitos (CNPJ).")
+                            else:
+                                errs.append("O campo **CPF/CNPJ** é obrigatório.")
+
+                            if errs:
+                                for e in errs:
+                                    st.error(f"⚠️ {e}")
+                            else:
+                                supabase.table("clientes_cadastrados").update({
+                                    "nome": en.strip(),
+                                    "cpf_cnpj": edoc.strip(),
+                                    "telefone": formatar_telefone(etel_fixo),
+                                    "celular": formatar_telefone(ecelular),
+                                    "email": eemail.strip(),
+                                    "endereco": eend.strip(),
+                                    "cidade": ecid.strip(),
+                                    "uf": euf,
+                                    "profissao": eprofissao.strip(),
+                                    "estado_civil": eestado_civil,
+                                    "indicado_por": eprospectador,
+                                    "senha_gov": egov.strip(),
+                                    "observacoes": eobs.strip()
+                                }).eq("id", obj['id']).execute()
+
+                                registrar_auditoria(username, "Editar Cliente", "Clientes", f"ID: {obj['id']} - {en.strip()}")
+                                st.cache_data.clear()
+                                st.success("🎉 Cliente atualizado com sucesso!")
+                                time.sleep(1)
+                                st.rerun()
+
+                        if voltar_ed_cli:
+                            st.session_state['submenu_atual'] = "Consultar Clientes"
+                            st.rerun()
+                else: 
+                    st.info("Nenhum cliente para editar.")
+
+            elif sub == "Excluir Cliente" and user_role == 'admin':
+                st.header("🗑️ Excluir Cliente")
+                res = carregar_dados("clientes_cadastrados")
+                if res:
+                    cdict = {f"ID: {c['id']} — {c['nome']}": c['id'] for c in res}
+                    sel = st.selectbox("Cliente:", list(cdict.keys()))
+                    if st.checkbox("Confirmo exclusão permanente deste cliente.") and st.button("EXCLUIR SELECIONADO", type="primary"):
+                        supabase.table("clientes_cadastrados").delete().eq("id", cdict[sel]).execute()
+                        registrar_auditoria(username, "Excluir Cliente", "Clientes", f"ID: {cdict[sel]}")
+                        st.cache_data.clear(); st.success("Excluído!"); st.rerun()
+                    
+                    st.markdown("---")
+                    st.warning("⚠️ **ÁREA CRÍTICA:** Exclusão em massa de toda a base de clientes.")
+                    if st.checkbox("Confirmo a exclusão de TODOS os registros de clientes do sistema."):
+                        if st.button("🔥 EXCLUIR TODOS OS CLIENTES", type="primary"):
+                            supabase.table("clientes_cadastrados").delete().neq("id", 0).execute()
+                            registrar_auditoria(username, "EXCLUIR TODOS OS CLIENTES", "Clientes", "Exclusão em massa executada.")
+                            st.cache_data.clear(); st.success("Todos os registros foram excluídos com sucesso!"); st.rerun()
+                else: st.info("Nenhum cliente cadastrado.")
+
+            elif sub == "Exportar Base (Backup)":
+                st.header("📥 Backup de Clientes")
+                res = carregar_dados("clientes_cadastrados")
+                if res:
+                    registrar_auditoria(username, "Backup Clientes", "Clientes", "Download da base realizado.")
+                    st.download_button("Baixar CSV", data=pd.DataFrame(res).to_csv(index=False).encode('utf-8'), file_name=f"clientes_{date.today()}.csv", mime="text/csv", type="primary")
+                else: st.info("Sem dados.")
+
+        elif menu_principal == "Equipe Dejure":
             if sub == "Nossa Equipe":
                 st.header("🧑‍⚖️ Equipe Dejure")
                 st.caption("Conheça os profissionais que fazem parte do nosso escritório.")
@@ -707,7 +993,7 @@ elif authentication_status == True:
         elif menu_principal == "Segurança":
             if sub == "Meu Perfil":
                 st.header("👤 Meu Perfil de Usuário")
-                st.caption(f"Gerencie suas informações pessoais e envie sua foto de perfil diretamente do seu computador ou celular ({username}).")
+                st.caption(f"Gerencie suas informações pessoais e envie sua foto de perfil ({username}).")
                 
                 col_pf1, col_pf2 = st.columns([1, 2])
                 
@@ -763,7 +1049,7 @@ elif authentication_status == True:
                                         "observacoes_pessoais": p_obs
                                     }).eq("username", username).execute()
                                     
-                                    registrar_auditoria(username, "Atualizar Perfil", "Segurança", "Dados de perfil (incluindo nascimento e foto) atualizados.")
+                                    registrar_auditoria(username, "Atualizar Perfil", "Segurança", "Dados de perfil atualizados.")
                                     st.cache_data.clear()
                                     st.success("✅ Perfil atualizado com sucesso!")
                                     time.sleep(1)
@@ -788,7 +1074,7 @@ elif authentication_status == True:
                                 supabase.table("usuarios_sistema").update({"senha_hash": novo_hash, "password": novo_hash}).eq("username", username).execute()
                                 registrar_auditoria(username, "Alterar Senha", "Segurança", f"Usuário {username} alterou a própria senha.")
                                 st.cache_data.clear()
-                                st.success("✅ Senha alterada com sucesso na nuvem! Faça login novamente com a nova senha.")
+                                st.success("✅ Senha alterada com sucesso! Faça login novamente.")
                             except Exception as e:
                                 st.error(f"Erro ao atualizar senha no banco: {e}")
 
@@ -814,31 +1100,20 @@ elif authentication_status == True:
                         else:
                             senha_hash = gerar_hash(new_pass)
                             try:
-                                try:
-                                    supabase.table("usuarios_sistema").insert({
-                                        "username": new_user.strip().lower(),
-                                        "nome_completo": new_name,
-                                        "name": new_name,
-                                        "senha_hash": senha_hash,
-                                        "password": senha_hash,
-                                        "role": new_role,
-                                        "trocar_senha": True
-                                    }).execute()
-                                except Exception:
-                                    supabase.table("usuarios_sistema").insert({
-                                        "username": new_user.strip().lower(),
-                                        "nome_completo": new_name,
-                                        "name": new_name,
-                                        "senha_hash": senha_hash,
-                                        "password": senha_hash,
-                                        "role": new_role
-                                    }).execute()
-                                    
+                                supabase.table("usuarios_sistema").insert({
+                                    "username": new_user.strip().lower(),
+                                    "nome_completo": new_name,
+                                    "name": new_name,
+                                    "senha_hash": senha_hash,
+                                    "password": senha_hash,
+                                    "role": new_role,
+                                    "trocar_senha": True
+                                }).execute()
                                 registrar_auditoria(username, "Cadastrar Usuário", "Segurança", f"Novo usuário criado: {new_user} ({new_role})")
                                 st.cache_data.clear()
                                 st.session_state['cad_user_sucesso'] = True
                             except Exception as e:
-                                st.error(f"Erro ao cadastrar usuário (verifique se o login já existe na tabela): {e}")
+                                st.error(f"Erro ao cadastrar usuário: {e}")
 
                 if st.session_state.get('cad_user_sucesso'):
                     st.success("🎉 Usuário cadastrado com sucesso!")
@@ -874,116 +1149,8 @@ elif authentication_status == True:
                                 st.cache_data.clear()
                                 st.success("Usuário excluído com sucesso!")
                                 st.rerun()
-                        else:
-                            st.info("Nenhum usuário no banco.")
-                    else:
-                        st.info("O banco de dados de usuários está vazio. Use a aba 'Cadastrar Novo Usuário' para adicionar seu login oficial.")
                 except Exception as e:
                     st.error(f"Erro ao carregar usuários: {e}")
-
-        elif menu_principal == "Clientes":
-            if sub == "Cadastrar Cliente":
-                st.header("👤 Cadastro Completo de Cliente")
-                with st.form("fc_cli", clear_on_submit=True):
-                    n, doc, tel, email, end, cid, gov, ind, obs = st.text_input("Nome *"), st.text_input("CPF/CNPJ"), st.text_input("Telefone"), st.text_input("E-mail"), st.text_input("Endereço"), st.text_input("Cidade/UF"), st.text_input("Senha Gov.br"), st.text_input("Indicado Por"), st.text_area("Observações")
-                    
-                    col_b_cad, col_b_vol = st.columns(2)
-                    with col_b_cad:
-                        salvar_cli = st.form_submit_button("Salvar", type="primary", use_container_width=True)
-                    with col_b_vol:
-                        voltar_cli = st.form_submit_button("⬅️ Voltar", use_container_width=True)
-
-                    if salvar_cli:
-                        if not n: st.error("O campo Nome é obrigatório.")
-                        else:
-                            doc_l = ''.join(filter(str.isdigit, str(doc)))
-                            if len(doc_l) == 11 and not validar_cpf(doc_l): st.error("CPF Inválido!")
-                            else:
-                                supabase.table("clientes_cadastrados").insert({"nome": n, "cpf_cnpj": doc, "telefone": tel, "email": email, "endereco": end, "cidade": cid, "senha_gov": gov, "indicado_por": ind, "observacoes": obs}).execute()
-                                registrar_auditoria(username, "Cadastrar Cliente", "Clientes", f"Cliente: {n}")
-                                st.cache_data.clear()
-                                st.session_state['cad_cli_sucesso'] = True
-                                st.rerun()
-                    if voltar_cli:
-                        st.session_state['submenu_atual'] = "Consultar Clientes"
-                        st.rerun()
-
-                if st.session_state.get('cad_cli_sucesso'):
-                    st.success("🎉 Cliente cadastrado com sucesso!")
-                    col1, col2 = st.columns(2)
-                    with col1:
-                        if st.button("➕ Cadastrar Novo Cliente", key="btn_novo_cli", type="primary", use_container_width=True):
-                            st.session_state['cad_cli_sucesso'] = False
-                            st.rerun()
-                    with col2:
-                        if st.button("⬅️ Voltar para Base de Clientes", key="btn_vol_cli", use_container_width=True):
-                            st.session_state['cad_cli_sucesso'] = False
-                            st.session_state['submenu_atual'] = "Consultar Clientes"
-                            st.rerun()
-
-            elif sub == "Importar Excel":
-                st.header("📥 Importar Clientes via Planilha Excel")
-                st.caption("O arquivo deve conter as colunas: nome, cpf_cnpj, telefone, email, endereco, cidade, senha_gov, indicado_por, observacoes")
-                file_up = st.file_uploader("Envie a planilha (.xlsx ou .csv)", type=["xlsx", "csv"], key="up_cli")
-                if file_up and st.button("Confirmar Importação", type="primary"):
-                    importar_excel_para_supabase("clientes_cadastrados", file_up)
-            elif sub == "Consultar Clientes":
-                st.header("📋 Base de Clientes")
-                res = carregar_dados("clientes_cadastrados")
-                if res: 
-                    df_cli = pd.DataFrame(res)
-                    st.dataframe(df_cli, use_container_width=True, hide_index=True)
-                else: st.info("Nenhum cliente cadastrado.")
-            elif sub == "Editar Cliente":
-                st.header("✏️ Editar Cliente")
-                res = carregar_dados("clientes_cadastrados")
-                if res:
-                    cdict = {f"ID: {c['id']} — {c['nome']}": c for c in res}
-                    sel = st.selectbox("Cliente:", list(cdict.keys()))
-                    obj = cdict[sel]
-                    with st.form("fe_cli"):
-                        en, edoc, etel, eemail, eend, ecid, egov, eind, eobs = st.text_input("Nome", value=obj.get('nome','')), st.text_input("CPF/CNPJ", value=obj.get('cpf_cnpj','')), st.text_input("Telefone", value=obj.get('telefone','')), st.text_input("E-mail", value=obj.get('email','')), st.text_input("Endereço", value=obj.get('endereco','')), st.text_input("Cidade", value=obj.get('cidade','')), st.text_input("Gov.br", value=obj.get('senha_gov','')), st.text_input("Indicação", value=obj.get('indicado_por','')), st.text_area("Obs", value=obj.get('observacoes',''))
-                        
-                        col_e1, col_e2 = st.columns(2)
-                        with col_e1:
-                            atualizar_cli = st.form_submit_button("Atualizar", type="primary", use_container_width=True)
-                        with col_e2:
-                            voltar_ed_cli = st.form_submit_button("⬅️ Voltar", use_container_width=True)
-
-                        if atualizar_cli:
-                            supabase.table("clientes_cadastrados").update({"nome": en, "cpf_cnpj": edoc, "telefone": etel, "email": eemail, "endereco": eend, "cidade": ecid, "senha_gov": egov, "indicado_por": eind, "observacoes": eobs}).eq("id", obj['id']).execute()
-                            registrar_auditoria(username, "Editar Cliente", "Clientes", f"ID: {obj['id']} - {en}")
-                            st.cache_data.clear(); st.success("Atualizado!"); st.rerun()
-                        if voltar_ed_cli:
-                            st.session_state['submenu_atual'] = "Consultar Clientes"
-                            st.rerun()
-                else: st.info("Nenhum cliente.")
-            elif sub == "Excluir Cliente" and user_role == 'admin':
-                st.header("🗑️ Excluir Cliente")
-                res = carregar_dados("clientes_cadastrados")
-                if res:
-                    cdict = {f"ID: {c['id']} — {c['nome']}": c['id'] for c in res}
-                    sel = st.selectbox("Cliente:", list(cdict.keys()))
-                    if st.checkbox("Confirmo exclusão permanente deste cliente.") and st.button("EXCLUIR SELECIONADO", type="primary"):
-                        supabase.table("clientes_cadastrados").delete().eq("id", cdict[sel]).execute()
-                        registrar_auditoria(username, "Excluir Cliente", "Clientes", f"ID: {cdict[sel]}")
-                        st.cache_data.clear(); st.success("Excluído!"); st.rerun()
-                    
-                    st.markdown("---")
-                    st.warning("⚠️ **ÁREA CRÍTICA:** Exclusão em massa de toda a base de clientes.")
-                    if st.checkbox("Confirmo a exclusão de TODOS os registros de clientes do sistema."):
-                        if st.button("🔥 EXCLUIR TODOS OS CLIENTES", type="primary"):
-                            supabase.table("clientes_cadastrados").delete().neq("id", 0).execute()
-                            registrar_auditoria(username, "EXCLUIR TODOS OS CLIENTES", "Clientes", "Exclusão em massa executada.")
-                            st.cache_data.clear(); st.success("Todos os registros foram excluídos com sucesso!"); st.rerun()
-                else: st.info("Nenhum cliente cadastrado.")
-            elif sub == "Exportar Base (Backup)":
-                st.header("📥 Backup de Clientes")
-                res = carregar_dados("clientes_cadastrados")
-                if res:
-                    registrar_auditoria(username, "Backup Clientes", "Clientes", "Download da base realizado.")
-                    st.download_button("Baixar CSV", data=pd.DataFrame(res).to_csv(index=False).encode('utf-8'), file_name=f"clientes_{date.today()}.csv", mime="text/csv", type="primary")
-                else: st.info("Sem dados.")
 
         elif menu_principal == "Pagamentos":
             if sub == "Cadastrar Contrato":
@@ -1049,22 +1216,6 @@ elif authentication_status == True:
                                 st.cache_data.clear()
                                 st.session_state['cad_hon_sucesso'] = True
                                 st.rerun()
-                    if voltar_hon:
-                        st.session_state['submenu_atual'] = "Ver Parcelas"
-                        st.rerun()
-
-                if st.session_state.get('cad_hon_sucesso'):
-                    st.success("🎉 Contrato e parcelas gerados com sucesso!")
-                    col1, col2 = st.columns(2)
-                    with col1:
-                        if st.button("➕ Cadastrar Novo Contrato", key="btn_novo_hon", type="primary", use_container_width=True):
-                            st.session_state['cad_hon_sucesso'] = False
-                            st.rerun()
-                    with col2:
-                        if st.button("⬅️ Voltar para Parcelas", key="btn_vol_hon", use_container_width=True):
-                            st.session_state['cad_hon_sucesso'] = False
-                            st.session_state['submenu_atual'] = "Ver Parcelas"
-                            st.rerun()
 
             elif sub == "Ver Parcelas":
                 st.header("📋 Visualizar Parcelas")
@@ -1075,10 +1226,7 @@ elif authentication_status == True:
                     res_p = supabase.table("parcelas").select("*").eq("honorario_id", cdict[sel]).execute()
                     if res_p.data: 
                         df_p = pd.DataFrame(res_p.data)
-                        if 'status' in df_p.columns:
-                            st.dataframe(df_p.style.map(colorir_status, subset=['status']), use_container_width=True, hide_index=True)
-                        else:
-                            st.dataframe(df_p, use_container_width=True, hide_index=True)
+                        st.dataframe(df_p.style.map(colorir_status, subset=['status']), use_container_width=True, hide_index=True)
                     else: st.info("Sem parcelas.")
                 else: st.info("Sem contratos.")
 
@@ -1113,7 +1261,6 @@ elif authentication_status == True:
                                 lista_usuarios.append({"nome": nome_u, "papel": papel_u})
                         
                         nomes_opcoes = [u['nome'] for u in lista_usuarios]
-
                         is_entrada = (parcela_obj['numero_parcela'] == "Entrada")
                         
                         if is_entrada:
@@ -1160,13 +1307,8 @@ elif authentication_status == True:
                                     resp_role = u['papel']
                                     break
 
-                        # --- IDENTIFICAÇÃO DOS COLABORADORES QUE NÃO TRABALHARAM NO PROCESSO ---
-                        colaboradores_fundo = []
-                        for u in lista_usuarios:
-                            if u['papel'] in ['advogado', 'bacharel', 'estagiario'] and u['nome'] != resp_name:
-                                colaboradores_fundo.append(u['nome'])
+                        colaboradores_fundo = [u['nome'] for u in lista_usuarios if u['papel'] in ['advogado', 'bacharel', 'estagiario'] and u['nome'] != resp_name]
 
-                        # --- CÁLCULO E PROVA REAL EM TEMPO REAL (UNIFICADO) ---
                         val_prospectador = 0.0
                         val_operador = 0.0
                         fundo_colab = 0.0
@@ -1192,7 +1334,6 @@ elif authentication_status == True:
                                 val_nelson = round(saldo * 0.40, 2)
                                 
                             else:
-                                # 1º PASSO: Prospectador (se houver)
                                 if prosp_name != "Nenhum / Sem Prospectador":
                                     val_prospectador = round(val_prosp_input, 2)
                                 else:
@@ -1200,45 +1341,36 @@ elif authentication_status == True:
                                 
                                 saldo -= val_prospectador
                                 
-                                # 2º PASSO: Operador
                                 taxa_op = 0.25 if resp_role in ['admin', 'advogado'] else (0.15 if resp_role == 'bacharel' else 0.10)
                                 val_operador = round(saldo * taxa_op, 2)
                                 saldo -= val_operador
                                 
-                                # 3º PASSO: Fundo de 5% sobre o saldo restante (se > R$ 1.000,00)
                                 if saldo > 1000.0:
                                     fundo_colab = round(saldo * 0.05, 2)
                                     saldo -= fundo_colab
                                     
-                                # 4º PASSO: Sócios (60% / 40%)
                                 val_leonidas = round(saldo * 0.60, 2)
                                 val_nelson = round(saldo * 0.40, 2)
                         else:
                             regra_aplicada = "Parcelamento de Saldo (5% Saldo Total)"
                             
-                            # 1º PASSO: Dedução do Prospectador do saldo total negociado (se houver)
                             val_prosp_total = round(val_prosp_input, 2) if prosp_name != "Nenhum / Sem Prospectador" else 0.0
                             saldo_negociado_liquido = max(0.0, val_total_contrato - val_prosp_total)
                             
-                            # 2º PASSO: Fundo de Colaboradores de 5% sobre o saldo negociado líquido
                             fundo_colab_total = round(saldo_negociado_liquido * 0.05, 2)
                             proporcao_parcela = (valor_bruto / val_total_contrato) if val_total_contrato > 0 else 1.0
                             fundo_colab = round(fundo_colab_total * proporcao_parcela, 2)
                             
-                            # 3º PASSO: Operador
                             val_operador = round(val_op_input, 2)
                             
-                            # 4º PASSO: Sócios (60% / 40%)
                             saldo_remanescente_parcela = max(0.0, valor_bruto - val_operador - fundo_colab)
                             val_leonidas = round(saldo_remanescente_parcela * 0.60, 2)
                             val_nelson = round(saldo_remanescente_parcela * 0.40, 2)
 
-                        # DIVISÃO IGUALITÁRIA DO FUNDO DE 5% ENTRE OS OUTROS COLABORADORES
                         qtd_colab = len(colaboradores_fundo)
                         cota_individual_fundo = round(fundo_colab / qtd_colab, 2) if qtd_colab > 0 else 0.0
                         detalhes_rateio_colab = {c: cota_individual_fundo for c in colaboradores_fundo}
 
-                        # Ajuste de resíduo de centavos no sócio majoritário para fechar prova 100%
                         val_prosp_efetivo = 0.0 if "Acúmulo" in regra_aplicada else (val_prospectador if is_entrada and prosp_name != "Nenhum / Sem Prospectador" else 0.0)
                         soma_distribuida = round(val_prosp_efetivo + val_operador + fundo_colab + val_leonidas + val_nelson, 2)
                         diferenca = round(valor_bruto - soma_distribuida, 2)
@@ -1248,7 +1380,6 @@ elif authentication_status == True:
                             soma_distribuida = round(val_prosp_efetivo + val_operador + fundo_colab + val_leonidas + val_nelson, 2)
                             diferenca = round(valor_bruto - soma_distribuida, 2)
 
-                        # --- PAINEL VISUAL DE PROVA REAL ---
                         st.markdown("#### 🧮 Prova Real do Rateio (Validação Entrada vs Saída)")
                         col_pr1, col_pr2, col_pr3 = st.columns(3)
                         col_pr1.metric("Recurso Bruto da Parcela", f"R$ {valor_bruto:.2f}")
@@ -1267,7 +1398,6 @@ elif authentication_status == True:
                             det_cols[3].write(f"**Leônidas (60%):**\nR$ {val_leonidas:.2f}")
                             det_cols[4].write(f"**Nelson (40%):**\nR$ {val_nelson:.2f}")
 
-                        # --- EXIBIÇÃO DA DIVISÃO ENTRE OS OUTROS COLABORADORES ---
                         st.markdown("##### 👥 Divisão Igualitária dos 5% entre Colaboradores que Não Trabalharam no Processo")
                         if colaboradores_fundo:
                             cols_colab = st.columns(min(len(colaboradores_fundo), 4))
@@ -1393,7 +1523,7 @@ elif authentication_status == True:
 
             elif sub == "Relatório por Período" and user_role == 'admin':
                 st.header("📅 Relatório Financeiro de Pagamentos por Período")
-                st.caption("Gere balancetes e relatórios detalhados de entradas e divisões de honorários com base no intervalo de datas desejado.")
+                st.caption("Gere balancetes e relatórios detalhados de entradas e divisões de honorários.")
                 
                 hoje_dt = date.today()
                 primeiro_dia_mes = hoje_dt.replace(day=1)
@@ -1420,7 +1550,6 @@ elif authentication_status == True:
                             st.info("Nenhum registro de repasse encontrado no banco de dados.")
                         else:
                             linhas_relatorio = []
-                            
                             sum_bruto = 0.0
                             sum_prosp = 0.0
                             sum_op = 0.0
@@ -1585,7 +1714,7 @@ elif authentication_status == True:
                     local_pm = st.text_input("Local PM")
                     dt_pm = st.date_input("Data PM", datetime.now())
                     hora_pm = st.text_input("Hora PM (ex: 14:30)")
-                    local_ps = st.text_input("Local PM")
+                    local_ps = st.text_input("Local PS")
                     dt_ps = st.date_input("Data PS", datetime.now())
                     hora_ps = st.text_input("Hora PS (ex: 15:30)")
                     senha_inss = st.text_input("Senha INSS")
@@ -1637,7 +1766,7 @@ elif authentication_status == True:
 
             elif sub == "Importar Excel":
                 st.header("📥 Importar Perícias via Excel")
-                st.caption("O arquivo deve conter exatamente as colunas: cpf, nome, local_pm, data_pm, hora_pm, local_ps, data_ps, hora_ps, senha_inss, elaborador, status")
+                st.caption("O arquivo deve conter as colunas: cpf, nome, local_pm, data_pm, hora_pm, local_ps, data_ps, hora_ps, senha_inss, elaborador, status")
                 file_up = st.file_uploader("Envie a planilha (.xlsx ou .csv)", type=["xlsx", "csv"], key="up_per")
                 if file_up and st.button("Confirmar Importação", type="primary"):
                     importar_excel_para_supabase("pericias", file_up)
@@ -1790,6 +1919,7 @@ elif authentication_status == True:
                 file_up = st.file_uploader("Envie a planilha (.xlsx ou .csv)", type=["xlsx", "csv"], key="up_exp")
                 if file_up and st.button("Confirmar Importação", type="primary"):
                     importar_excel_para_supabase("expedientes", file_up)
+
             elif sub == "Consultar Expedientes":
                 st.header("📋 Expedientes & Gestão Rápida de Status")
                 res = carregar_dados("expedientes")
@@ -1815,6 +1945,7 @@ elif authentication_status == True:
                         st.success("Status atualizado com sucesso!")
                         st.rerun()
                 else: st.info("Sem expedientes cadastrados.")
+
             elif sub == "Editar Expediente":
                 st.header("✏️ Editar Expediente")
                 res = carregar_dados("expedientes")
@@ -1838,6 +1969,7 @@ elif authentication_status == True:
                         if voltar_ed_exp:
                             st.session_state['submenu_atual'] = "Consultar Expedientes"
                             st.rerun()
+
             elif sub == "Excluir Expediente" and user_role == 'admin':
                 st.header("🗑️ Excluir Expediente")
                 res = carregar_dados("expedientes")
@@ -1899,6 +2031,7 @@ elif authentication_status == True:
                 file_up = st.file_uploader("Envie a planilha (.xlsx ou .csv)", type=["xlsx", "csv"], key="up_trf")
                 if file_up and st.button("Confirmar Importação", type="primary"):
                     importar_excel_para_supabase("expedientes_trf", file_up)
+
             elif sub == "Consultar Expedientes TRF":
                 st.header("📋 Expedientes TRF & Gestão Rápida de Status")
                 res = carregar_dados("expedientes_trf")
@@ -1924,6 +2057,7 @@ elif authentication_status == True:
                         st.success("Status atualizado com sucesso!")
                         st.rerun()
                 else: st.info("Sem expedientes TRF cadastrados.")
+
             elif sub == "Editar Expediente TRF":
                 st.header("✏️ Editar Expediente TRF")
                 res = carregar_dados("expedientes_trf")
@@ -1948,6 +2082,7 @@ elif authentication_status == True:
                             st.session_state['submenu_atual'] = "Consultar Expedientes TRF"
                             st.rerun()
                 else: st.info("Sem expedientes TRF.")
+
             elif sub == "Excluir Expediente TRF" and user_role == 'admin':
                 st.header("🗑️ Excluir Expediente TRF")
                 res = carregar_dados("expedientes_trf")
@@ -2015,6 +2150,7 @@ elif authentication_status == True:
                 file_up = st.file_uploader("Envie a planilha (.xlsx ou .csv)", type=["xlsx", "csv"], key="up_pen")
                 if file_up and st.button("Confirmar Importação", type="primary"):
                     importar_excel_para_supabase("pendencias", file_up)
+
             elif sub == "Consultar Pendências":
                 st.header("📂 Pendências")
                 res = carregar_dados("pendencias")
@@ -2031,6 +2167,7 @@ elif authentication_status == True:
                         registrar_auditoria(username, "Marcar Entregue", "Pendências", f"Pendência ID: {pid}")
                         st.cache_data.clear(); st.success("Atualizado!"); st.rerun()
                 else: st.info("Sem pendências.")
+
             elif sub == "Editar Pendência":
                 st.header("✏️ Editar Pendência")
                 res = carregar_dados("pendencias")
@@ -2054,6 +2191,7 @@ elif authentication_status == True:
                         if voltar_ed_pen:
                             st.session_state['submenu_atual'] = "Consultar Pendências"
                             st.rerun()
+
             elif sub == "Excluir Pendência" and user_role == 'admin':
                 st.header("🗑️ Excluir Pendência")
                 res = carregar_dados("pendencias")

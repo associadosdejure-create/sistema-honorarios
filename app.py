@@ -151,8 +151,12 @@ def formatar_moeda_br(val):
     except:
         return "R$ 0,00"
 
+@st.cache_data
+def hash_senha_master():
+    return gerar_hash('mudar123')
+
 def carregar_usuarios_db():
-    senha_padrao_hash = gerar_hash('mudar123')
+    senha_padrao_hash = hash_senha_master()
     cred_dict = {
         "usernames": {
             "master": {

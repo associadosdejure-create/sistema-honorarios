@@ -99,7 +99,7 @@ def validar_email(email):
     padrao = r'^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$'
     return bool(re.match(padrao, email.strip()))
 
-# --- FUNÇÕES DE FORMATAÇÃO GLOBAL (DATA, HORA E VALOR) ---
+# --- FUNÇÕES DE FORMATAÇÃO (DATA, HORA E VALOR) ---
 def formatar_data_br(val):
     if not val: return ""
     str_val = str(val).strip()
@@ -115,9 +115,9 @@ def formatar_hora_br(val):
     if not val: return ""
     str_val = str(val).strip()
     try:
-        if len(str_val) == 5: # HH:MM
+        if len(str_val) == 5:
             return f"{str_val}:00"
-        elif len(str_val) >= 8: # HH:MM:SS
+        elif len(str_val) >= 8:
             return str_val[:8]
     except:
         pass
@@ -126,7 +126,6 @@ def formatar_hora_br(val):
 def formatar_moeda_br(val):
     try:
         num = float(val)
-        # Formata no padrão brasileiro: 1.500,50
         s = f"{num:,.2f}"
         s = s.replace(",", "X").replace(".", ",").replace("X", ".")
         return f"R$ {s}"
@@ -745,7 +744,7 @@ elif authentication_status == True:
                         errs.append("O **Telefone Fixo** informado deve conter exatamente 10 dígitos (DDD + 8 números).")
                         
                     if not celular.strip():
-                        errs.append("O campo **Celular / WhatsApp** is obrigatório.")
+                        errs.append("O campo **Celular / WhatsApp** é obrigatório.")
                     elif not validar_celular(celular):
                         errs.append("O **Celular** deve conter 11 dígitos no padrão (DDD + 9 + 8 números).")
 
@@ -1270,7 +1269,6 @@ elif authentication_status == True:
                         df_u = pd.DataFrame(res_users.data)
                         colunas_visiveis = [c for c in ['id', 'username', 'nome_completo', 'name', 'role', 'trocar_senha', 'telefone', 'oab'] if c in df_u.columns]
                         
-                        # Formata datas se houver em usuários
                         if 'data_nascimento' in df_u.columns:
                             df_u['data_nascimento'] = df_u['data_nascimento'].apply(formatar_data_br)
 
@@ -1894,7 +1892,6 @@ elif authentication_status == True:
                         if not nome:
                             st.error("O campo Nome é obrigatório.")
                         else:
-                            # Formata hora para HH:MM:SS se informada
                             h_pm_fmt = formatar_hora_br(hora_pm) if hora_pm.strip() else None
                             h_ps_fmt = formatar_hora_br(hora_ps) if hora_ps.strip() else None
 
@@ -1945,7 +1942,6 @@ elif authentication_status == True:
                 if res: 
                     df_per = pd.DataFrame(res)
                     
-                    # Formata datas e horas na tabela
                     if 'data_pm' in df_per.columns: df_per['data_pm'] = df_per['data_pm'].apply(formatar_data_br)
                     if 'data_ps' in df_per.columns: df_per['data_ps'] = df_per['data_ps'].apply(formatar_data_br)
                     if 'hora_pm' in df_per.columns: df_per['hora_pm'] = df_per['hora_pm'].apply(formatar_hora_br)
@@ -2376,8 +2372,6 @@ elif authentication_status == True:
                             st.session_state['submenu_atual'] = "Consultar Pendências"
                             st.rerun()
 
-            elif sub -> "Excluir Pendência" and user_role == 'admin':
-                pass # Tratado abaixo no código completo
             elif sub == "Excluir Pendência" and user_role == 'admin':
                 st.header("🗑️ Excluir Pendência")
                 res = carregar_dados("pendencias")

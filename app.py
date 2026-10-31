@@ -14,24 +14,6 @@ import re
 
 st.set_page_config(page_title="Controle DEJURE ADVOCACIA", layout="wide", page_icon="⚖️")
 
-# ==========================================
-# 🛑 TRAVA DE MANUTENÇÃO (FALLBACK MANUAL)
-# A manutenção agora é controlada pelo painel Admin. 
-# Só mude isso para True se o banco de dados cair.
-# ==========================================
-EM_MANUTENCAO_MANUAL = False 
-
-if EM_MANUTENCAO_MANUAL:
-    col1, col2, col3 = st.columns([1, 1, 1])
-    with col2:
-        if os.path.exists("logo.png"): 
-            st.image("logo.png", use_container_width=True)
-            
-    st.markdown("<h1 style='text-align: center; color: #FF4B4B; margin-top: 50px;'>⚠️ SISTEMA EM MANUTENÇÃO ⚠️</h1>", unsafe_allow_html=True)
-    st.markdown("<h3 style='text-align: center; color: #E0E0E0;'>Estamos implementando melhorias no sistema. Voltaremos em breve!</h3>", unsafe_allow_html=True)
-    st.stop()
-# ==========================================
-
 # --- ESTILIZAÇÃO CSS (PRETO, DOURADO E TABELAS COM TEXTO EXPANDIDO) ---
 st.markdown("""
     <style>
@@ -72,6 +54,11 @@ except Exception:
 
 def gerar_hash(senha: str) -> str:
     return bcrypt.hashpw(senha.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+
+@st.cache_resource
+def get_master_hash():
+    # Cache blindado: não é apagado pelo st.cache_data.clear()
+    return gerar_hash('mudar123')
 
 def converter_imagem_base64(file) -> str:
     encoded = base64.b64encode(file.read()).decode()
@@ -151,12 +138,8 @@ def formatar_moeda_br(val):
     except:
         return "R$ 0,00"
 
-@st.cache_data
-def hash_senha_master():
-    return gerar_hash('mudar123')
-
 def carregar_usuarios_db():
-    senha_padrao_hash = hash_senha_master()
+    senha_padrao_hash = get_master_hash()
     cred_dict = {
         "usernames": {
             "master": {
@@ -254,27 +237,6 @@ elif authentication_status == True:
 
     user_info = credentials["usernames"].get(username, {})
     user_role = user_info.get("role", "estagiario")
-    
-    # ==========================================
-    # 🛑 TRAVA DE MANUTENÇÃO DINÂMICA
-    # ==========================================
-    try:
-        res_config = supabase.table("configuracoes_sistema").select("manutencao_ativa").eq("id", 1).execute()
-        manutencao_ativa = res_config.data[0]["manutencao_ativa"] if res_config.data else False
-    except Exception:
-        manutencao_ativa = False
-
-    if manutencao_ativa and user_role != 'admin' and username != 'master':
-        st.markdown("<h1 style='text-align: center; color: #FF4B4B; margin-top: 50px;'>⚠️ SISTEMA EM MANUTENÇÃO ⚠️</h1>", unsafe_allow_html=True)
-        st.markdown("<h3 style='text-align: center; color: #E0E0E0;'>Estamos implementando melhorias. Acesso temporariamente restrito aos administradores.</h3>", unsafe_allow_html=True)
-        
-        col_m1, col_m2, col_m3 = st.columns([1,2,1])
-        with col_m2:
-            if st.button("🚪 Sair e Voltar para Login", use_container_width=True):
-                st.session_state.update({'authentication_status': None, 'login_registrado': False})
-                st.rerun()
-        st.stop()
-    # ==========================================
     
     precisa_trocar_senha = user_info.get("trocar_senha", False) if username != "master" else False
 
@@ -1844,24 +1806,8 @@ elif authentication_status == True:
                             st.rerun()
 
             elif sub == "Gerenciar Usuários" and user_role == 'admin':
-                st.header("🛡️ Gerenciamento do Sistema e Usuários")
+                st.header("🛡️ Gerenciamento de Usuários")
                 
-                st.subheader("⚙️ Configurações Globais")
-                try:
-                    res_config = supabase.table("configuracoes_sistema").select("manutencao_ativa").eq("id", 1).execute()
-                    estado_atual_manut = res_config.data[0]["manutencao_ativa"] if res_config.data else False
-                    
-                    novo_estado = st.toggle("⚠️ Ativar Modo Manutenção (Bloqueia o acesso de toda a equipe, exceto Administradores)", value=estado_atual_manut)
-                    if novo_estado != estado_atual_manut:
-                        supabase.table("configuracoes_sistema").update({"manutencao_ativa": novo_estado}).eq("id", 1).execute()
-                        registrar_auditoria(username, f"Modo Manutenção {'ATIVADO' if novo_estado else 'DESATIVADO'}", "Segurança", f"Admin {name} alterou o status")
-                        st.success(f"Modo manutenção {'ATIVADO' if novo_estado else 'DESATIVADO'} com sucesso!")
-                        time.sleep(1)
-                        st.rerun()
-                except Exception as e:
-                    st.error(f"Erro ao carregar configurações: {e}")
-                
-                st.markdown("---")
                 st.subheader("👥 Usuários Ativos")
                 try:
                     res_users = supabase.table("usuarios_sistema").select("*").execute()
@@ -1875,7 +1821,7 @@ elif authentication_status == True:
                         st.dataframe(df_u[colunas_visiveis], use_container_width=True, hide_index=True)
                         
                         st.markdown("---")
-                        st.subheader("🗑️ Excluir Usuário (Para resetar)")
+                        st.subheader("🗑️ Excluir Usuário")
                         udict = {f"{u['username']} (ID: {u['id']})": u['id'] for u in res_users.data}
                         if udict:
                             sel_del = st.selectbox("Selecione o usuário:", list(udict.keys()))

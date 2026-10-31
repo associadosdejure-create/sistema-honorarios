@@ -31,7 +31,6 @@ st.markdown("""
     [data-testid="stMetricValue"] { color: #D4AF37 !important; }
     input, select, textarea { background-color: #1A1A1A !important; color: #FFFFFF !important; border-color: #333333 !important; }
     
-    /* Força todas as tabelas a quebrarem o texto e se ajustarem sem cortar */
     [data-testid="stDataFrame"] div[data-baseweb="table"] tr,
     [data-testid="stDataFrame"] table, 
     [data-testid="stTable"] {
@@ -99,7 +98,6 @@ def validar_email(email):
     padrao = r'^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$'
     return bool(re.match(padrao, email.strip()))
 
-# --- FUNÇÕES DE FORMATAÇÃO (DATA, HORA E VALOR) ---
 def formatar_data_br(val):
     if not val: return ""
     str_val = str(val).strip()
@@ -344,7 +342,7 @@ elif authentication_status == True:
     def colorir_status(val):
         if str(val).lower() == 'pendente':
             return 'color: #FF4B4B; font-weight: bold;'
-        elif str(val).lower() in ['manifestado', 'concluído', 'pago', 'entregue']:
+        elif str(val).lower() in ['manifestado', 'concluído', 'pago', 'entregue', 'distribuído']:
             return 'color: #00CC96; font-weight: bold;'
         elif str(val).lower() == 'em andamento':
             return 'color: #FFA15A; font-weight: bold;'
@@ -384,6 +382,7 @@ elif authentication_status == True:
         }
         
         if user_role == 'admin':
+            modulos["📥 Distribuição de Processos"] = "Distribuição de Processos"
             modulos["🛡️ Auditoria"] = "Auditoria"
 
         for label, pag in modulos.items():
@@ -398,6 +397,7 @@ elif authentication_status == True:
                     "Pendências": "Consultar Pendências",
                     "Equipe Dejure": "Nossa Equipe",
                     "Segurança": "Meu Perfil",
+                    "Distribuição de Processos": "Fila de Distribuição",
                     "Auditoria": "Ver Logs"
                 }.get(pag, "")
                 limpar_flags_cadastro()
@@ -543,6 +543,75 @@ elif authentication_status == True:
                 st.info("🎉 Nenhum alerta de prazo ou pagamento pendente para hoje!")
         except Exception as e: 
             st.error(f"Erro ao carregar central de alertas: {e}")
+
+    elif menu_escolha == "Distribuição de Processos":
+        if user_role != 'admin':
+            st.error("⛔ Acesso restrito. Este módulo é exclusivo para perfis Administradores.")
+            st.stop()
+        
+        st.title("📥 Módulo: Distribuição de Processos")
+        st.caption("Gerencie os clientes enviados para distribuição e atribua-os aos colaboradores responsáveis.")
+        
+        try:
+            res_dist = supabase.table("distribuicao_processos").select("*").execute()
+            lista_dist = res_dist.data if res_dist.data else []
+            
+            if not lista_dist:
+                st.info("Nenhum cliente na fila de distribuição no momento.")
+            else:
+                df_dist = pd.DataFrame(lista_dist)
+                
+                if 'data_envio' in df_dist.columns:
+                    df_dist['data_envio'] = df_dist['data_envio'].apply(formatar_data_br)
+                if 'data_distribuicao' in df_dist.columns:
+                    df_dist['data_distribuicao'] = df_dist['data_distribuicao'].apply(formatar_data_br)
+
+                if 'status' in df_dist.columns:
+                    st.dataframe(df_dist.style.map(colorir_status, subset=['status']), use_container_width=True, hide_index=True)
+                else:
+                    st.dataframe(df_dist, use_container_width=True, hide_index=True)
+
+                st.markdown("---")
+                st.subheader("⚖️ Distribuir Processo para Colaborador")
+                
+                pendentes_dist = [d for d in lista_dist if d.get('status') == 'Pendente']
+                if not pendentes_dist:
+                    st.success("🎉 Todos os processos da fila já foram distribuídos!")
+                else:
+                    dict_pendentes = {f"ID: {p['id']} | Cliente: {p['cliente_nome']} (CPF: {p.get('cpf_cnpj', 'N/D')})": p for p in pendentes_dist}
+                    sel_dist_str = st.selectbox("Selecione o Cliente / Processo para Distribuir:", list(dict_pendentes.keys()))
+                    obj_sel_dist = dict_pendentes[sel_dist_str]
+
+                    lista_usuarios_dist = []
+                    for u in credentials['usernames'].values():
+                        n_u = u.get('name', '')
+                        if n_u:
+                            lista_usuarios_dist.append(n_u)
+
+                    col_d1, col_d2 = st.columns(2)
+                    with col_d1:
+                        adv_responsavel = st.selectbox("Selecione o Responsável:", lista_usuarios_dist)
+                    with col_d2:
+                        obs_dist = st.text_input("Observações da Distribuição", value="")
+
+                    if st.button("Confirmar e Distribuir Processo", type="primary"):
+                        try:
+                            supabase.table("distribuicao_processos").update({
+                                "responsavel": adv_responsavel,
+                                "status": "Distribuído",
+                                "data_distribuicao": date.today().strftime("%Y-%m-%d"),
+                                "observacoes_distribuicao": obs_dist
+                            }).eq("id", obj_sel_dist['id']).execute()
+
+                            registrar_auditoria(username, "Distribuir Processo", "Distribuição", f"Cliente {obj_sel_dist['cliente_nome']} atribuído a {adv_responsavel}")
+                            st.cache_data.clear()
+                            st.success(f"✅ Processo distribuído com sucesso para **{adv_responsavel}**!")
+                            time.sleep(1)
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"Erro ao distribuir processo: {e}")
+        except Exception as e:
+            st.error(f"Erro ao carregar fila de distribuição: {e}")
 
     elif menu_escolha == "Auditoria" and user_role == 'admin':
         st.title("🛡️ Central de Auditoria do Sistema")
@@ -723,9 +792,11 @@ elif authentication_status == True:
                 with c6:
                     obs = st.text_area("Observações", key="cli_obs")
                 
-                col_b_cad, col_b_vol = st.columns(2)
+                col_b_cad, col_b_dist, col_b_vol = st.columns(3)
                 with col_b_cad:
                     salvar_cli = st.button("Salvar Cliente", type="primary", use_container_width=True)
+                with col_b_dist:
+                    salvar_e_distribuir = st.button("📤 Enviar para Distribuição", type="secondary", use_container_width=True)
                 with col_b_vol:
                     voltar_cli = st.button("⬅️ Voltar", use_container_width=True)
 
@@ -733,7 +804,7 @@ elif authentication_status == True:
                     st.session_state['submenu_atual'] = "Consultar Clientes"
                     st.rerun()
 
-                if salvar_cli:
+                if salvar_cli or salvar_e_distribuir:
                     errs = []
                     if not n.strip(): errs.append("O campo **Nome Completo** é obrigatório.")
                     if not profissao.strip(): errs.append("O campo **Profissão** é obrigatório.")
@@ -799,11 +870,26 @@ elif authentication_status == True:
 
                             supabase.table("clientes_cadastrados").insert(payload).execute()
 
+                            if salvar_e_distribuir:
+                                supabase.table("distribuicao_processos").insert({
+                                    "cliente_nome": n.strip(),
+                                    "cpf_cnpj": doc.strip(),
+                                    "telefone": cel_fmt,
+                                    "cadastrado_por": name,
+                                    "status": "Pendente",
+                                    "data_envio": date.today().strftime("%Y-%m-%d"),
+                                    "observacoes": obs.strip() if obs.strip() else None
+                                }).execute()
+                                registrar_auditoria(username, "Enviar para Distribuição", "Clientes", f"Cliente: {n.strip()} enviado para distribuição.")
+
                             registrar_auditoria(username, "Cadastrar Cliente", "Clientes", f"Cliente: {n.strip()}")
                             st.cache_data.clear()
                             
                             st.session_state['cad_cli_sucesso_ok'] = True
-                            st.success("🎉 Cliente cadastrado com sucesso!")
+                            if salvar_e_distribuir:
+                                st.success("🎉 Cliente cadastrado e enviado para a Distribuição de Processos com sucesso!")
+                            else:
+                                st.success("🎉 Cliente cadastrado com sucesso!")
                             time.sleep(1)
                             st.rerun()
                         except Exception as ex:

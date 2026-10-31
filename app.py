@@ -1,4 +1,3 @@
-
 import streamlit as st
 import streamlit_authenticator as stauth
 from supabase import create_client
@@ -2332,4 +2331,3 @@ elif authentication_status == True:
                             registrar_auditoria(username, "EXCLUIR TODAS AS PENDÊNCIAS", "Pendências", "Exclusão em massa.")
                             st.cache_data.clear(); st.success("Todas as pendências foram excluídas!"); st.rerun()
                 else: st.info("Sem pendências cadastradas.")
-```

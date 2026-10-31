@@ -1117,8 +1117,8 @@ elif authentication_status == True:
                         is_entrada = (parcela_obj['numero_parcela'] == "Entrada")
                         
                         if is_entrada:
-                            st.subheader("⚙️ Regra de Entrada (Com Prospecção)")
-                            st.info("Ordem: 1º Prospectador ➔ 2º Operador ➔ 3º Fundo 5% Colaboradores (dividido entre não-operadores) ➔ 4º Sócios (60/40).")
+                            st.subheader("⚙️ Regra de Entrada (Com / Sem Prospecção)")
+                            st.info("Ordem: 1º Prospectador (se houver) ➔ 2º Operador ➔ 3º Fundo 5% Colaboradores (dividido entre não-operadores) ➔ 4º Sócios (60/40).")
                             
                             col_r1, col_r2 = st.columns(2)
                             with col_r1:
@@ -1140,7 +1140,7 @@ elif authentication_status == True:
                                     
                         else:
                             st.subheader("⚙️ Regra de Parcelamento de Saldo (5% do Saldo Total Negociado)")
-                            st.info("📌 **Fundo de Colaboradores:** Calculado em 5% sobre o **Saldo Total Negociado** após dedução do Prospectador Externo.")
+                            st.info("📌 **Fundo de Colaboradores:** Calculado em 5% sobre o **Saldo Total Negociado** após dedução do Prospectador Externo (se houver).")
                             
                             col_ps1, col_ps2 = st.columns(2)
                             with col_ps1:
@@ -1161,13 +1161,12 @@ elif authentication_status == True:
                                     break
 
                         # --- IDENTIFICAÇÃO DOS COLABORADORES QUE NÃO TRABALHARAM NO PROCESSO ---
-                        # Exclui: Sócios (admin/master), Prospectador e o próprio Operador do processo
                         colaboradores_fundo = []
                         for u in lista_usuarios:
                             if u['papel'] in ['advogado', 'bacharel', 'estagiario'] and u['nome'] != resp_name:
                                 colaboradores_fundo.append(u['nome'])
 
-                        # --- CÁLCULO E PROVA REAL EM TEMPO REAL ---
+                        # --- CÁLCULO E PROVA REAL EM TEMPO REAL (UNIFICADO) ---
                         val_prospectador = 0.0
                         val_operador = 0.0
                         fundo_colab = 0.0
@@ -1193,33 +1192,43 @@ elif authentication_status == True:
                                 val_nelson = round(saldo * 0.40, 2)
                                 
                             else:
+                                # 1º PASSO: Prospectador (se houver)
                                 if prosp_name != "Nenhum / Sem Prospectador":
                                     val_prospectador = round(val_prosp_input, 2)
+                                else:
+                                    val_prospectador = 0.0
                                 
                                 saldo -= val_prospectador
                                 
+                                # 2º PASSO: Operador
                                 taxa_op = 0.25 if resp_role in ['admin', 'advogado'] else (0.15 if resp_role == 'bacharel' else 0.10)
                                 val_operador = round(saldo * taxa_op, 2)
                                 saldo -= val_operador
                                 
+                                # 3º PASSO: Fundo de 5% sobre o saldo restante (se > R$ 1.000,00)
                                 if saldo > 1000.0:
                                     fundo_colab = round(saldo * 0.05, 2)
                                     saldo -= fundo_colab
                                     
+                                # 4º PASSO: Sócios (60% / 40%)
                                 val_leonidas = round(saldo * 0.60, 2)
                                 val_nelson = round(saldo * 0.40, 2)
                         else:
                             regra_aplicada = "Parcelamento de Saldo (5% Saldo Total)"
                             
+                            # 1º PASSO: Dedução do Prospectador do saldo total negociado (se houver)
                             val_prosp_total = round(val_prosp_input, 2) if prosp_name != "Nenhum / Sem Prospectador" else 0.0
                             saldo_negociado_liquido = max(0.0, val_total_contrato - val_prosp_total)
                             
+                            # 2º PASSO: Fundo de Colaboradores de 5% sobre o saldo negociado líquido
                             fundo_colab_total = round(saldo_negociado_liquido * 0.05, 2)
                             proporcao_parcela = (valor_bruto / val_total_contrato) if val_total_contrato > 0 else 1.0
                             fundo_colab = round(fundo_colab_total * proporcao_parcela, 2)
                             
+                            # 3º PASSO: Operador
                             val_operador = round(val_op_input, 2)
                             
+                            # 4º PASSO: Sócios (60% / 40%)
                             saldo_remanescente_parcela = max(0.0, valor_bruto - val_operador - fundo_colab)
                             val_leonidas = round(saldo_remanescente_parcela * 0.60, 2)
                             val_nelson = round(saldo_remanescente_parcela * 0.40, 2)

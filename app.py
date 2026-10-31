@@ -341,11 +341,11 @@ elif authentication_status == True:
             st.error(f"⚠️ Erro ao importar planilha: {e}")
 
     def colorir_status(val):
-        if str(val).lower() == 'pendente':
+        if str(val).lower() == 'pendente' or str(val).lower() == 'aguardando documentação':
             return 'color: #FF4B4B; font-weight: bold;'
-        elif str(val).lower() in ['manifestado', 'concluído', 'pago', 'entregue', 'distribuído']:
+        elif str(val).lower() in ['manifestado', 'concluído', 'pago', 'entregue', 'distribuído', 'protocolado']:
             return 'color: #00CC96; font-weight: bold;'
-        elif str(val).lower() == 'em andamento':
+        elif str(val).lower() in ['em andamento', 'produzindo peça', 'aguardando revisão', 'acompanhando movimentações']:
             return 'color: #FFA15A; font-weight: bold;'
         return ''
 
@@ -373,6 +373,7 @@ elif authentication_status == True:
         modulos = {
             "🏠 Página Inicial": "🏠 Página Inicial",
             "👥 Clientes": "Clientes",
+            "📂 Meus Processos": "Meus Processos",
             "💰 Pagamentos": "Pagamentos",
             "🔬 Perícias": "Perícias",
             "📂 Expedientes": "Expedientes",
@@ -391,6 +392,7 @@ elif authentication_status == True:
                 st.session_state['pagina_atual'] = pag
                 st.session_state['submenu_atual'] = "" if pag == "🏠 Página Inicial" else {
                     "Clientes": "Consultar Clientes", 
+                    "Meus Processos": "Consultar Meus Processos",
                     "Pagamentos": "Ver Parcelas", 
                     "Perícias": "Ver Perícias", 
                     "Expedientes": "Consultar Expedientes", 
@@ -667,6 +669,9 @@ elif authentication_status == True:
         if menu_principal == "Clientes":
             acoes = ["Consultar Clientes", "Cadastrar Cliente", "Importar Excel", "Editar Cliente", "Exportar Base (Backup)"]
             if user_role == 'admin': acoes.insert(4, "Excluir Cliente")
+        elif menu_principal == "Meus Processos":
+            acoes = ["Consultar Meus Processos", "Cadastrar Processo"]
+            if user_role == 'admin': acoes.append("Central de Revisões")
         elif menu_principal == "Pagamentos":
             acoes = ["Ver Parcelas", "Cadastrar Contrato", "Editar Contrato"]
             if user_role == 'admin': acoes = ["Ver Parcelas", "Cadastrar Contrato", "Baixar Parcela", "Extrato de Repasses", "Relatório por Período", "Editar Contrato", "Excluir Contrato"]
@@ -1113,6 +1118,163 @@ elif authentication_status == True:
                     st.download_button("Baixar CSV", data=pd.DataFrame(res).to_csv(index=False).encode('utf-8'), file_name=f"clientes_{date.today()}.csv", mime="text/csv", type="primary")
                 else: st.info("Sem dados.")
 
+        # --- MÓDULO MEUS PROCESSOS ---
+        elif menu_principal == "Meus Processos":
+            status_possiveis = [
+                "Aguardando Documentação",
+                "Produzindo Peça",
+                "Aguardando Revisão",
+                "Protocolado",
+                "Acompanhando Movimentações"
+            ]
+
+            if sub == "Cadastrar Processo":
+                st.header("📂 Cadastrar Novo Processo")
+                with st.form("form_cad_meu_proc", clear_on_submit=True):
+                    c_proc = st.text_input("Número do Processo / Identificação *")
+                    c_cli = st.text_input("Nome do Cliente *")
+                    c_desc = st.text_area("Descrição / Objeto da Peça")
+                    c_resp = st.text_input("Responsável Inicial", value=name)
+                    
+                    if st.form_submit_button("Salvar Processo", type="primary"):
+                        if not c_proc.strip() or not c_cli.strip():
+                            st.error("Preencha o Número do Processo e o Cliente.")
+                        else:
+                            try:
+                                supabase.table("meus_processos").insert({
+                                    "numero_processo": c_proc.strip(),
+                                    "cliente": c_cli.strip(),
+                                    "descricao": c_desc.strip(),
+                                    "status": "Aguardando Documentação",
+                                    "responsavel": c_resp.strip(),
+                                    "solicitou_revisao": False
+                                }).execute()
+                                registrar_auditoria(username, "Cadastrar Processo", "Meus Processos", f"Proc: {c_proc}")
+                                st.cache_data.clear()
+                                st.success("✅ Processo cadastrado com sucesso!")
+                                st.rerun()
+                            except Exception as e:
+                                st.error(f"Erro ao cadastrar processo: {e}")
+
+            elif sub == "Consultar Meus Processos":
+                st.header("📋 Meus Processos & Fluxo de Trabalho")
+                res_mp = carregar_dados("meus_processos")
+                
+                if not res_mp:
+                    st.info("Nenhum processo cadastrado no momento.")
+                else:
+                    df_mp = pd.DataFrame(res_mp)
+                    if 'data_atualizacao' in df_mp.columns:
+                        df_mp['data_atualizacao'] = df_mp['data_atualizacao'].apply(formatar_data_br)
+                    
+                    if 'status' in df_mp.columns:
+                        st.dataframe(df_mp.style.map(colorir_status, subset=['status']), use_container_width=True, hide_index=True)
+                    else:
+                        st.dataframe(df_mp, use_container_width=True, hide_index=True)
+
+                    st.markdown("---")
+                    st.subheader("⚡ Gerenciar Processo Selecionado")
+
+                    dict_ps = {f"ID: {p['id']} | Proc: {p['numero_processo']} - Cliente: {p['cliente']} (Status: {p['status']})": p for p in res_mp}
+                    sel_proc_str = st.selectbox("Selecione o Processo:", list(dict_ps.keys()))
+                    obj_proc = dict_ps[sel_proc_str]
+
+                    if obj_proc.get('observacoes_revisao'):
+                        st.warning(f"💬 **Feedback da Revisão (Admin):** {obj_proc.get('observacoes_revisao')}")
+
+                    col_g1, col_g2 = st.columns(2)
+                    with col_g1:
+                        idx_status = status_possiveis.index(obj_proc.get('status')) if obj_proc.get('status') in status_possiveis else 0
+                        novo_status = st.selectbox("Alterar Status Atual:", status_possiveis, index=idx_status)
+                    with col_g2:
+                        nova_desc = st.text_area("Atualizar Observações / Andamento:", value=obj_proc.get('descricao', ''))
+
+                    col_btn1, col_btn2 = st.columns(2)
+                    with col_btn1:
+                        if st.button("💾 Salvar Alterações", type="primary"):
+                            try:
+                                supabase.table("meus_processos").update({
+                                    "status": novo_status,
+                                    "descricao": nova_desc
+                                }).eq("id", obj_proc['id']).execute()
+                                registrar_auditoria(username, "Atualizar Processo", "Meus Processos", f"ID {obj_proc['id']} alterado para {novo_status}")
+                                st.cache_data.clear()
+                                st.success("✅ Processo atualizado com sucesso!")
+                                st.rerun()
+                            except Exception as e:
+                                st.error(f"Erro ao atualizar: {e}")
+
+                    with col_btn2:
+                        if not obj_proc.get('solicitou_revisao') and obj_proc.get('status') != "Aguardando Revisão":
+                            if st.button("🚀 Enviar para Revisão (Administradores)"):
+                                try:
+                                    supabase.table("meus_processos").update({
+                                        "status": "Aguardando Revisão",
+                                        "solicitou_revisao": True
+                                    }).eq("id", obj_proc['id']).execute()
+                                    registrar_auditoria(username, "Enviar para Revisão", "Meus Processos", f"Proc ID {obj_proc['id']} enviado para revisão.")
+                                    st.cache_data.clear()
+                                    st.success("🚀 Processo enviado para a fila de revisão dos administradores!")
+                                    st.rerun()
+                                except Exception as e:
+                                    st.error(f"Erro ao enviar para revisão: {e}")
+                        else:
+                            st.info("ℹ️ Este processo já se encontra enviado para revisão ou aguardando análise.")
+
+            elif sub == "Central de Revisões" and user_role == 'admin':
+                st.header("🛡️ Central de Revisões de Peças e Processos")
+                st.caption("Processos enviados pelos colaboradores aguardando validação administrativa.")
+
+                try:
+                    res_rev = supabase.table("meus_processos").select("*").eq("solicitou_revisao", True).execute()
+                    lista_revisoes = res_rev.data if res_rev.data else []
+
+                    if not lista_revisoes:
+                        st.success("🎉 Nenhum processo aguardando revisão no momento!")
+                    else:
+                        dict_rev = {f"ID: {r['id']} | Proc: {r['numero_processo']} | Resp: {r.get('responsavel', 'N/D')}": r for r in lista_revisoes}
+                        sel_r_str = st.selectbox("Selecione o Processo para Revisar:", list(dict_rev.keys()))
+                        obj_r = dict_rev[sel_r_str]
+
+                        st.info(f"**Cliente:** {obj_r.get('cliente')} | **Responsável:** {obj_r.get('responsavel')} \n\n **Descrição/Peça:** {obj_r.get('descricao')}")
+
+                        obs_admin = st.text_input("Feedback / Observações da Revisão para o Colaborador:")
+
+                        col_rev1, col_rev2 = st.columns(2)
+                        with col_rev1:
+                            if st.button("✅ Aprovar e Devolver (Produzindo Peça / Andamento)", type="primary"):
+                                try:
+                                    supabase.table("meus_processos").update({
+                                        "status": "Produzindo Peça",
+                                        "solicitou_revisao": False,
+                                        "observacoes_revisao": obs_admin
+                                    }).eq("id", obj_r['id']).execute()
+                                    registrar_auditoria(username, "Revisar e Devolver", "Meus Processos", f"Proc ID {obj_r['id']} devolvido com sucesso.")
+                                    st.cache_data.clear()
+                                    st.success("✅ Processo revisado e devolvido ao colaborador!")
+                                    st.rerun()
+                                except Exception as e:
+                                    st.error(f"Erro ao devolver processo: {e}")
+
+                        with col_rev2:
+                            if st.button("🔄 Devolver com Ajustes Necessários"):
+                                try:
+                                    supabase.table("meus_processos").update({
+                                        "status": "Aguardando Documentação",
+                                        "solicitou_revisao": False,
+                                        "observacoes_revisao": obs_admin
+                                    }).eq("id", obj_r['id']).execute()
+                                    registrar_auditoria(username, "Devolver com Ajustes", "Meus Processos", f"Proc ID {obj_r['id']} devolvido para ajustes.")
+                                    st.cache_data.clear()
+                                    st.warning("⚠️ Processo devolvido para ajustes do colaborador.")
+                                    st.rerun()
+                                except Exception as e:
+                                    st.error(f"Erro ao processar devolução: {e}")
+
+                except Exception as e:
+                    st.error(f"Erro ao carregar central de revisões: {e}")
+
+        # --- MÓDULO EQUIPE ---
         elif menu_principal == "Equipe Dejure":
             if sub == "Nossa Equipe":
                 st.header("🧑‍⚖️ Equipe Dejure")
@@ -1230,6 +1392,7 @@ elif authentication_status == True:
                                         with st.expander("Ver perfil detalhado"):
                                             st.write(u.get("observacoes_pessoais"))
 
+        # --- MÓDULO SEGURANÇA ---
         elif menu_principal == "Segurança":
             if sub == "Meu Perfil":
                 st.header("👤 Meu Perfil de Usuário")
@@ -1396,6 +1559,7 @@ elif authentication_status == True:
                 except Exception as e:
                     st.error(f"Erro ao carregar usuários: {e}")
 
+        # --- MÓDULO PAGAMENTOS ---
         elif menu_principal == "Pagamentos":
             if sub == "Cadastrar Contrato":
                 st.header("📝 Novo Contrato e Parcelamento")
@@ -1784,8 +1948,6 @@ elif authentication_status == True:
                                 mime="text/csv",
                                 type="primary"
                             )
-                        else:
-                            st.info("Nenhum dado formatado para exibição.")
                 except Exception as e:
                     st.error(f"Erro ao carregar extratos: {e}")
 
@@ -1974,6 +2136,7 @@ elif authentication_status == True:
                             st.cache_data.clear(); st.success("Todos os contratos e parcelas foram excluídos!"); st.rerun()
                 else: st.info("Sem contratos cadastrados.")
 
+        # --- MÓDULO PERÍCIAS ---
         elif menu_principal == "Perícias":
             if sub == "Cadastrar Perícia":
                 st.header("🔬 Nova Perícia")
@@ -2156,6 +2319,7 @@ elif authentication_status == True:
                 else: 
                     st.info("Sem perícias cadastradas.")
 
+        # --- MÓDULO EXPEDIENTES ---
         elif menu_principal == "Expedientes":
             if sub == "Cadastrar Expediente":
                 st.header("📂 Novo Expediente")
@@ -2271,6 +2435,7 @@ elif authentication_status == True:
                             st.cache_data.clear(); st.success("Todos os expedientes foram excluídos!"); st.rerun()
                 else: st.info("Sem expedientes cadastrados.")
 
+        # --- MÓDULO EXPEDIENTES TRF ---
         elif menu_principal == "Expedientes TRF":
             if sub == "Cadastrar Expediente TRF":
                 st.header("⚖️ Novo Expediente TRF")
@@ -2387,6 +2552,7 @@ elif authentication_status == True:
                             st.cache_data.clear(); st.success("Todas as expedientes TRF foram excluídos!"); st.rerun()
                 else: st.info("Sem expedientes TRF cadastrados.")
 
+        # --- MÓDULO PENDÊNCIAS ---
         elif menu_principal == "Pendências":
             if sub == "Cadastrar Pendência":
                 st.header("📋 Nova Pendência")

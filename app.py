@@ -99,6 +99,40 @@ def validar_email(email):
     padrao = r'^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$'
     return bool(re.match(padrao, email.strip()))
 
+# --- FUNÇÕES DE FORMATAÇÃO GLOBAL (DATA, HORA E VALOR) ---
+def formatar_data_br(val):
+    if not val: return ""
+    str_val = str(val).strip()
+    try:
+        if len(str_val) >= 10:
+            dt = datetime.strptime(str_val[:10], "%Y-%m-%d")
+            return dt.strftime("%d/%m/%Y")
+    except:
+        pass
+    return str_val
+
+def formatar_hora_br(val):
+    if not val: return ""
+    str_val = str(val).strip()
+    try:
+        if len(str_val) == 5: # HH:MM
+            return f"{str_val}:00"
+        elif len(str_val) >= 8: # HH:MM:SS
+            return str_val[:8]
+    except:
+        pass
+    return str_val if len(str_val) == 8 else f"{str_val}:00" if len(str_val) == 5 else str_val
+
+def formatar_moeda_br(val):
+    try:
+        num = float(val)
+        # Formata no padrão brasileiro: 1.500,50
+        s = f"{num:,.2f}"
+        s = s.replace(",", "X").replace(".", ",").replace("X", ".")
+        return f"R$ {s}"
+    except:
+        return "R$ 0,00"
+
 def carregar_usuarios_db():
     senha_padrao_hash = gerar_hash('mudar123')
     cred_dict = {
@@ -295,7 +329,7 @@ elif authentication_status == True:
                     df[col] = pd.to_datetime(df[col], errors='coerce').dt.strftime('%Y-%m-%d')
                     df[col] = df[col].replace(['NaT', 'nan', 'NAT', 'NaN', 'None', ''], None)
                 elif 'hora' in col.lower():
-                    df[col] = df[col].apply(lambda x: x.strftime('%H:%M') if hasattr(x, 'strftime') else (str(x) if x != "" else None))
+                    df[col] = df[col].apply(lambda x: x.strftime('%H:%M:%S') if hasattr(x, 'strftime') else (str(x) if x != "" else None))
 
             dados = df.to_dict(orient="records")
             dadosLimpos = [{k: (v if pd.notnull(v) and v != "" else None) for k, v in registro.items()} for registro in dados]
@@ -445,7 +479,7 @@ elif authentication_status == True:
                 if pc.get('status') == 'Pendente' and pc.get('vencimento'):
                     dt = datetime.strptime(pc['vencimento'], "%Y-%m-%d").date()
                     uid = f"pag_{pc.get('id', 0)}"
-                    alertas_pagamentos.append(((dt - hoje).days, f"💰 Parcela {pc.get('numero_parcela')} | Vencimento: {dt.strftime('%d/%m/%Y')} | Valor: R$ {pc.get('valor', 0):.2f}", uid, 'pagamento'))
+                    alertas_pagamentos.append(((dt - hoje).days, f"💰 Parcela {pc.get('numero_parcela')} | Vencimento: {dt.strftime('%d/%m/%Y')} | Valor: {formatar_moeda_br(pc.get('valor', 0))}", uid, 'pagamento'))
 
             total_alertas = len(alertas_pericias) + len(alertas_expedientes) + len(alertas_expedientes_trf) + len(alertas_pagamentos)
 
@@ -617,13 +651,11 @@ elif authentication_status == True:
                 st.header("👤 Cadastro Completo de Cliente")
                 st.caption("Preencha as informações do cliente. Campos marcados com (*) são obrigatórios.")
                 
-                # Inicializa session_state para persistência de dados em caso de erro
                 campos_cli = ['cli_nome', 'cli_doc', 'cli_prof', 'cli_ec', 'cli_tfixo', 'cli_cel', 'cli_email', 'cli_end', 'cli_cid', 'cli_uf', 'cli_gov', 'cli_obs']
                 for campo in campos_cli:
                     if campo not in st.session_state:
                         st.session_state[campo] = ""
 
-                # Se o cadastro acabou de ser realizado com sucesso, limpa o state ANTES de instanciar os inputs
                 if st.session_state.get('cad_cli_sucesso_ok'):
                     for campo in campos_cli:
                         st.session_state[campo] = ""
@@ -651,7 +683,6 @@ elif authentication_status == True:
                     n = st.text_input("Nome Completo *", key="cli_nome")
                     doc = st.text_input("CPF / CNPJ *", key="cli_doc")
                     
-                    # Validação em tempo real do CPF/CNPJ
                     doc_limpo = ''.join(filter(str.isdigit, str(doc)))
                     if doc.strip():
                         if len(doc_limpo) == 11:
@@ -675,7 +706,6 @@ elif authentication_status == True:
                     celular = st.text_input("Celular / WhatsApp (com DDD, ex: 84999887766) *", key="cli_cel")
                     email = st.text_input("E-mail", key="cli_email")
                     
-                    # Validação em tempo real do E-mail
                     if email.strip():
                         if not validar_email(email):
                             st.error("⚠️ Formato de e-mail inválido (ex: nome@dominio.com)")
@@ -715,7 +745,7 @@ elif authentication_status == True:
                         errs.append("O **Telefone Fixo** informado deve conter exatamente 10 dígitos (DDD + 8 números).")
                         
                     if not celular.strip():
-                        errs.append("O campo **Celular / WhatsApp** é obrigatório.")
+                        errs.append("O campo **Celular / WhatsApp** is obrigatório.")
                     elif not validar_celular(celular):
                         errs.append("O **Celular** deve conter 11 dígitos no padrão (DDD + 9 + 8 números).")
 
@@ -1239,6 +1269,11 @@ elif authentication_status == True:
                     if res_users.data:
                         df_u = pd.DataFrame(res_users.data)
                         colunas_visiveis = [c for c in ['id', 'username', 'nome_completo', 'name', 'role', 'trocar_senha', 'telefone', 'oab'] if c in df_u.columns]
+                        
+                        # Formata datas se houver em usuários
+                        if 'data_nascimento' in df_u.columns:
+                            df_u['data_nascimento'] = df_u['data_nascimento'].apply(formatar_data_br)
+
                         st.dataframe(df_u[colunas_visiveis], use_container_width=True, hide_index=True)
                         
                         st.markdown("---")
@@ -1316,7 +1351,7 @@ elif authentication_status == True:
                                             "status": "Pendente"
                                         }).execute()
 
-                                registrar_auditoria(username, "Cadastrar Contrato com Entrada", "Pagamentos", f"Cliente: {cli} - Total: R$ {vtot}")
+                                registrar_auditoria(username, "Cadastrar Contrato com Entrada", "Pagamentos", f"Cliente: {cli} - Total: {formatar_moeda_br(vtot)}")
                                 st.cache_data.clear()
                                 st.session_state['cad_hon_sucesso'] = True
                                 st.rerun()
@@ -1325,11 +1360,15 @@ elif authentication_status == True:
                 st.header("📋 Visualizar Parcelas")
                 res_h = carregar_dados("honorarios")
                 if res_h:
-                    cdict = {f"{h['cliente']} — {h['servico']} (Total: R$ {h.get('valor_total', 0)})": h['id'] for h in res_h}
+                    cdict = {f"{h['cliente']} — {h['servico']} (Total: {formatar_moeda_br(h.get('valor_total', 0))})": h['id'] for h in res_h}
                     sel = st.selectbox("Contrato:", list(cdict.keys()))
                     res_p = supabase.table("parcelas").select("*").eq("honorario_id", cdict[sel]).execute()
                     if res_p.data: 
                         df_p = pd.DataFrame(res_p.data)
+                        if 'vencimento' in df_p.columns:
+                            df_p['vencimento'] = df_p['vencimento'].apply(formatar_data_br)
+                        if 'valor' in df_p.columns:
+                            df_p['valor'] = df_p['valor'].apply(formatar_moeda_br)
                         st.dataframe(df_p.style.map(colorir_status, subset=['status']), use_container_width=True, hide_index=True)
                     else: st.info("Sem parcelas.")
                 else: st.info("Sem contratos.")
@@ -1362,7 +1401,7 @@ elif authentication_status == True:
                     if not res_p.data:
                         st.success("✅ Este contrato não possui parcelas pendentes.")
                     else:
-                        parcelas_pendentes = {f"Parcela: {p['numero_parcela']} — R$ {p['valor']} (Venc: {p['vencimento']})": p for p in res_p.data}
+                        parcelas_pendentes = {f"Parcela: {p['numero_parcela']} — {formatar_moeda_br(p['valor'])} (Venc: {formatar_data_br(p['vencimento'])})": p for p in res_p.data}
                         sel_parcela_str = st.selectbox("2. Selecione a Parcela a Baixar:", list(parcelas_pendentes.keys()))
                         parcela_obj = parcelas_pendentes[sel_parcela_str]
                         valor_bruto = float(parcela_obj['valor'])
@@ -1506,27 +1545,27 @@ elif authentication_status == True:
 
                         st.markdown("#### 🧮 Prova Real do Rateio (Validação Entrada vs Saída)")
                         col_pr1, col_pr2, col_pr3 = st.columns(3)
-                        col_pr1.metric("Recurso Bruto da Parcela", f"R$ {valor_bruto:.2f}")
-                        col_pr2.metric("Soma Total Distribuída", f"R$ {soma_distribuida:.2f}")
+                        col_pr1.metric("Recurso Bruto da Parcela", formatar_moeda_br(valor_bruto))
+                        col_pr2.metric("Soma Total Distribuída", formatar_moeda_br(soma_distribuida))
                         
                         if diferenca == 0:
                             col_pr3.success("✅ **PROVA OK!**\nSoma 100% idêntica ao valor de entrada.")
                         else:
-                            col_pr3.error(f"⚠️ **DIVERGÊNCIA:** Δ R$ {diferenca:.2f}")
+                            col_pr3.error(f"⚠️ **DIVERGÊNCIA:** Δ {formatar_moeda_br(diferenca)}")
 
                         with st.expander("🔍 Detalhamento dos Valores da Prova Real", expanded=True):
                             det_cols = st.columns(5)
-                            det_cols[0].write(f"**Prospectador:**\nR$ {val_prosp_efetivo:.2f}")
-                            det_cols[1].write(f"**Operador ({resp_name}):**\nR$ {val_operador:.2f}")
-                            det_cols[2].write(f"**Fundo Colab. Total (5%):**\nR$ {fundo_colab:.2f}")
-                            det_cols[3].write(f"**Leônidas (60%):**\nR$ {val_leonidas:.2f}")
-                            det_cols[4].write(f"**Nelson (40%):**\nR$ {val_nelson:.2f}")
+                            det_cols[0].write(f"**Prospectador:**\n{formatar_moeda_br(val_prosp_efetivo)}")
+                            det_cols[1].write(f"**Operador ({resp_name}):**\n{formatar_moeda_br(val_operador)}")
+                            det_cols[2].write(f"**Fundo Colab. Total (5%):**\n{formatar_moeda_br(fundo_colab)}")
+                            det_cols[3].write(f"**Leônidas (60%):**\n{formatar_moeda_br(val_leonidas)}")
+                            det_cols[4].write(f"**Nelson (40%):**\n{formatar_moeda_br(val_nelson)}")
 
                         st.markdown("##### 👥 Divisão Igualitária dos 5% entre Colaboradores que Não Trabalharam no Processo")
                         if colaboradores_fundo:
                             cols_colab = st.columns(min(len(colaboradores_fundo), 4))
                             for idx, c_nome in enumerate(colaboradores_fundo):
-                                cols_colab[idx % 4].info(f"**{c_nome}**\nRecebe: R$ {cota_individual_fundo:.2f}")
+                                cols_colab[idx % 4].info(f"**{c_nome}**\nRecebe: {formatar_moeda_br(cota_individual_fundo)}")
                         else:
                             st.warning("⚠️ Nenhum outro colaborador ativo (advogado/bacharel/estagiário) cadastrado para receber a fatia do fundo.")
 
@@ -1587,7 +1626,7 @@ elif authentication_status == True:
                                 nel_exib = float(r.get('nelson', 0))
                                 
                                 rateio_colab = r.get('rateio_colaboradores', {})
-                                txt_rateio_colab = ", ".join([f"{k}: R$ {v:.2f}" for k, v in rateio_colab.items()]) if rateio_colab else "-"
+                                txt_rateio_colab = ", ".join([f"{k}: {formatar_moeda_br(v)}" for k, v in rateio_colab.items()]) if rateio_colab else "-"
 
                                 if "Acúmulo" in r.get('regra', ''):
                                     val_prosp_efetivo = 0.0
@@ -1607,25 +1646,25 @@ elif authentication_status == True:
                                     "Data": datetime.strptime(log['data_hora'][:10], "%Y-%m-%d").strftime("%d/%m/%Y"),
                                     "Tipo Regra": r.get('regra', 'N/D'),
                                     "Contrato": r.get('contrato', '').split(' — ')[0],
-                                    "Valor Bruto": f"R$ {val_bruto:.2f}",
+                                    "Valor Bruto": formatar_moeda_br(val_bruto),
                                     "Prospectador": r.get('prospectador', ''),
-                                    "Val. Prospector": f"R$ {val_prosp_exib if 'Acúmulo' not in r.get('regra','') else 0.0:.2f}",
+                                    "Val. Prospector": formatar_moeda_br(val_prosp_exib if 'Acúmulo' not in r.get('regra','') else 0.0),
                                     "Operador": r.get('operador', ''),
-                                    "Val. Operador": f"R$ {val_op_exib:.2f}",
-                                    "Fundo Colab. (5%)": f"R$ {fundo_exib:.2f}",
+                                    "Val. Operador": formatar_moeda_br(val_op_exib),
+                                    "Fundo Colab. (5%)": formatar_moeda_br(fundo_exib),
                                     "Rateio Colaboradores (Não Operadores)": txt_rateio_colab,
-                                    "Leônidas (60%)": f"R$ {leo_exib:.2f}",
-                                    "Nelson (40%)": f"R$ {nel_exib:.2f}",
-                                    "Soma Distribuída": f"R$ {soma_dist:.2f}",
-                                    "Prova Real": "✅ 100% Batido" if is_ok else f"⚠️ Δ R$ {dif:.2f}"
+                                    "Leônidas (60%)": formatar_moeda_br(leo_exib),
+                                    "Nelson (40%)": formatar_moeda_br(nel_exib),
+                                    "Soma Distribuída": formatar_moeda_br(soma_dist),
+                                    "Prova Real": "✅ 100% Batido" if is_ok else f"⚠️ Δ {formatar_moeda_br(dif)}"
                                 })
                             except Exception:
                                 pass
                         
                         if linhas:
                             m1, m2, m3 = st.columns(3)
-                            m1.metric("Total Entrado (Bruto)", f"R$ {total_bruto_acum:.2f}")
-                            m2.metric("Total Repassado (Soma)", f"R$ {total_dist_acum:.2f}")
+                            m1.metric("Total Entrado (Bruto)", formatar_moeda_br(total_bruto_acum))
+                            m2.metric("Total Repassado (Soma)", formatar_moeda_br(total_dist_acum))
                             pct_audit = (provas_validas / total_registros * 100) if total_registros > 0 else 100
                             m3.metric("Auditoria Prova Real", f"{pct_audit:.0f}% OK ({provas_validas}/{total_registros})")
 
@@ -1722,20 +1761,20 @@ elif authentication_status == True:
                                         for colab_name, colab_val in rateio_colab.items():
                                             totais_por_colaborador[colab_name] = totais_por_colaborador.get(colab_name, 0.0) + float(colab_val)
 
-                                        txt_colab_det = ", ".join([f"{k}: R$ {v:.2f}" for k, v in rateio_colab.items()]) if rateio_colab else "-"
+                                        txt_colab_det = ", ".join([f"{k}: {formatar_moeda_br(v)}" for k, v in rateio_colab.items()]) if rateio_colab else "-"
 
                                         linhas_relatorio.append({
                                             "Data Baixa": dt_baixa_obj.strftime("%d/%m/%Y"),
                                             "Contrato / Cliente": r.get('contrato', '').split(' — ')[0],
                                             "Regra Aplicada": r.get('regra', 'N/D'),
-                                            "Valor Bruto": f"R$ {v_bruto:.2f}",
-                                            "Prospectador": f"{prosp} (R$ {v_prosp_efetivo:.2f})" if v_prosp_efetivo > 0 else (prosp if prosp else "-"),
-                                            "Operador": f"{op} (R$ {v_op:.2f})",
-                                            "Fundo Colab. (5%)": f"R$ {v_fundo:.2f}",
+                                            "Valor Bruto": formatar_moeda_br(v_bruto),
+                                            "Prospectador": f"{prosp} ({formatar_moeda_br(v_prosp_efetivo)})" if v_prosp_efetivo > 0 else (prosp if prosp else "-"),
+                                            "Operador": f"{op} ({formatar_moeda_br(v_op)})",
+                                            "Fundo Colab. (5%)": formatar_moeda_br(v_fundo),
                                             "Rateio Individual Colaboradores": txt_colab_det,
-                                            "Leônidas (60%)": f"R$ {v_leo:.2f}",
-                                            "Nelson (40%)": f"R$ {v_nel:.2f}",
-                                            "Total Distribuído": f"R$ {soma_d:.2f}",
+                                            "Leônidas (60%)": formatar_moeda_br(v_leo),
+                                            "Nelson (40%)": formatar_moeda_br(v_nel),
+                                            "Total Distribuído": formatar_moeda_br(soma_d),
                                             "Prova Real": "✅ 100% Batido" if is_ok else "⚠️ Divergente"
                                         })
                                 except Exception:
@@ -1745,15 +1784,15 @@ elif authentication_status == True:
                             st.subheader(f"📊 Resumo Financeiro do Período ({dt_inicio.strftime('%d/%m/%Y')} a {dt_fim.strftime('%d/%m/%Y')})")
                             
                             c_rel1, c_rel2, c_rel3, c_rel4 = st.columns(4)
-                            c_rel1.metric("Faturamento Bruto Entrado", f"R$ {sum_bruto:.2f}")
-                            c_rel2.metric("Total Sócios (60/40)", f"R$ {(sum_leonidas + sum_nelson):.2f}")
-                            c_rel3.metric("Total Operadores & Prospectores", f"R$ {(sum_op + sum_prosp):.2f}")
-                            c_rel4.metric("Fundo Colaboradores (5%)", f"R$ {sum_fundo:.2f}")
+                            c_rel1.metric("Faturamento Bruto Entrado", formatar_moeda_br(sum_bruto))
+                            c_rel2.metric("Total Sócios (60/40)", formatar_moeda_br(sum_leonidas + sum_nelson))
+                            c_rel3.metric("Total Operadores & Prospectores", formatar_moeda_br(sum_op + sum_prosp))
+                            c_rel4.metric("Fundo Colaboradores (5%)", formatar_moeda_br(sum_fundo))
 
                             with st.expander("👑 Divisão Detalhada dos Sócios e Fundo de Colaboradores no Período", expanded=True):
                                 c_s1, c_s2, c_s3 = st.columns(3)
-                                c_s1.metric("Leônidas (60%)", f"R$ {sum_leonidas:.2f}")
-                                c_s2.metric("Nelson (40%)", f"R$ {sum_nelson:.2f}")
+                                c_s1.metric("Leônidas (60%)", formatar_moeda_br(sum_leonidas))
+                                c_s2.metric("Nelson (40%)", formatar_moeda_br(sum_nelson))
                                 total_rel_regs = len(linhas_relatorio)
                                 pct_rel_ok = (count_provas_ok / total_rel_regs * 100) if total_rel_regs > 0 else 100
                                 c_s3.metric("Validação de Prova Real", f"{pct_rel_ok:.0f}% OK ({count_provas_ok}/{total_rel_regs})")
@@ -1763,7 +1802,7 @@ elif authentication_status == True:
                                     st.markdown("##### 💵 Acumulado Recebido do Fundo (5%) Por Colaborador no Período:")
                                     cols_tot_c = st.columns(min(len(totais_por_colaborador), 4))
                                     for idx, (c_name, c_tot) in enumerate(totais_por_colaborador.items()):
-                                        cols_tot_c[idx % 4].metric(c_name, f"R$ {c_tot:.2f}")
+                                        cols_tot_c[idx % 4].metric(c_name, formatar_moeda_br(c_tot))
 
                             st.markdown("---")
                             st.subheader("📝 Lista Detalhada dos Pagamentos Processados")
@@ -1838,10 +1877,10 @@ elif authentication_status == True:
                     nome = st.text_input("Nome *")
                     local_pm = st.text_input("Local PM")
                     dt_pm = st.date_input("Data PM", datetime.now())
-                    hora_pm = st.text_input("Hora PM (ex: 14:30)")
+                    hora_pm = st.text_input("Hora PM (ex: 14:30:00)")
                     local_ps = st.text_input("Local PS")
                     dt_ps = st.date_input("Data PS", datetime.now())
-                    hora_ps = st.text_input("Hora PS (ex: 15:30)")
+                    hora_ps = st.text_input("Hora PS (ex: 15:30:00)")
                     senha_inss = st.text_input("Senha INSS")
                     elaborador = st.text_input("Elaborador")
                     
@@ -1855,15 +1894,19 @@ elif authentication_status == True:
                         if not nome:
                             st.error("O campo Nome é obrigatório.")
                         else:
+                            # Formata hora para HH:MM:SS se informada
+                            h_pm_fmt = formatar_hora_br(hora_pm) if hora_pm.strip() else None
+                            h_ps_fmt = formatar_hora_br(hora_ps) if hora_ps.strip() else None
+
                             supabase.table("pericias").insert({
                                 "cpf": cpf,
                                 "nome": nome,
                                 "local_pm": local_pm,
                                 "data_pm": dt_pm.strftime("%Y-%m-%d"),
-                                "hora_pm": hora_pm,
+                                "hora_pm": h_pm_fmt,
                                 "local_ps": local_ps,
                                 "data_ps": dt_ps.strftime("%Y-%m-%d"),
-                                "hora_ps": hora_ps,
+                                "hora_ps": h_ps_fmt,
                                 "senha_inss": senha_inss,
                                 "elaborador": elaborador,
                                 "status": "Pendente"
@@ -1901,6 +1944,13 @@ elif authentication_status == True:
                 res = carregar_dados("pericias")
                 if res: 
                     df_per = pd.DataFrame(res)
+                    
+                    # Formata datas e horas na tabela
+                    if 'data_pm' in df_per.columns: df_per['data_pm'] = df_per['data_pm'].apply(formatar_data_br)
+                    if 'data_ps' in df_per.columns: df_per['data_ps'] = df_per['data_ps'].apply(formatar_data_br)
+                    if 'hora_pm' in df_per.columns: df_per['hora_pm'] = df_per['hora_pm'].apply(formatar_hora_br)
+                    if 'hora_ps' in df_per.columns: df_per['hora_ps'] = df_per['hora_ps'].apply(formatar_hora_br)
+
                     ordem_desejada = ['cpf', 'nome', 'local_pm', 'data_pm', 'hora_pm', 'local_ps', 'data_ps', 'hora_ps', 'senha_inss', 'elaborador', 'status']
                     colunas_existentes = [c for c in ordem_desejada if c in df_per.columns]
                     outras_colunas = [c for c in df_per.columns if c not in ordem_desejada and c != 'id']
@@ -1932,7 +1982,7 @@ elif authentication_status == True:
                             except:
                                 pass
                         edt_pm = st.date_input("Data PM", value=dt_pm_val)
-                        ehora_pm = st.text_input("Hora PM", value=obj.get('hora_pm',''))
+                        ehora_pm = st.text_input("Hora PM (HH:MM:SS)", value=obj.get('hora_pm',''))
 
                         elocal_ps = st.text_input("Local PS", value=obj.get('local_ps',''))
                         dt_ps_val = datetime.now().date()
@@ -1942,7 +1992,7 @@ elif authentication_status == True:
                             except:
                                 pass
                         edt_ps = st.date_input("Data PS", value=dt_ps_val)
-                        ehora_ps = st.text_input("Hora PS", value=obj.get('hora_ps',''))
+                        ehora_ps = st.text_input("Hora PS (HH:MM:SS)", value=obj.get('hora_ps',''))
 
                         esenhainss = st.text_input("Senha INSS", value=obj.get('senha_inss',''))
                         eelab = st.text_input("Elaborador", value=obj.get('elaborador',''))
@@ -1960,10 +2010,10 @@ elif authentication_status == True:
                                 "nome": enome,
                                 "local_pm": elocal_pm,
                                 "data_pm": edt_pm.strftime("%Y-%m-%d"),
-                                "hora_pm": ehora_pm,
+                                "hora_pm": formatar_hora_br(ehora_pm) if ehora_pm.strip() else None,
                                 "local_ps": elocal_ps,
                                 "data_ps": edt_ps.strftime("%Y-%m-%d"),
-                                "hora_ps": ehora_ps,
+                                "hora_ps": formatar_hora_br(ehora_ps) if ehora_ps.strip() else None,
                                 "senha_inss": esenhainss,
                                 "elaborador": eelab,
                                 "status": est_op
@@ -2050,6 +2100,9 @@ elif authentication_status == True:
                 res = carregar_dados("expedientes")
                 if res:
                     df_exp = pd.DataFrame(res)
+                    if 'data_manifestacao' in df_exp.columns:
+                        df_exp['data_manifestacao'] = df_exp['data_manifestacao'].apply(formatar_data_br)
+
                     if 'status' in df_exp.columns:
                         st.dataframe(df_exp.style.map(colorir_status, subset=['status']), use_container_width=True, hide_index=True)
                     else:
@@ -2162,6 +2215,9 @@ elif authentication_status == True:
                 res = carregar_dados("expedientes_trf")
                 if res:
                     df_trf = pd.DataFrame(res)
+                    if 'data_manifestacao' in df_trf.columns:
+                        df_trf['data_manifestacao'] = df_trf['data_manifestacao'].apply(formatar_data_br)
+
                     if 'status' in df_trf.columns:
                         st.dataframe(df_trf.style.map(colorir_status, subset=['status']), use_container_width=True, hide_index=True)
                     else:
@@ -2281,6 +2337,9 @@ elif authentication_status == True:
                 res = carregar_dados("pendencias")
                 if res:
                     df_pen = pd.DataFrame(res)
+                    if 'data_solicitacao' in df_pen.columns:
+                        df_pen['data_solicitacao'] = df_pen['data_solicitacao'].apply(formatar_data_br)
+
                     if 'status' in df_pen.columns:
                         st.dataframe(df_pen.style.map(colorir_status, subset=['status']), use_container_width=True, hide_index=True)
                     else:
@@ -2317,6 +2376,8 @@ elif authentication_status == True:
                             st.session_state['submenu_atual'] = "Consultar Pendências"
                             st.rerun()
 
+            elif sub -> "Excluir Pendência" and user_role == 'admin':
+                pass # Tratado abaixo no código completo
             elif sub == "Excluir Pendência" and user_role == 'admin':
                 st.header("🗑️ Excluir Pendência")
                 res = carregar_dados("pendencias")

@@ -626,15 +626,20 @@ elif authentication_status == True:
                         profissao = st.text_input("Profissão *")
                     with c2:
                         estado_civil = st.selectbox("Estado Civil *", estados_civis)
-                        prospectador = st.selectbox("Prospectador / Indicado Por *", lista_prospectadores)
-                        
-                        nome_prosp_ext = ""
-                        tel_prosp_ext = ""
-                        if prospectador == "Prospectador Externo":
-                            st.markdown("---")
-                            st.markdown("##### 🤝 Dados do Prospectador Externo")
-                            nome_prosp_ext = st.text_input("Nome do Prospectador Externo *")
-                            tel_prosp_ext = st.text_input("Telefone do Prospectador Externo (com DDD) *")
+                        prospectador = st.selectbox("Prospectador / Indicado Por *", lista_prospectadores, key="sel_cad_prosp")
+
+                    # EXIBIÇÃO REATIVA DINÂMICA DENTRO DO FORMULÁRIO SE "Prospectador Externo" FOR SELECIONADO
+                    nome_prosp_ext = ""
+                    tel_prosp_ext = ""
+                    if st.session_state.get("sel_cad_prosp") == "Prospectador Externo":
+                        st.markdown("---")
+                        st.markdown("##### 🤝 Informações Obrigatórias do Prospectador Externo")
+                        col_pe1, col_pe2 = st.columns(2)
+                        with col_pe1:
+                            nome_prosp_ext = st.text_input("Nome Completo do Prospectador Externo *")
+                        with col_pe2:
+                            tel_prosp_ext = st.text_input("Telefone de Contato do Prospectador Externo (com DDD) *")
+                        st.markdown("---")
 
                     st.subheader("📞 Contatos & Endereço")
                     c3, c4 = st.columns(2)
@@ -796,15 +801,19 @@ elif authentication_status == True:
                             idx_ec = estados_civis.index(obj.get('estado_civil')) if obj.get('estado_civil') in estados_civis else 0
                             eestado_civil = st.selectbox("Estado Civil *", estados_civis, index=idx_ec)
                             
-                            eprospectador = st.selectbox("Prospectador / Indicado Por *", lista_prospectadores, index=idx_sel_prosp)
+                            eprospectador = st.selectbox("Prospectador / Indicado Por *", lista_prospectadores, index=idx_sel_prosp, key="sel_ed_prosp")
 
-                            enome_prosp_ext = ""
-                            etel_prosp_ext = ""
-                            if eprospectador == "Prospectador Externo":
-                                st.markdown("---")
-                                st.markdown("##### 🤝 Dados do Prospectador Externo")
-                                enome_prosp_ext = st.text_input("Nome do Prospectador Externo *", value=nome_ext_init)
+                        enome_prosp_ext = ""
+                        etel_prosp_ext = ""
+                        if st.session_state.get("sel_ed_prosp") == "Prospectador Externo":
+                            st.markdown("---")
+                            st.markdown("##### 🤝 Informações Obrigatórias do Prospectador Externo")
+                            col_pe1, col_pe2 = st.columns(2)
+                            with col_pe1:
+                                enome_prosp_ext = st.text_input("Nome Completo do Prospectador Externo *", value=nome_ext_init)
+                            with col_pe2:
                                 etel_prosp_ext = st.text_input("Telefone do Prospectador Externo (com DDD) *", value=tel_ext_init)
+                            st.markdown("---")
 
                         st.subheader("📞 Contatos & Endereço")
                         c3, c4 = st.columns(2)
@@ -1299,6 +1308,19 @@ elif authentication_status == True:
                     obj_contrato = cdict_h[sel_contrato_str]
                     val_total_contrato = float(obj_contrato.get('valor_total', 0.0))
                     
+                    # Identificar se o cliente do contrato tem prospectador externo vindo da tabela Clientes
+                    cli_nome_contrato = obj_contrato.get('cliente', '')
+                    prosp_automatico_cli = "Nenhum / Sem Prospectador"
+                    
+                    try:
+                        res_cli_info = supabase.table("clientes_cadastrados").select("indicado_por").eq("nome", cli_nome_contrato).execute()
+                        if res_cli_info.data:
+                            indic_cli = res_cli_info.data[0].get("indicado_por", "")
+                            if str(indic_cli).startswith("Prospectador Externo:"):
+                                prosp_automatico_cli = indic_cli
+                    except Exception:
+                        pass
+
                     res_p = supabase.table("parcelas").select("*").eq("honorario_id", obj_contrato['id']).eq("status", "Pendente").execute()
                     if not res_p.data:
                         st.success("✅ Este contrato não possui parcelas pendentes.")
@@ -1320,13 +1342,21 @@ elif authentication_status == True:
                         nomes_opcoes = [u['nome'] for u in lista_usuarios]
                         is_entrada = (parcela_obj['numero_parcela'] == "Entrada")
                         
+                        opcoes_prosp_baixa = ["Nenhum / Sem Prospectador", "Prospectador Externo"] + nomes_opcoes
+                        if prosp_automatico_cli.startswith("Prospectador Externo:") and prosp_automatico_cli not in opcoes_prosp_baixa:
+                            opcoes_prosp_baixa.insert(2, prosp_automatico_cli)
+
+                        idx_prosp_init = 0
+                        if prosp_automatico_cli in opcoes_prosp_baixa:
+                            idx_prosp_init = opcoes_prosp_baixa.index(prosp_automatico_cli)
+
                         if is_entrada:
                             st.subheader("⚙️ Regra de Entrada (Com / Sem Prospecção)")
                             st.info("Ordem: 1º Prospectador (se houver) ➔ 2º Operador ➔ 3º Fundo 5% Colaboradores (dividido entre não-operadores) ➔ 4º Sócios (60/40).")
                             
                             col_r1, col_r2 = st.columns(2)
                             with col_r1:
-                                prosp_name = st.selectbox("👤 Prospectador:", ["Nenhum / Sem Prospectador", "Prospectador Externo"] + nomes_opcoes)
+                                prosp_name = st.selectbox("👤 Prospectador:", opcoes_prosp_baixa, index=idx_prosp_init)
                             with col_r2:
                                 resp_name = st.selectbox("⚖️ Operador (Trabalhou no Processo):", nomes_opcoes)
                             
@@ -1348,7 +1378,7 @@ elif authentication_status == True:
                             
                             col_ps1, col_ps2 = st.columns(2)
                             with col_ps1:
-                                prosp_name = st.selectbox("👤 Prospectador Externo (Se Houver):", ["Nenhum / Sem Prospectador", "Prospectador Externo"] + nomes_opcoes)
+                                prosp_name = st.selectbox("👤 Prospectador Externo (Se Houver):", opcoes_prosp_baixa, index=idx_prosp_init)
                             with col_ps2:
                                 resp_name = st.selectbox("⚖️ Operador (Trabalhou no Processo):", nomes_opcoes)
 

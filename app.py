@@ -14,6 +14,24 @@ import re
 
 st.set_page_config(page_title="Controle DEJURE ADVOCACIA", layout="wide", page_icon="⚖️")
 
+# ==========================================
+# 🛑 TRAVA DE MANUTENÇÃO (FALLBACK MANUAL)
+# A manutenção agora é controlada pelo painel Admin. 
+# Só mude isso para True se o banco de dados cair.
+# ==========================================
+EM_MANUTENCAO_MANUAL = False 
+
+if EM_MANUTENCAO_MANUAL:
+    col1, col2, col3 = st.columns([1, 1, 1])
+    with col2:
+        if os.path.exists("logo.png"): 
+            st.image("logo.png", use_container_width=True)
+            
+    st.markdown("<h1 style='text-align: center; color: #FF4B4B; margin-top: 50px;'>⚠️ SISTEMA EM MANUTENÇÃO ⚠️</h1>", unsafe_allow_html=True)
+    st.markdown("<h3 style='text-align: center; color: #E0E0E0;'>Estamos implementando melhorias no sistema. Voltaremos em breve!</h3>", unsafe_allow_html=True)
+    st.stop()
+# ==========================================
+
 # --- ESTILIZAÇÃO CSS (PRETO, DOURADO E TABELAS COM TEXTO EXPANDIDO) ---
 st.markdown("""
     <style>
@@ -232,6 +250,27 @@ elif authentication_status == True:
 
     user_info = credentials["usernames"].get(username, {})
     user_role = user_info.get("role", "estagiario")
+    
+    # ==========================================
+    # 🛑 TRAVA DE MANUTENÇÃO DINÂMICA
+    # ==========================================
+    try:
+        res_config = supabase.table("configuracoes_sistema").select("manutencao_ativa").eq("id", 1).execute()
+        manutencao_ativa = res_config.data[0]["manutencao_ativa"] if res_config.data else False
+    except Exception:
+        manutencao_ativa = False
+
+    if manutencao_ativa and user_role != 'admin' and username != 'master':
+        st.markdown("<h1 style='text-align: center; color: #FF4B4B; margin-top: 50px;'>⚠️ SISTEMA EM MANUTENÇÃO ⚠️</h1>", unsafe_allow_html=True)
+        st.markdown("<h3 style='text-align: center; color: #E0E0E0;'>Estamos implementando melhorias. Acesso temporariamente restrito aos administradores.</h3>", unsafe_allow_html=True)
+        
+        col_m1, col_m2, col_m3 = st.columns([1,2,1])
+        with col_m2:
+            if st.button("🚪 Sair e Voltar para Login", use_container_width=True):
+                st.session_state.update({'authentication_status': None, 'login_registrado': False})
+                st.rerun()
+        st.stop()
+    # ==========================================
     
     precisa_trocar_senha = user_info.get("trocar_senha", False) if username != "master" else False
 
@@ -1801,7 +1840,25 @@ elif authentication_status == True:
                             st.rerun()
 
             elif sub == "Gerenciar Usuários" and user_role == 'admin':
-                st.header("🛡️ Gerenciamento de Usuários Ativos")
+                st.header("🛡️ Gerenciamento do Sistema e Usuários")
+                
+                st.subheader("⚙️ Configurações Globais")
+                try:
+                    res_config = supabase.table("configuracoes_sistema").select("manutencao_ativa").eq("id", 1).execute()
+                    estado_atual_manut = res_config.data[0]["manutencao_ativa"] if res_config.data else False
+                    
+                    novo_estado = st.toggle("⚠️ Ativar Modo Manutenção (Bloqueia o acesso de toda a equipe, exceto Administradores)", value=estado_atual_manut)
+                    if novo_estado != estado_atual_manut:
+                        supabase.table("configuracoes_sistema").update({"manutencao_ativa": novo_estado}).eq("id", 1).execute()
+                        registrar_auditoria(username, f"Modo Manutenção {'ATIVADO' if novo_estado else 'DESATIVADO'}", "Segurança", f"Admin {name} alterou o status")
+                        st.success(f"Modo manutenção {'ATIVADO' if novo_estado else 'DESATIVADO'} com sucesso!")
+                        time.sleep(1)
+                        st.rerun()
+                except Exception as e:
+                    st.error(f"Erro ao carregar configurações: {e}")
+                
+                st.markdown("---")
+                st.subheader("👥 Usuários Ativos")
                 try:
                     res_users = supabase.table("usuarios_sistema").select("*").execute()
                     if res_users.data:
@@ -1831,68 +1888,164 @@ elif authentication_status == True:
         # --- MÓDULO PAGAMENTOS ---
         elif menu_principal == "Pagamentos":
             if sub == "Cadastrar Contrato":
-                st.header("📝 Novo Contrato e Parcelamento")
+                st.header("📝 Novo Contrato e Parcelamento (Flexível)")
+                
                 cli_db = carregar_dados("clientes_cadastrados")
                 nomes = [c['nome'] for c in cli_db]
-                with st.form("fc_hon", clear_on_submit=True):
-                    cli_op = st.selectbox("Cliente:", ["Outro"] + nomes) if nomes else "Outro"
-                    cli = st.text_input("Nome") if cli_op == "Outro" else cli_op
-                    serv = st.text_input("Serviço")
-                    vtot = st.number_input("Valor Total do Contrato (R$)", min_value=0.0, step=100.0)
-                    
-                    col_e1, col_e2 = st.columns(2)
-                    with col_e1:
-                        v_entrada = st.number_input("Valor de Entrada (R$)", min_value=0.0, step=50.0, value=0.0)
-                    with col_e2:
-                        npar = st.number_input("Quantidade de Parcelas (Restante)", min_value=1, max_value=36, value=3)
-                    
-                    dt1 = st.date_input("Vencimento da 1ª Parcela (ou Entrada)", datetime.now())
-                    
-                    col_b_h1, col_b_h2 = st.columns(2)
-                    with col_b_h1:
-                        salvar_hon = st.form_submit_button("Gerar Contrato e Parcelas", type="primary", use_container_width=True)
-                    with col_b_h2:
-                        voltar_hon = st.form_submit_button("⬅️ Voltar", use_container_width=True)
+                
+                # 1️⃣ Passo 1: Informar os dados base
+                with st.expander("1️⃣ Dados do Contrato (Preencha para gerar a prévia)", expanded=not st.session_state.get('previa_gerada', False)):
+                    with st.form("fc_hon_params"):
+                        cli_op = st.selectbox("Cliente:", ["Outro"] + nomes) if nomes else "Outro"
+                        cli = st.text_input("Nome") if cli_op == "Outro" else cli_op
+                        serv = st.text_input("Serviço (Objeto do Contrato)")
+                        vtot = st.number_input("Valor Total do Contrato (R$)", min_value=0.0, step=100.0)
+                        
+                        col_e1, col_e2 = st.columns(2)
+                        with col_e1:
+                            v_entrada = st.number_input("Valor de Entrada (R$)", min_value=0.0, step=50.0, value=0.0)
+                        with col_e2:
+                            npar = st.number_input("Quantidade de Parcelas (Restante)", min_value=1, max_value=36, value=3)
+                        
+                        dt1 = st.date_input("Vencimento da 1ª Parcela (ou Entrada)", datetime.now())
+                        
+                        gerar_previa = st.form_submit_button("Gerar Tabela de Parcelas", type="primary", use_container_width=True)
 
-                    if salvar_hon:
-                        if not cli or not serv or vtot <= 0:
-                            st.error("Preencha o cliente, o serviço e um valor total válido.")
-                        elif v_entrada > vtot:
-                            st.error("O valor da entrada não pode ser maior que o valor total do contrato.")
-                        else:
-                            res = supabase.table("honorarios").insert({"cliente": cli, "servico": serv, "valor_total": float(vtot)}).execute()
-                            if res.data:
-                                h_id = res.data[0]['id']
-                                saldo_restante = vtot - v_entrada
+                        if gerar_previa:
+                            if not cli or not serv or vtot <= 0:
+                                st.error("Preencha o cliente, o serviço e um valor total válido.")
+                            elif v_entrada > vtot:
+                                st.error("O valor da entrada não pode ser maior que o valor total do contrato.")
+                            else:
+                                saldo = vtot - v_entrada
+                                parcelas_temp = []
                                 
+                                # Gera Parcela de Entrada
                                 if v_entrada > 0:
-                                    supabase.table("parcelas").insert({
-                                        "honorario_id": h_id, 
-                                        "numero_parcela": "Entrada", 
-                                        "valor": float(v_entrada), 
-                                        "vencimento": dt1.strftime("%Y-%m-%d"), 
-                                        "status": "Pendente"
-                                    }).execute()
-                                    data_primeira_parcela = dt1 + relativedelta(months=1)
+                                    parcelas_temp.append({
+                                        "Parcela": "Entrada",
+                                        "Vencimento": dt1,
+                                        "Valor (R$)": float(v_entrada)
+                                    })
+                                    dt_prox = dt1 + relativedelta(months=1)
                                 else:
-                                    data_primeira_parcela = dt1
-
-                                if npar > 0 and saldo_restante > 0:
-                                    vp = saldo_restante / npar
+                                    dt_prox = dt1
+                                    
+                                # Gera Parcelas Restantes
+                                if npar > 0 and saldo > 0:
+                                    vp = round(saldo / npar, 2)
                                     for i in range(int(npar)):
-                                        venc = (data_primeira_parcela + relativedelta(months=i)).strftime("%Y-%m-%d")
-                                        supabase.table("parcelas").insert({
-                                            "honorario_id": h_id, 
-                                            "numero_parcela": f"{i+1}/{int(npar)}", 
-                                            "valor": float(vp), 
-                                            "vencimento": venc, 
-                                            "status": "Pendente"
-                                        }).execute()
-
-                                registrar_auditoria(username, "Cadastrar Contrato com Entrada", "Pagamentos", f"Cliente: {cli} - Total: {formatar_moeda_br(vtot)}")
-                                st.cache_data.clear()
-                                st.session_state['cad_hon_sucesso'] = True
+                                        val_atual = vp if i < int(npar) - 1 else round(saldo - (vp * (int(npar) - 1)), 2)
+                                        parcelas_temp.append({
+                                            "Parcela": f"{i+1}/{int(npar)}",
+                                            "Vencimento": dt_prox + relativedelta(months=i),
+                                            "Valor (R$)": val_atual
+                                        })
+                                
+                                st.session_state['dados_contrato_temp'] = {
+                                    "cliente": cli, "servico": serv, "valor_total": float(vtot)
+                                }
+                                st.session_state['parcelas_temp'] = parcelas_temp
+                                st.session_state['previa_gerada'] = True
                                 st.rerun()
+
+                # 2️⃣ Passo 2: Tabela Interativa de Edição
+                if st.session_state.get('previa_gerada') and 'parcelas_temp' in st.session_state:
+                    st.markdown("### 2️⃣ Personalizar Valores e Vencimentos")
+                    st.caption("Dê dois cliques na célula de **Valor** ou **Vencimento** para editar a parcela livremente. O botão de salvar só será liberado se a soma bater com o total.")
+                    
+                    d_ct = st.session_state['dados_contrato_temp']
+                    st.info(f"**Cliente:** {d_ct['cliente']} | **Serviço:** {d_ct['servico']}")
+                    
+                    df_temp = pd.DataFrame(st.session_state['parcelas_temp'])
+                    
+                    # Tabela Editável
+                    df_editado = st.data_editor(
+                        df_temp,
+                        column_config={
+                            "Parcela": st.column_config.TextColumn("Parcela", disabled=True),
+                            "Vencimento": st.column_config.DateColumn("Vencimento", format="DD/MM/YYYY"),
+                            "Valor (R$)": st.column_config.NumberColumn("Valor (R$)", format="%.2f", min_value=0.0)
+                        },
+                        use_container_width=True,
+                        hide_index=True,
+                        key="editor_parcelas"
+                    )
+                    
+                    # Validação de Prova Real
+                    soma_editada = df_editado["Valor (R$)"].sum()
+                    diferenca = d_ct['valor_total'] - soma_editada
+                    
+                    col_m1, col_m2, col_m3 = st.columns(3)
+                    col_m1.metric("Valor Total do Contrato", formatar_moeda_br(d_ct['valor_total']))
+                    col_m2.metric("Soma das Parcelas na Tabela", formatar_moeda_br(soma_editada))
+                    
+                    pode_salvar = False
+                    if abs(diferenca) < 0.01:
+                        col_m3.success("✅ **Soma validada!**")
+                        pode_salvar = True
+                    else:
+                        col_m3.error(f"⚠️ **Diferença:** {formatar_moeda_br(diferenca)}")
+                        
+                    st.markdown("<br>", unsafe_allow_html=True)
+                    
+                    col_b1, col_b2 = st.columns(2)
+                    with col_b1:
+                        if st.button("💾 Confirmar e Salvar Contrato", type="primary", disabled=not pode_salvar, use_container_width=True):
+                            try:
+                                # Salva o Cabeçalho (Contrato)
+                                res_h = supabase.table("honorarios").insert({
+                                    "cliente": d_ct['cliente'], 
+                                    "servico": d_ct['servico'], 
+                                    "valor_total": float(d_ct['valor_total'])
+                                }).execute()
+                                
+                                if res_h.data:
+                                    h_id = res_h.data[0]['id']
+                                    
+                                    # Salva as Parcelas Editadas
+                                    payload_parcelas = []
+                                    for _, row in df_editado.iterrows():
+                                        payload_parcelas.append({
+                                            "honorario_id": h_id,
+                                            "numero_parcela": str(row["Parcela"]),
+                                            "valor": float(row["Valor (R$)"]),
+                                            "vencimento": row["Vencimento"].strftime("%Y-%m-%d"),
+                                            "status": "Pendente"
+                                        })
+                                    
+                                    supabase.table("parcelas").insert(payload_parcelas).execute()
+                                    
+                                    registrar_auditoria(username, "Cadastrar Contrato (Flexível)", "Pagamentos", f"Cliente: {d_ct['cliente']} - Total: {formatar_moeda_br(d_ct['valor_total'])}")
+                                    
+                                    # Limpeza de memória
+                                    st.cache_data.clear()
+                                    st.session_state['cad_hon_sucesso'] = True
+                                    st.session_state.pop('previa_gerada', None)
+                                    st.session_state.pop('parcelas_temp', None)
+                                    st.session_state.pop('dados_contrato_temp', None)
+                                    st.rerun()
+                            except Exception as e:
+                                st.error(f"Erro ao salvar contrato: {e}")
+
+                    with col_b2:
+                        if st.button("❌ Cancelar / Limpar", use_container_width=True):
+                            st.session_state.pop('previa_gerada', None)
+                            st.rerun()
+
+                # 3️⃣ Mensagem de Sucesso (após salvar)
+                if st.session_state.get('cad_hon_sucesso'):
+                    st.success("🎉 Contrato e parcelas cadastrados com sucesso!")
+                    col_s1, col_s2 = st.columns(2)
+                    with col_s1:
+                        if st.button("➕ Cadastrar Outro Contrato", type="primary", use_container_width=True):
+                            st.session_state['cad_hon_sucesso'] = False
+                            st.rerun()
+                    with col_s2:
+                        if st.button("⬅️ Ver Parcelas (Voltar)", use_container_width=True):
+                            st.session_state['cad_hon_sucesso'] = False
+                            st.session_state['submenu_atual'] = "Ver Parcelas"
+                            st.rerun()
 
             elif sub == "Ver Parcelas":
                 st.header("📋 Visualizar Parcelas")

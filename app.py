@@ -1169,10 +1169,19 @@ elif authentication_status == True:
 
             elif sub == "Consultar Meus Processos":
                 st.header("📋 Meus Processos & Fluxo de Trabalho")
-                res_mp = carregar_dados("meus_processos")
+                
+                # Usuários comuns veem apenas seus processos; Administradores podem ver todos ou gerenciar
+                try:
+                    if user_role == 'admin':
+                        res_mp = carregar_dados("meus_processos")
+                    else:
+                        res_query = supabase.table("meus_processos").select("*").eq("responsavel", name).execute()
+                        res_mp = res_query.data if res_query.data else []
+                except Exception:
+                    res_mp = []
                 
                 if not res_mp:
-                    st.info("Nenhum processo cadastrado no momento.")
+                    st.info("Nenhum processo cadastrado ou atribuído a você no momento.")
                 else:
                     df_mp = pd.DataFrame(res_mp)
                     if 'data_atualizacao' in df_mp.columns:

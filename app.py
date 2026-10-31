@@ -72,7 +72,7 @@ def registrar_auditoria(usuario, acao, modulo, detalhes=""):
         pass
 
 def limpar_flags_cadastro():
-    for k in ['cad_cli_sucesso', 'cad_hon_sucesso', 'cad_per_sucesso', 'cad_exp_sucesso', 'cad_trf_sucesso', 'cad_pen_sucesso', 'cad_user_sucesso', 'ultimo_cliente_cadastrado_id', 'ultimo_cliente_cadastrado_nome', 'ultimo_cliente_cadastrado_doc', 'ultimo_cliente_cadastrado_tel', 'ultimo_cliente_cadastrado_obs']:
+    for k in ['cad_cli_sucesso', 'cad_hon_sucesso', 'cad_per_sucesso', 'cad_exp_sucesso', 'cad_trf_sucesso', 'cad_pen_sucesso', 'cad_pros_pend_sucesso', 'cad_user_sucesso', 'ultimo_cliente_cadastrado_id', 'ultimo_cliente_cadastrado_nome', 'ultimo_cliente_cadastrado_doc', 'ultimo_cliente_cadastrado_tel', 'ultimo_cliente_cadastrado_obs']:
         if k in st.session_state:
             st.session_state[k] = False if isinstance(st.session_state[k], bool) else None
 
@@ -91,6 +91,7 @@ def validar_telefone_fixo(v):
     return len(nums) == 10
 
 def validar_celular(v):
+    if not v or not str(v).strip(): return True
     nums = re.sub(r'\D', '', str(v))
     return len(nums) == 11 and nums[2] == '9'
 
@@ -182,8 +183,8 @@ credentials = carregar_usuarios_db()
 
 authenticator = stauth.Authenticate(
     credentials, 
-    cookie_name='sistema_dejure_cookie_v13', 
-    cookie_key='chave_seguranca_dejure_2026_v13', 
+    cookie_name='sistema_dejure_cookie_v14', 
+    cookie_key='chave_seguranca_dejure_2026_v14', 
     cookie_expiry_days=30
 )
 
@@ -374,6 +375,7 @@ elif authentication_status == True:
         modulos = {
             "🏠 Página Inicial": "🏠 Página Inicial",
             "👥 Clientes": "Clientes",
+            "📍 Prospectados Pendentes": "Prospectados Pendentes",
             "📂 Meus Processos": "Meus Processos",
             "💰 Pagamentos": "Pagamentos",
             "🔬 Perícias": "Perícias",
@@ -393,6 +395,7 @@ elif authentication_status == True:
                 st.session_state['pagina_atual'] = pag
                 st.session_state['submenu_atual'] = "" if pag == "🏠 Página Inicial" else {
                     "Clientes": "Consultar Clientes", 
+                    "Prospectados Pendentes": "Consultar Prospectados Pendentes",
                     "Meus Processos": "Consultar Meus Processos",
                     "Pagamentos": "Ver Parcelas", 
                     "Perícias": "Ver Perícias", 
@@ -426,7 +429,7 @@ elif authentication_status == True:
         st.markdown("### 📊 Visão Geral do Escritório")
         
         try:
-            cli, hon, per, exp, exp_trf, pen = carregar_dados("clientes_cadastrados"), carregar_dados("honorarios"), carregar_dados("pericias"), carregar_dados("expedientes"), carregar_dados("expedientes_trf"), carregar_dados("pendencias")
+            cli, pros_pend, hon, per, exp, exp_trf, pen = carregar_dados("clientes_cadastrados"), carregar_dados("prospectados_pendentes"), carregar_dados("honorarios"), carregar_dados("pericias"), carregar_dados("expedientes"), carregar_dados("expedientes_trf"), carregar_dados("pendencias")
             parcelas_db = carregar_dados("parcelas")
             
             per_pendentes_com_data = 0
@@ -434,13 +437,14 @@ elif authentication_status == True:
                 if p.get('status') == 'Pendente' and (p.get('data_pm') or p.get('data_ps')):
                     per_pendentes_com_data += 1
 
-            c1, c2, c3, c4, c5, c6 = st.columns(6)
+            c1, c2, c3, c4, c5, c6, c7 = st.columns(7)
             c1.metric("Clientes", len(cli))
-            c2.metric("Contratos", len(hon))
-            c3.metric("Perícias Pend.", per_pendentes_com_data)
-            c4.metric("Expedientes Pend.", len([e for e in exp if e.get('status') == 'Pendente' and e.get('data_manifestacao')]))
-            c5.metric("Exp. TRF Pend.", len([et for et in exp_trf if et.get('status') == 'Pendente' and et.get('data_manifestacao')]))
-            c6.metric("Parcelas Pend.", len([pc for pc in parcelas_db if pc.get('status') == 'Pendente' and pc.get('vencimento')]))
+            c2.metric("Prospectados Pend.", len(pros_pend))
+            c3.metric("Contratos", len(hon))
+            c4.metric("Perícias Pend.", per_pendentes_com_data)
+            c5.metric("Expedientes Pend.", len([e for e in exp if e.get('status') == 'Pendente' and e.get('data_manifestacao')]))
+            c6.metric("Exp. TRF Pend.", len([et for et in exp_trf if et.get('status') == 'Pendente' and et.get('data_manifestacao')]))
+            c7.metric("Parcelas Pend.", len([pc for pc in parcelas_db if pc.get('status') == 'Pendente' and pc.get('vencimento')]))
         except Exception: pass
 
         st.markdown("---")
@@ -700,6 +704,9 @@ elif authentication_status == True:
         if menu_principal == "Clientes":
             acoes = ["Consultar Clientes", "Cadastrar Cliente", "Importar Excel", "Editar Cliente", "Exportar Base (Backup)"]
             if user_role == 'admin': acoes.insert(4, "Excluir Cliente")
+        elif menu_principal == "Prospectados Pendentes":
+            acoes = ["Consultar Prospectados Pendentes", "Cadastrar Prospectado Pendente", "Editar Prospectado Pendente"]
+            if user_role == 'admin': acoes.append("Excluir Prospectado Pendente")
         elif menu_principal == "Meus Processos":
             acoes = ["Consultar Meus Processos", "Cadastrar Processo"]
             if user_role == 'admin': acoes.append("Central de Revisões")
@@ -1148,6 +1155,161 @@ elif authentication_status == True:
                     registrar_auditoria(username, "Backup Clientes", "Clientes", "Download da base realizado.")
                     st.download_button("Baixar CSV", data=pd.DataFrame(res).to_csv(index=False).encode('utf-8'), file_name=f"clientes_{date.today()}.csv", mime="text/csv", type="primary")
                 else: st.info("Sem dados.")
+
+        # --- MÓDULO PROSPECTADOS PENDENTES ---
+        elif menu_principal == "Prospectados Pendentes":
+            if sub == "Cadastrar Prospectado Pendente":
+                st.header("📍 Cadastrar Novo Prospectado Pendente")
+                st.caption("Clientes indicados que ainda não foram visitados. Nome e Prospectador são obrigatórios (*).")
+
+                with st.form("form_cad_pros_pend", clear_on_submit=True):
+                    cp_nome = st.text_input("Nome do Cliente *")
+                    cp_tel = st.text_input("Telefone Fixo (Opcional)")
+                    cp_cel = st.text_input("Celular (Opcional)")
+                    cp_prosp = st.text_input("Prospectador *")
+                    cp_cel_pros = st.text_input("Celular do Prospectado (Opcional)")
+
+                    col_bp1, col_bp2 = st.columns(2)
+                    with col_bp1:
+                        salvar_pros = st.form_submit_button("Salvar Prospectado Pendente", type="primary", use_container_width=True)
+                    with col_bp2:
+                        voltar_pros = st.form_submit_button("⬅️ Voltar", use_container_width=True)
+
+                    if salvar_pros:
+                        errs_pros = []
+                        if not cp_nome.strip(): errs_pros.append("O campo **Nome** é obrigatório.")
+                        if not cp_prosp.strip(): errs_pros.append("O campo **Prospectador** é obrigatório.")
+
+                        if cp_tel.strip() and not validar_telefone_fixo(cp_tel):
+                            errs_pros.append("O **Telefone** deve conter exatamente 10 dígitos.")
+                        if cp_cel.strip() and not validar_celular(cp_cel):
+                            errs_pros.append("O **Celular** deve conter 11 dígitos com o 9 na frente.")
+                        if cp_cel_pros.strip() and not validar_celular(cp_cel_pros):
+                            errs_pros.append("O **Celular do Prospectado** deve conter 11 dígitos com o 9 na frente.")
+
+                        if errs_pros:
+                            for e in errs_pros:
+                                st.error(f"⚠️ {e}")
+                        else:
+                            try:
+                                supabase.table("prospectados_pendentes").insert({
+                                    "nome": cp_nome.strip(),
+                                    "telefone": formatar_telefone(cp_tel) if cp_tel.strip() else None,
+                                    "celular": formatar_telefone(cp_cel) if cp_cel.strip() else None,
+                                    "prospectador": cp_prosp.strip(),
+                                    "celular_prospectados": formatar_telefone(cp_cel_pros) if cp_cel_pros.strip() else None
+                                }).execute()
+
+                                registrar_auditoria(username, "Cadastrar Prospectado Pendente", "Prospectados Pendentes", f"Cliente: {cp_nome.strip()} - Prospectador: {cp_prosp.strip()}")
+                                st.cache_data.clear()
+                                st.session_state['cad_pros_pend_sucesso'] = True
+                                st.rerun()
+                            except Exception as ex:
+                                st.error(f"Erro ao salvar prospectado pendente: {ex}")
+
+                    if voltar_pros:
+                        st.session_state['submenu_atual'] = "Consultar Prospectados Pendentes"
+                        st.rerun()
+
+                if st.session_state.get('cad_pros_pend_sucesso'):
+                    st.success("🎉 Prospectado pendente cadastrado com sucesso!")
+                    col_1, col_2 = st.columns(2)
+                    with col_1:
+                        if st.button("➕ Cadastrar Outro", key="btn_novo_pros_pend", type="primary", use_container_width=True):
+                            st.session_state['cad_pros_pend_sucesso'] = False
+                            st.rerun()
+                    with col_2:
+                        if st.button("⬅️ Voltar para Lista", key="btn_vol_pros_pend", use_container_width=True):
+                            st.session_state['cad_pros_pend_sucesso'] = False
+                            st.session_state['submenu_atual'] = "Consultar Prospectados Pendentes"
+                            st.rerun()
+
+            elif sub == "Consultar Prospectados Pendentes":
+                st.header("📋 Lista de Clientes Indicados (Não Visitados)")
+                res_pros = carregar_dados("prospectados_pendentes")
+                if res_pros:
+                    df_pros = pd.DataFrame(res_pros)
+                    colunas_ordem = [c for c in ['id', 'nome', 'telefone', 'celular', 'prospectador', 'celular_prospectados'] if c in df_pros.columns]
+                    st.dataframe(df_pros[colunas_ordem], use_container_width=True, hide_index=True)
+                else:
+                    st.info("Nenhum prospectado pendente cadastrado no momento.")
+
+            elif sub == "Editar Prospectado Pendente":
+                st.header("✏️ Editar Prospectado Pendente")
+                res_pros = carregar_dados("prospectados_pendentes")
+                if res_pros:
+                    pdict = {f"ID: {p['id']} | {p['nome']} (Prospectador: {p['prospectador']})": p for p in res_pros}
+                    sel_p = st.selectbox("Selecione o Prospectado Pendente:", list(pdict.keys()))
+                    obj_p = pdict[sel_p]
+
+                    with st.form("form_ed_pros_pend"):
+                        ep_nome = st.text_input("Nome do Cliente *", value=obj_p.get('nome', ''))
+                        ep_tel = st.text_input("Telefone Fixo", value=obj_p.get('telefone', '') or '')
+                        ep_cel = st.text_input("Celular", value=obj_p.get('celular', '') or '')
+                        ep_prosp = st.text_input("Prospectador *", value=obj_p.get('prospectador', ''))
+                        ep_cel_pros = st.text_input("Celular do Prospectado", value=obj_p.get('celular_prospectados', '') or '')
+
+                        col_ep1, col_ep2 = st.columns(2)
+                        with col_ep1:
+                            salvar_ed_pros = st.form_submit_button("Atualizar Prospectado", type="primary", use_container_width=True)
+                        with col_ep2:
+                            voltar_ed_pros = st.form_submit_button("⬅️ Voltar", use_container_width=True)
+
+                        if salvar_ed_pros:
+                            errs_ed = []
+                            if not ep_nome.strip(): errs_ed.append("O campo **Nome** é obrigatório.")
+                            if not ep_prosp.strip(): errs_ed.append("O campo **Prospectador** é obrigatório.")
+
+                            if ep_tel.strip() and not validar_telefone_fixo(ep_tel):
+                                errs_ed.append("O **Telefone** deve conter exatamente 10 dígitos.")
+                            if ep_cel.strip() and not validar_celular(ep_cel):
+                                errs_ed.append("O **Celular** deve conter 11 dígitos.")
+                            if ep_cel_pros.strip() and not validar_celular(ep_cel_pros):
+                                errs_ed.append("O **Celular do Prospectado** deve conter 11 dígitos.")
+
+                            if errs_ed:
+                                for e in errs_ed:
+                                    st.error(f"⚠️ {e}")
+                            else:
+                                try:
+                                    supabase.table("prospectados_pendentes").update({
+                                        "nome": ep_nome.strip(),
+                                        "telefone": formatar_telefone(ep_tel) if ep_tel.strip() else None,
+                                        "celular": formatar_telefone(ep_cel) if ep_cel.strip() else None,
+                                        "prospectador": ep_prosp.strip(),
+                                        "celular_prospectados": formatar_telefone(ep_cel_pros) if ep_cel_pros.strip() else None
+                                    }).eq("id", obj_p['id']).execute()
+
+                                    registrar_auditoria(username, "Editar Prospectado Pendente", "Prospectados Pendentes", f"ID: {obj_p['id']} - {ep_nome.strip()}")
+                                    st.cache_data.clear()
+                                    st.success("🎉 Prospectado atualizado com sucesso!")
+                                    time.sleep(1)
+                                    st.rerun()
+                                except Exception as ex:
+                                    st.error(f"Erro ao atualizar: {ex}")
+
+                        if voltar_ed_pros:
+                            st.session_state['submenu_atual'] = "Consultar Prospectados Pendentes"
+                            st.rerun()
+                else:
+                    st.info("Nenhum prospectado pendente para editar.")
+
+            elif sub == "Excluir Prospectado Pendente" and user_role == 'admin':
+                st.header("🗑️ Excluir Prospectado Pendente")
+                res_pros = carregar_dados("prospectados_pendentes")
+                if res_pros:
+                    pdict = {f"ID: {p['id']} | {p['nome']} (Prospectador: {p['prospectador']})": p['id'] for p in res_pros}
+                    sel_p_del = st.selectbox("Selecione para excluir:", list(pdict.keys()))
+                    
+                    if st.checkbox("Confirmo exclusão permanente deste prospectado pendente."):
+                        if st.button("EXCLUIR SELECIONADO", type="primary"):
+                            supabase.table("prospectados_pendentes").delete().eq("id", pdict[sel_p_del]).execute()
+                            registrar_auditoria(username, "Excluir Prospectado Pendente", "Prospectados Pendentes", f"ID: {pdict[sel_p_del]}")
+                            st.cache_data.clear()
+                            st.success("✅ Excluído com sucesso!")
+                            st.rerun()
+                else:
+                    st.info("Nenhum prospectado pendente cadastrado.")
 
         # --- MÓDULO MEUS PROCESSOS ---
         elif menu_principal == "Meus Processos":

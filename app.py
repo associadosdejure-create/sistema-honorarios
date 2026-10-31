@@ -577,7 +577,6 @@ elif authentication_status == True:
 
                 st.markdown("---")
                 
-                # --- ABAS PARA DISTRIBUIR OU EXCLUIR ---
                 tab_dist_cad, tab_dist_exc = st.tabs(["⚖️ Distribuir Processo", "🗑️ Excluir da Fila"])
                 
                 with tab_dist_cad:
@@ -703,9 +702,7 @@ elif authentication_status == True:
             if user_role == 'admin': acoes.insert(4, "Excluir Cliente")
         elif menu_principal == "Meus Processos":
             acoes = ["Consultar Meus Processos", "Cadastrar Processo"]
-            if user_role == 'admin': 
-                acoes.append("Central de Revisões")
-                acoes.append("Excluir Processo (Admin)")
+            if user_role == 'admin': acoes.append("Central de Revisões")
         elif menu_principal == "Pagamentos":
             acoes = ["Ver Parcelas", "Cadastrar Contrato", "Editar Contrato"]
             if user_role == 'admin': acoes = ["Ver Parcelas", "Cadastrar Contrato", "Baixar Parcela", "Extrato de Repasses", "Relatório por Período", "Editar Contrato", "Excluir Contrato"]
@@ -1192,7 +1189,7 @@ elif authentication_status == True:
                                 st.error(f"Erro ao cadastrar processo: {e}")
 
             elif sub == "Consultar Meus Processos":
-                st.header("📋 Meus Processos & Fluxo de Trabalho")
+                st.header("📋 Gerenciamento de Processos")
                 
                 try:
                     if user_role == 'admin':
@@ -1204,7 +1201,7 @@ elif authentication_status == True:
                     res_mp = []
                 
                 if not res_mp:
-                    st.info("Nenhum processo cadastrado ou atribuído a você no momento.")
+                    st.info("Nenhum processo cadastrado ou distribuído no momento.")
                 else:
                     df_mp = pd.DataFrame(res_mp)
                     if 'data_atualizacao' in df_mp.columns:
@@ -1216,7 +1213,7 @@ elif authentication_status == True:
                         st.dataframe(df_mp, use_container_width=True, hide_index=True)
 
                     st.markdown("---")
-                    st.subheader("⚡ Gerenciar Processo Selecionado")
+                    st.subheader("⚡ Gerenciar ou Excluir Processo")
 
                     dict_ps = {f"ID: {p['id']} | Proc: {p['numero_processo']} - Cliente: {p['cliente']} (Resp: {p.get('responsavel', 'N/D')})": p for p in res_mp}
                     sel_proc_str = st.selectbox("Selecione o Processo:", list(dict_ps.keys()))
@@ -1232,9 +1229,9 @@ elif authentication_status == True:
                     with col_g2:
                         nova_desc = st.text_area("Atualizar Observações / Andamento:", value=obj_proc.get('descricao', ''))
 
-                    col_btn1, col_btn2 = st.columns(2)
+                    col_btn1, col_btn2, col_btn3 = st.columns(3)
                     with col_btn1:
-                        if st.button("💾 Salvar Alterações", type="primary"):
+                        if st.button("💾 Salvar Alterações", type="primary", use_container_width=True):
                             try:
                                 supabase.table("meus_processos").update({
                                     "status": novo_status,
@@ -1249,7 +1246,7 @@ elif authentication_status == True:
 
                     with col_btn2:
                         if not obj_proc.get('solicitou_revisao') and obj_proc.get('status') != "Aguardando Revisão":
-                            if st.button("🚀 Enviar para Revisão (Administradores)"):
+                            if st.button("🚀 Enviar para Revisão", use_container_width=True):
                                 try:
                                     supabase.table("meus_processos").update({
                                         "status": "Aguardando Revisão",
@@ -1257,12 +1254,25 @@ elif authentication_status == True:
                                     }).eq("id", obj_proc['id']).execute()
                                     registrar_auditoria(username, "Enviar para Revisão", "Meus Processos", f"Proc ID {obj_proc['id']} enviado para revisão.")
                                     st.cache_data.clear()
-                                    st.success("🚀 Processo enviado para a fila de revisão dos administradores!")
+                                    st.success("🚀 Processo enviado para revisão!")
                                     st.rerun()
                                 except Exception as e:
                                     st.error(f"Erro ao enviar para revisão: {e}")
                         else:
-                            st.info("ℹ️ Este processo já se encontra enviado para revisão ou aguardando análise.")
+                            st.info("ℹ️ Já em revisão.")
+
+                    with col_btn3:
+                        if user_role == 'admin':
+                            if st.button("🗑️ Excluir Processo", type="primary", use_container_width=True):
+                                try:
+                                    supabase.table("meus_processos").delete().eq("id", obj_proc['id']).execute()
+                                    registrar_auditoria(username, "Excluir Processo (Admin)", "Meus Processos", f"Processo ID {obj_proc['id']} ({obj_proc['numero_processo']}) do usuário {obj_proc.get('responsavel')} excluído.")
+                                    st.cache_data.clear()
+                                    st.success("✅ Processo excluído permanentemente da base de dados!")
+                                    time.sleep(1)
+                                    st.rerun()
+                                except Exception as e:
+                                    st.error(f"Erro ao excluir processo: {e}")
 
             elif sub == "Central de Revisões" and user_role == 'admin':
                 st.header("🛡️ Central de Revisões de Peças e Processos")
@@ -1331,36 +1341,6 @@ elif authentication_status == True:
 
                 except Exception as e:
                     st.error(f"Erro ao carregar central de revisões: {e}")
-
-            elif sub == "Excluir Processo (Admin)" and user_role == 'admin':
-                st.header("🗑️ Excluir Processo de Qualquer Usuário")
-                st.caption("Módulo administrativo para remoção permanente de registros da tabela 'Meus Processos'.")
-
-                try:
-                    res_todos_mp = supabase.table("meus_processos").select("*").execute()
-                    lista_todos_mp = res_todos_mp.data if res_todos_mp.data else []
-
-                    if not lista_todos_mp:
-                        st.info("Nenhum processo cadastrado no sistema no momento.")
-                    else:
-                        dict_mp_todos = {f"ID: {p['id']} | Proc: {p['numero_processo']} | Cliente: {p['cliente']} (Resp: {p.get('responsavel', 'N/D')})": p['id'] for p in lista_todos_mp}
-                        
-                        sel_exc_mp_str = st.selectbox("Selecione o Processo para Excluir:", list(dict_mp_todos.keys()))
-                        id_mp_para_excluir = dict_mp_todos[sel_exc_mp_str]
-
-                        if st.checkbox("Confirmo a exclusão permanente deste processo (de qualquer usuário)."):
-                            if st.button("🗑️ EXCLUIR PROCESSO SELECIONADO", type="primary"):
-                                try:
-                                    supabase.table("meus_processos").delete().eq("id", id_mp_para_excluir).execute()
-                                    registrar_auditoria(username, "Excluir Processo (Admin)", "Meus Processos", f"Processo ID {id_mp_para_excluir} excluído pelo administrador.")
-                                    st.cache_data.clear()
-                                    st.success("✅ Processo excluído com sucesso do sistema!")
-                                    time.sleep(1)
-                                    st.rerun()
-                                except Exception as e:
-                                    st.error(f"Erro ao excluir processo: {e}")
-                except Exception as e:
-                    st.error(f"Erro ao carregar processos: {e}")
 
         # --- MÓDULO EQUIPE ---
         elif menu_principal == "Equipe Dejure":

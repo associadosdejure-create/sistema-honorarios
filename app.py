@@ -432,6 +432,9 @@ elif authentication_status == True:
             cli, pros_pend, hon, per, exp, exp_trf, pen = carregar_dados("clientes_cadastrados"), carregar_dados("prospectados_pendentes"), carregar_dados("honorarios"), carregar_dados("pericias"), carregar_dados("expedientes"), carregar_dados("expedientes_trf"), carregar_dados("pendencias")
             parcelas_db = carregar_dados("parcelas")
             
+            # Filtra apenas os prospectados que ainda NÃO foram atendidos para o contador da Visão Geral
+            pros_pendentes_reais = [p for p in pros_pend if not p.get('atendido', False)]
+
             per_pendentes_com_data = 0
             for p in per:
                 if p.get('status') == 'Pendente' and (p.get('data_pm') or p.get('data_ps')):
@@ -439,7 +442,7 @@ elif authentication_status == True:
 
             c1, c2, c3, c4, c5, c6, c7 = st.columns(7)
             c1.metric("Clientes", len(cli))
-            c2.metric("Prospectados Pend.", len(pros_pend))
+            c2.metric("Prospectados Pend.", len(pros_pendentes_reais))
             c3.metric("Contratos", len(hon))
             c4.metric("Perícias Pend.", per_pendentes_com_data)
             c5.metric("Expedientes Pend.", len([e for e in exp if e.get('status') == 'Pendente' and e.get('data_manifestacao')]))
@@ -1197,7 +1200,8 @@ elif authentication_status == True:
                                     "telefone": formatar_telefone(cp_tel) if cp_tel.strip() else None,
                                     "celular": formatar_telefone(cp_cel) if cp_cel.strip() else None,
                                     "prospectador": cp_prosp.strip(),
-                                    "celular_prospectados": formatar_telefone(cp_cel_pros) if cp_cel_pros.strip() else None
+                                    "celular_prospectados": formatar_telefone(cp_cel_pros) if cp_cel_pros.strip() else None,
+                                    "atendido": False
                                 }).execute()
 
                                 registrar_auditoria(username, "Cadastrar Prospectado Pendente", "Prospectados Pendentes", f"Cliente: {cp_nome.strip()} - Prospectador: {cp_prosp.strip()}")
@@ -1227,10 +1231,43 @@ elif authentication_status == True:
             elif sub == "Consultar Prospectados Pendentes":
                 st.header("📋 Lista de Clientes Indicados (Não Visitados)")
                 res_pros = carregar_dados("prospectados_pendentes")
+                
+                # Filtra para exibir apenas os que ainda não foram atendidos por padrão, ou dá opção de ver todos
+                mostrar_todos = st.checkbox("Mostrar também os prospectados já atendidos", value=False)
+                
                 if res_pros:
-                    df_pros = pd.DataFrame(res_pros)
-                    colunas_ordem = [c for c in ['id', 'nome', 'telefone', 'celular', 'prospectador', 'celular_prospectados'] if c in df_pros.columns]
-                    st.dataframe(df_pros[colunas_ordem], use_container_width=True, hide_index=True)
+                    if not mostrar_todos:
+                        res_pros_filtrado = [p for p in res_pros if not p.get('atendido', False)]
+                    else:
+                        res_pros_filtrado = res_pros
+
+                    if not res_pros_filtrado:
+                        st.info("Nenhum prospectado pendente no momento. Todos foram atendidos! 🎉")
+                    else:
+                        st.markdown("##### ⚡ Marque a caixa **Atendido** para concluir a visita e remover o alerta da Visão Geral:")
+                        
+                        for p in res_pros_filtrado:
+                            with st.container(border=True):
+                                col_info1, col_info2, col_info3, col_info4 = st.columns([3, 2, 2, 1])
+                                with col_info1:
+                                    st.write(f"**Nome:** {p.get('nome')}")
+                                    st.caption(f"Prospectador: {p.get('prospectador')}")
+                                with col_info2:
+                                    st.write(f"**Tel / Cel:** {p.get('telefone') or p.get('celular') or 'N/D'}")
+                                with col_info3:
+                                    st.write(f"**Cel. Prospectado:** {p.get('celular_prospectados') or 'N/D'}")
+                                with col_info4:
+                                    status_atual = p.get('atendido', False)
+                                    check_atendido = st.checkbox("Atendido", value=status_atual, key=f"chk_atend_{p['id']}")
+                                    
+                                    if check_atendido != status_atual:
+                                        try:
+                                            supabase.table("prospectados_pendentes").update({"atendido": check_atendido}).eq("id", p['id']).execute()
+                                            registrar_auditoria(username, "Marcar Atendido", "Prospectados Pendentes", f"ID {p['id']} alterado para atendido: {check_atendido}")
+                                            st.cache_data.clear()
+                                            st.rerun()
+                                        except Exception as e:
+                                            st.error(f"Erro ao atualizar: {e}")
                 else:
                     st.info("Nenhum prospectado pendente cadastrado no momento.")
 
@@ -1248,6 +1285,7 @@ elif authentication_status == True:
                         ep_cel = st.text_input("Celular", value=obj_p.get('celular', '') or '')
                         ep_prosp = st.text_input("Prospectador *", value=obj_p.get('prospectador', ''))
                         ep_cel_pros = st.text_input("Celular do Prospectado", value=obj_p.get('celular_prospectados', '') or '')
+                        ep_atendido = st.checkbox("Marcar como Atendido", value=obj_p.get('atendido', False))
 
                         col_ep1, col_ep2 = st.columns(2)
                         with col_ep1:
@@ -1277,7 +1315,8 @@ elif authentication_status == True:
                                         "telefone": formatar_telefone(ep_tel) if ep_tel.strip() else None,
                                         "celular": formatar_telefone(ep_cel) if ep_cel.strip() else None,
                                         "prospectador": ep_prosp.strip(),
-                                        "celular_prospectados": formatar_telefone(ep_cel_pros) if ep_cel_pros.strip() else None
+                                        "celular_prospectados": formatar_telefone(ep_cel_pros) if ep_cel_pros.strip() else None,
+                                        "atendido": ep_atendido
                                     }).eq("id", obj_p['id']).execute()
 
                                     registrar_auditoria(username, "Editar Prospectado Pendente", "Prospectados Pendentes", f"ID: {obj_p['id']} - {ep_nome.strip()}")

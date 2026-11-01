@@ -718,7 +718,15 @@ elif authentication_status == True:
             destaque_rotulo = '★ DESTAQUE DO MÊS'
 
         linhas = []
-        for posicao, (nome, pontos) in enumerate(ranking, 1):
+        # Classificação de competição: pontuações iguais têm a mesma posição.
+        # Exemplo: 8, 8, 5, 3 -> 1º, 1º, 3º, 4º.
+        posicao_anterior = None
+        pontos_anteriores = None
+        for indice, (nome, pontos) in enumerate(ranking, 1):
+            if pontos != pontos_anteriores:
+                posicao_anterior = indice
+                pontos_anteriores = pontos
+            posicao = posicao_anterior
             porcentagem = (100 * pontos / maior) if maior else 0
             classe = ' dj-first' if pontos > 0 and pontos == maior else ''
             linhas.append(

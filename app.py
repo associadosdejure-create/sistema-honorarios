@@ -158,14 +158,13 @@ def carregar_usuarios_db():
                 uname = str(u.get("username", "")).strip().lower()
                 if not uname: continue
 
-                # O master mantém perfil administrativo fixo, mas usa a senha
-                # persistida no Supabase quando já tiver sido alterada.
+                # Compatibilidade com registros antigos: somente uma senha alterada
+                # nesta tela (identificada pelo marcador) substitui a senha inicial.
                 if uname == "master":
                     senha_master_db = str(u.get("senha_hash") or u.get("password") or "").strip()
-                    if not senha_master_db.startswith("$2"):
-                        st.error("Registro master inválido no banco. Contate o administrador.")
-                        st.stop()
-                    cred_dict["usernames"]["master"]["password"] = senha_master_db
+                    senha_foi_alterada = str(u.get("nome_completo") or "").endswith(" [SENHA_ALTERADA]")
+                    if senha_foi_alterada and senha_master_db.startswith("$2"):
+                        cred_dict["usernames"]["master"]["password"] = senha_master_db
                     continue
                 
                 senha_db = str(u.get("senha_hash", u.get("password", ""))).strip()
@@ -1774,11 +1773,12 @@ elif authentication_status == True:
                                 consulta = supabase.table("usuarios_sistema").select("id").eq("username", "master").execute()
                                 if consulta.data:
                                     resposta = supabase.table("usuarios_sistema").update({
-                                        "senha_hash": novo_hash, "password": novo_hash
+                                        "senha_hash": novo_hash, "password": novo_hash,
+                                        "nome_completo": "Administrador Master [SENHA_ALTERADA]"
                                     }).eq("username", "master").execute()
                                 else:
                                     resposta = supabase.table("usuarios_sistema").insert({
-                                        "username": "master", "nome_completo": "Administrador Master",
+                                        "username": "master", "nome_completo": "Administrador Master [SENHA_ALTERADA]",
                                         "name": "Administrador Master", "senha_hash": novo_hash,
                                         "password": novo_hash, "role": "admin", "trocar_senha": False
                                     }).execute()

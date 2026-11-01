@@ -10,6 +10,7 @@ import os
 import bcrypt
 import json
 import base64
+import html
 import re
 from decimal import Decimal, InvalidOperation
 
@@ -658,35 +659,89 @@ elif authentication_status == True:
                       key=lambda item: (-item[1], item[0].casefold()))
 
     def exibir_placar_protocolos(eventos, mes_escolhido, credenciais):
+        """Placar premium: somente apresentação; mantém as regras e os dados originais."""
         ranking = montar_ranking_protocolos(eventos, credenciais)
         total = sum(pontos for _, pontos in ranking)
         com_protocolos = sum(pontos > 0 for _, pontos in ranking)
-        c1, c2, c3 = st.columns(3)
-        c1.metric('Protocolos no mês', total)
-        c2.metric('Usuários no placar', len(ranking))
-        c3.metric('Colaboradores com protocolos', com_protocolos)
-        lideres = []
-        if total > 0:
-            maior = ranking[0][1]
-            lideres = [nome for nome, pontos in ranking if pontos == maior]
-            if len(lideres) == 1:
-                st.success(f'Destaque de {mes_escolhido}: {lideres[0]} — {maior} protocolo(s)')
-            else:
-                st.info(f'Empate no destaque de {mes_escolhido}: ' + ', '.join(lideres) + f' — {maior} protocolo(s) cada')
+        maior = ranking[0][1] if ranking else 0
+        lideres = [nome for nome, pontos in ranking if pontos == maior] if maior else []
+
+        st.markdown("""
+        <style>
+        .dj-placar {font-family:Inter,'Segoe UI',Arial,sans-serif;color:#E7E9EC;}
+        .dj-placar .dj-kpis {display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin:12px 0 16px;}
+        .dj-placar .dj-kpi {background:#1C2229;border:1px solid #343A40;border-radius:12px;padding:15px 17px;}
+        .dj-placar .dj-kpi-label {font-size:12px;color:#B4BAC2;margin-bottom:8px;}
+        .dj-placar .dj-kpi-number {font-size:29px;line-height:1.1;color:#D4AF37;font-weight:750;}
+        .dj-placar .dj-destaque {background:#262219;border:1px solid #75602C;border-radius:12px;padding:16px 18px;margin-bottom:19px;}
+        .dj-placar .dj-destaque-label {font-size:12px;letter-spacing:.07em;font-weight:750;color:#D4AF37;margin-bottom:7px;}
+        .dj-placar .dj-destaque-nome {color:#F3E5BD;font-size:17px;font-weight:700;overflow-wrap:anywhere;}
+        .dj-placar .dj-destaque-sub {font-size:12px;color:#C7BA96;margin-top:5px;}
+        .dj-placar .dj-rank-title {font-size:15px;font-weight:700;color:#D4AF37;margin-bottom:12px;}
+        .dj-placar .dj-rank-item {display:flex;gap:13px;align-items:center;background:#1A1E24;border:1px solid #30353B;border-radius:10px;padding:11px 13px;margin-bottom:8px;}
+        .dj-placar .dj-rank-item.dj-first {border-color:#75602C;background:#211F1B;}
+        .dj-placar .dj-rank-pos {flex:0 0 38px;height:35px;border-radius:9px;background:#2C323A;color:#D6D9DF;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:750;}
+        .dj-placar .dj-first .dj-rank-pos {background:#6B5522;color:#FFE19A;}
+        .dj-placar .dj-rank-main {flex:1;min-width:0;}
+        .dj-placar .dj-rank-head {display:flex;justify-content:space-between;align-items:baseline;gap:10px;margin-bottom:8px;}
+        .dj-placar .dj-rank-name {font-size:13px;color:#E7E9EC;font-weight:550;overflow-wrap:anywhere;}
+        .dj-placar .dj-first .dj-rank-name {color:#F4D27B;font-weight:700;}
+        .dj-placar .dj-rank-score {font-size:15px;color:#D4AF37;font-weight:750;white-space:nowrap;}
+        .dj-placar .dj-rank-track {height:6px;border-radius:99px;background:#30353D;overflow:hidden;}
+        .dj-placar .dj-rank-fill {height:100%;border-radius:99px;background:#967F42;}
+        .dj-placar .dj-first .dj-rank-fill {background:#D4AF37;}
+        @media(max-width:650px) {.dj-placar .dj-kpis {gap:6px;} .dj-placar .dj-kpi {padding:10px 8px;} .dj-placar .dj-kpi-number {font-size:23px;} .dj-placar .dj-kpi-label {font-size:10px;} .dj-placar .dj-rank-item {padding:10px 8px;gap:8px;}}
+        </style>
+        """, unsafe_allow_html=True)
+
+        kpis = (
+            ('Protocolos no mês', total),
+            ('Usuários no placar', len(ranking)),
+            ('Com protocolos', com_protocolos),
+        )
+        kpi_html = ''.join(
+            f'<div class="dj-kpi"><div class="dj-kpi-label">{html.escape(rotulo)}</div>'
+            f'<div class="dj-kpi-number">{valor}</div></div>'
+            for rotulo, valor in kpis
+        )
+        if len(lideres) == 1:
+            destaque_nome = html.escape(lideres[0])
+            destaque_sub = f'{maior} processo(s) protocolado(s) em {html.escape(mes_escolhido)}'
+            destaque_rotulo = '★ DESTAQUE DO MÊS'
+        elif lideres:
+            destaque_nome = ' · '.join(html.escape(nome) for nome in lideres)
+            destaque_sub = f'Empate: {maior} protocolo(s) por colaborador em {html.escape(mes_escolhido)}'
+            destaque_rotulo = '★ DESTAQUES DO MÊS — EMPATE'
         else:
-            st.info('Nenhum protocolo registrado neste mês. Todos os usuários aparecem com zero.')
-        if ranking:
-            maior = max((pontos for _, pontos in ranking), default=0)
-            linhas = [{'Posição': pos, 'Colaborador': nome, 'Protocolos': pontos,
-                       'Desempenho': round(100 * pontos / maior) if maior else 0}
-                      for pos, (nome, pontos) in enumerate(ranking, 1)]
-            st.dataframe(pd.DataFrame(linhas), hide_index=True, use_container_width=True,
-                         column_config={'Posição': st.column_config.NumberColumn('Posição', format='%d'),
-                                        'Colaborador': st.column_config.TextColumn('Colaborador'),
-                                        'Protocolos': st.column_config.NumberColumn('Protocolos', format='%d'),
-                                        'Desempenho': st.column_config.ProgressColumn('Desempenho',
-                                            help='Percentual em relação ao maior número de protocolos do mês',
-                                            min_value=0, max_value=100, format='%d%%')})
+            destaque_nome = 'Aguardando primeiros protocolos'
+            destaque_sub = f'Nenhum protocolo registrado em {html.escape(mes_escolhido)}'
+            destaque_rotulo = '★ DESTAQUE DO MÊS'
+
+        linhas = []
+        for posicao, (nome, pontos) in enumerate(ranking, 1):
+            porcentagem = (100 * pontos / maior) if maior else 0
+            classe = ' dj-first' if pontos > 0 and pontos == maior else ''
+            linhas.append(
+                f'<div class="dj-rank-item{classe}">'
+                f'<div class="dj-rank-pos">{posicao}º</div>'
+                f'<div class="dj-rank-main"><div class="dj-rank-head">'
+                f'<span class="dj-rank-name">{html.escape(nome)}</span>'
+                f'<span class="dj-rank-score">{pontos}</span></div>'
+                f'<div class="dj-rank-track"><div class="dj-rank-fill" style="width:{porcentagem:.2f}%"></div></div>'
+                f'</div></div>'
+            )
+        lista_html = ''.join(linhas) if linhas else '<p>Nenhum colaborador cadastrado.</p>'
+        st.markdown(
+            '<div class="dj-placar">'
+            '<div class="dj-kpis">' + kpi_html + '</div>'
+            '<div class="dj-destaque">'
+            f'<div class="dj-destaque-label">{destaque_rotulo}</div>'
+            f'<div class="dj-destaque-nome">{destaque_nome}</div>'
+            f'<div class="dj-destaque-sub">{destaque_sub}</div></div>'
+            '<div class="dj-rank-title">Ranking da equipe</div>'
+            + lista_html + '</div>',
+            unsafe_allow_html=True,
+        )
         st.caption('Pontuação atribuída a quem registrou o protocolo. Cada processo conta uma vez; registros antigos sem protocolante não entram no placar.')
         return lideres
 

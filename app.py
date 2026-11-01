@@ -52,6 +52,37 @@ except Exception:
     st.error("⚠️ ERRO CRÍTICO: Chaves do Supabase ausentes nos Secrets.")
     st.stop()
 
+# --- APRESENTAÇÃO DE TABELAS: CAMPOS SEM DADOS FICAM EM BRANCO ---
+def preparar_tabela_visualizacao(dados):
+    """Limpa apenas a visualização, sem alterar os registros do Supabase."""
+    tabela = dados.copy()
+    # Evita exibir os textos None, nan, NaN e <NA> vindos de colunas textuais.
+    for coluna in tabela.columns:
+        serie = tabela[coluna]
+        if pd.api.types.is_object_dtype(serie) or pd.api.types.is_string_dtype(serie):
+            tabela[coluna] = serie.map(
+                lambda valor: "" if valor is None or (
+                    isinstance(valor, str) and valor.strip().lower() in
+                    ("none", "nan", "nat", "<na>", "null")
+                ) else valor
+            )
+    # A conversão para string ocorre SOMENTE na cópia exibida.
+    # Isso evita que a grade do Streamlit apresente None/NaN e mantém
+    # números e datas intactos no banco e nas rotinas de cálculo.
+    tabela = tabela.astype(object).where(pd.notna(tabela), "")
+    return tabela
+
+
+def exibir_tabela(dados, **kwargs):
+    """Exibe DataFrame ou Styler com valores ausentes em branco."""
+    if isinstance(dados, pd.io.formats.style.Styler):
+        # Preserva as regras de cor e formatação já aplicadas pelo sistema.
+        dados.data = preparar_tabela_visualizacao(dados.data)
+        return st.dataframe(dados, **kwargs)
+    if isinstance(dados, pd.DataFrame):
+        return st.dataframe(preparar_tabela_visualizacao(dados), **kwargs)
+    return st.dataframe(dados, **kwargs)
+
 def gerar_hash(senha: str) -> str:
     return bcrypt.hashpw(senha.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
 
@@ -588,9 +619,9 @@ elif authentication_status == True:
                     df_dist['data_distribuicao'] = df_dist['data_distribuicao'].apply(formatar_data_br)
 
                 if 'status' in df_dist.columns:
-                    st.dataframe(df_dist.style.map(colorir_status, subset=['status']), use_container_width=True, hide_index=True)
+                    exibir_tabela(df_dist.style.map(colorir_status, subset=['status']), use_container_width=True, hide_index=True)
                 else:
-                    st.dataframe(df_dist, use_container_width=True, hide_index=True)
+                    exibir_tabela(df_dist, use_container_width=True, hide_index=True)
 
                 st.markdown("---")
                 
@@ -684,7 +715,7 @@ elif authentication_status == True:
                 res_logs = supabase.table("logs_auditoria").select("*").neq("modulo", "Acesso").order("data_hora", desc=True).limit(100).execute()
                 if res_logs.data:
                     df_logs = pd.DataFrame(res_logs.data)
-                    st.dataframe(df_logs, use_container_width=True, hide_index=True)
+                    exibir_tabela(df_logs, use_container_width=True, hide_index=True)
                 else:
                     st.info("Nenhum registro de auditoria geral encontrado.")
             except Exception as e:
@@ -704,7 +735,7 @@ elif authentication_status == True:
                 res_acessos = supabase.table("logs_auditoria").select("*").eq("modulo", "Acesso").order("data_hora", desc=True).limit(100).execute()
                 if res_acessos.data:
                     df_acessos = pd.DataFrame(res_acessos.data)
-                    st.dataframe(df_acessos, use_container_width=True, hide_index=True)
+                    exibir_tabela(df_acessos, use_container_width=True, hide_index=True)
                 else:
                     st.info("Nenhum registro de acesso encontrado.")
             except Exception as e:
@@ -984,7 +1015,7 @@ elif authentication_status == True:
                 res = carregar_dados("clientes_cadastrados")
                 if res: 
                     df_cli = pd.DataFrame(res)
-                    st.dataframe(df_cli, use_container_width=True, hide_index=True)
+                    exibir_tabela(df_cli, use_container_width=True, hide_index=True)
                 else: 
                     st.info("Nenhum cliente cadastrado.")
 
@@ -1419,9 +1450,9 @@ elif authentication_status == True:
                         df_mp['data_atualizacao'] = df_mp['data_atualizacao'].apply(formatar_data_br)
                     
                     if 'status' in df_mp.columns:
-                        st.dataframe(df_mp.style.map(colorir_status, subset=['status']), use_container_width=True, hide_index=True)
+                        exibir_tabela(df_mp.style.map(colorir_status, subset=['status']), use_container_width=True, hide_index=True)
                     else:
-                        st.dataframe(df_mp, use_container_width=True, hide_index=True)
+                        exibir_tabela(df_mp, use_container_width=True, hide_index=True)
 
                     st.markdown("---")
                     st.subheader("⚡ Gerenciar ou Excluir Processo")
@@ -1855,7 +1886,7 @@ elif authentication_status == True:
                         if 'data_nascimento' in df_u.columns:
                             df_u['data_nascimento'] = df_u['data_nascimento'].apply(formatar_data_br)
 
-                        st.dataframe(df_u[colunas_visiveis], use_container_width=True, hide_index=True)
+                        exibir_tabela(df_u[colunas_visiveis], use_container_width=True, hide_index=True)
                         
                         st.markdown("---")
                         st.subheader("🗑️ Excluir Usuário (Para resetar)")
@@ -1997,7 +2028,7 @@ elif authentication_status == True:
                             df_p['vencimento'] = df_p['vencimento'].apply(formatar_data_br)
                         if 'valor' in df_p.columns:
                             df_p['valor'] = df_p['valor'].apply(formatar_moeda_br)
-                        st.dataframe(df_p.style.map(colorir_status, subset=['status']), use_container_width=True, hide_index=True)
+                        exibir_tabela(df_p.style.map(colorir_status, subset=['status']), use_container_width=True, hide_index=True)
                     else: st.info("Sem parcelas.")
                 else: st.info("Sem contratos.")
 
@@ -2298,7 +2329,7 @@ elif authentication_status == True:
 
                             st.markdown("---")
                             df_rep = pd.DataFrame(linhas)
-                            st.dataframe(df_rep, use_container_width=True, hide_index=True)
+                            exibir_tabela(df_rep, use_container_width=True, hide_index=True)
                             
                             st.download_button(
                                 label="📥 Exportar Extrato Com Prova Real (CSV)",
@@ -2435,7 +2466,7 @@ elif authentication_status == True:
                             
                             if linhas_relatorio:
                                 df_rel = pd.DataFrame(linhas_relatorio)
-                                st.dataframe(df_rel, use_container_width=True, hide_index=True)
+                                exibir_tabela(df_rel, use_container_width=True, hide_index=True)
                                 
                                 nome_arquivo = f"relatorio_pagamentos_{dt_inicio.strftime('%Y%m%d')}_a_{dt_fim.strftime('%Y%m%d')}.csv"
                                 st.download_button(
@@ -2582,9 +2613,9 @@ elif authentication_status == True:
                     df_per = df_per[['id'] + colunas_existentes + outras_colunas]
 
                     if 'status' in df_per.columns:
-                        st.dataframe(df_per.style.map(colorir_status, subset=['status']), use_container_width=True, hide_index=True)
+                        exibir_tabela(df_per.style.map(colorir_status, subset=['status']), use_container_width=True, hide_index=True)
                     else:
-                        st.dataframe(df_per, use_container_width=True, hide_index=True)
+                        exibir_tabela(df_per, use_container_width=True, hide_index=True)
                 else: 
                     st.info("Sem perícias cadastradas.")
 
@@ -2730,9 +2761,9 @@ elif authentication_status == True:
                         df_exp['data_manifestacao'] = df_exp['data_manifestacao'].apply(formatar_data_br)
 
                     if 'status' in df_exp.columns:
-                        st.dataframe(df_exp.style.map(colorir_status, subset=['status']), use_container_width=True, hide_index=True)
+                        exibir_tabela(df_exp.style.map(colorir_status, subset=['status']), use_container_width=True, hide_index=True)
                     else:
-                        st.dataframe(df_exp, use_container_width=True, hide_index=True)
+                        exibir_tabela(df_exp, use_container_width=True, hide_index=True)
                     
                     st.markdown("---")
                     st.subheader("⚡ Atualização Rápida de Status")
@@ -2846,9 +2877,9 @@ elif authentication_status == True:
                         df_trf['data_manifestacao'] = df_trf['data_manifestacao'].apply(formatar_data_br)
 
                     if 'status' in df_trf.columns:
-                        st.dataframe(df_trf.style.map(colorir_status, subset=['status']), use_container_width=True, hide_index=True)
+                        exibir_tabela(df_trf.style.map(colorir_status, subset=['status']), use_container_width=True, hide_index=True)
                     else:
-                        st.dataframe(df_trf, use_container_width=True, hide_index=True)
+                        exibir_tabela(df_trf, use_container_width=True, hide_index=True)
 
                     st.markdown("---")
                     st.subheader("⚡ Atualização Rápida de Status")
@@ -2969,9 +3000,9 @@ elif authentication_status == True:
                         df_pen['data_solicitacao'] = df_pen['data_solicitacao'].apply(formatar_data_br)
 
                     if 'status' in df_pen.columns:
-                        st.dataframe(df_pen.style.map(colorir_status, subset=['status']), use_container_width=True, hide_index=True)
+                        exibir_tabela(df_pen.style.map(colorir_status, subset=['status']), use_container_width=True, hide_index=True)
                     else:
-                        st.dataframe(df_pen, use_container_width=True, hide_index=True)
+                        exibir_tabela(df_pen, use_container_width=True, hide_index=True)
 
                     pid = st.number_input("ID da Pendência entregue:", min_value=1, step=1)
                     if st.button("Marcar como Entregue"):

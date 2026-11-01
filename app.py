@@ -557,26 +557,6 @@ elif authentication_status == True:
                 limpar_flags_cadastro()
                 st.rerun()
         
-        # Rádio Classic Hits — Teresina/PI. Reprodução depende das permissões do site oficial.
-        st.markdown("---")
-        with st.expander("🎵 Rádio Classic Hits — Teresina/PI", expanded=False):
-            st.caption("Sempre Grandes Hits! • Rádio online")
-            # É possível informar o link DIRETO de áudio nos Secrets do Streamlit:
-            # CLASSIC_HITS_STREAM_URL = "https://servidor.exemplo/stream.mp3"
-            # Nunca utilize aqui a URL da página inicial como se fosse áudio.
-            try:
-                url_audio_classic = str(st.secrets.get("CLASSIC_HITS_STREAM_URL", "")).strip()
-            except Exception:
-                url_audio_classic = ""
-            if url_audio_classic.startswith("https://"):
-                st.audio(url_audio_classic, format="audio/mp3")
-            else:
-                st.caption("Player do site oficial (pode depender de permissão para incorporação):")
-                import streamlit.components.v1 as componentes_radio
-                componentes_radio.iframe("https://classichits.com.br/", height=270, scrolling=True)
-            st.link_button("▶️ Ouvir no site oficial", "https://classichits.com.br/", use_container_width=True)
-            st.caption("Se o player incorporado não abrir, utilize o botão acima. A reprodução não começa automaticamente.")
-
         st.markdown("---")
         st.markdown(f"⏳ **Sessão expira em:**\n### `{min_res:02d}:{seg_res:02d}`")
         st.markdown("---")

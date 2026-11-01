@@ -1139,6 +1139,7 @@ elif authentication_status == True:
         elif menu_principal == "Segurança":
             acoes = ["Meu Perfil", "Alterar Senha"]
             if user_role == 'admin': acoes = ["Meu Perfil", "Gerenciar Usuários", "Cadastrar Novo Usuário", "Alterar Senha"]
+            if username == "master": acoes.append("Reiniciar IDs de Teste")
         else:
             acoes = []
 
@@ -2333,6 +2334,46 @@ elif authentication_status == True:
                             st.session_state['cad_user_sucesso'] = False
                             st.session_state['submenu_atual'] = "Gerenciar Usuários"
                             st.rerun()
+
+            elif sub == "Reiniciar IDs de Teste" and username == "master" and user_role == "admin":
+                st.header("Reiniciar numeração de IDs")
+                st.warning("A numeração só poderá ser reiniciada se a tabela estiver totalmente vazia. "
+                           "Isso NÃO apaga dados e NÃO renumera registros existentes. "
+                           "Não execute em tabelas cujos IDs antigos ainda sejam usados em outros registros.")
+                tabelas_ids = {
+                    "Clientes": "clientes_cadastrados",
+                    "Prospectados pendentes": "prospectados_pendentes",
+                    "Distribuição de processos": "distribuicao_processos",
+                    "Meus processos": "meus_processos",
+                    "Honorários": "honorarios",
+                    "Parcelas": "parcelas",
+                    "Perícias": "pericias",
+                    "Expedientes": "expedientes",
+                    "Expedientes TRF": "expedientes_trf",
+                    "Pendências": "pendencias",
+                }
+                rotulo_id = st.selectbox("Selecione a tabela", list(tabelas_ids), key="reset_ids_tabela")
+                tabela_id = tabelas_ids[rotulo_id]
+                st.info(f"Tabela selecionada: {tabela_id}. O próximo registro poderá receber ID 1 somente se a tabela estiver vazia.")
+                with st.form("confirmacao_reset_ids", clear_on_submit=True):
+                    ciente = st.checkbox("Confirmo que a tabela está vazia e que verifiquei referências a IDs antigos.")
+                    confirmacao = st.text_input("Digite REINICIAR para confirmar")
+                    executar = st.form_submit_button("Confirmar reinício da numeração", type="primary")
+                if executar:
+                    if not ciente or confirmacao.strip() != "REINICIAR":
+                        st.error("Operação cancelada. Marque a confirmação e digite REINICIAR.")
+                    else:
+                        try:
+                            resposta = cliente_storage_servidor().rpc(
+                                "dejure_reiniciar_ids_tabela_vazia", {"nome_tabela": tabela_id}
+                            ).execute()
+                            if resposta.data is not True:
+                                raise RuntimeError("O Supabase não confirmou a operação.")
+                            registrar_auditoria(username, "Reiniciar sequência de ID", "Segurança",
+                                               f"Tabela vazia: {tabela_id}")
+                            confirmar_operacao(f"Numeração reiniciada na tabela {tabela_id}.")
+                        except Exception as erro:
+                            st.error(f"Não foi possível reiniciar a numeração: {erro}")
 
             elif sub == "Gerenciar Usuários" and user_role == 'admin':
                 st.header("🛡️ Gerenciamento de Usuários Ativos")

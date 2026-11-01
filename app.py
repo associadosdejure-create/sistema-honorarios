@@ -53,6 +53,18 @@ except Exception:
     st.error("⚠️ ERRO CRÍTICO: Chaves do Supabase ausentes nos Secrets.")
     st.stop()
 
+# Cliente privilegiado restrito ao servidor Streamlit: somente operações de
+# Storage e medição da cota. Nunca expor a chave em páginas, logs ou GitHub.
+# A chave publica continua sendo usada nas demais operações do sistema.
+def cliente_storage_servidor():
+    chave = str(st.secrets.get('SUPABASE_SERVICE_ROLE_KEY', '')).strip()
+    if not chave or chave.startswith('sb_publishable_'):
+        raise RuntimeError(
+            'Configure SUPABASE_SERVICE_ROLE_KEY nos Secrets do Streamlit '
+            '(chave secreta do Supabase; não use a publishable).'
+        )
+    return create_client(st.secrets['SUPABASE_URL'], chave)
+
 # --- CONFIRMAÇÃO VISUAL DE OPERAÇÕES ---
 def confirmar_operacao(mensagem):
     """Mostra confirmação imediata e mantém aviso após st.rerun()."""
@@ -887,7 +899,7 @@ elif authentication_status == True:
         BLOQUEIO_STORAGE = 900 * 1024 * 1024
 
         def revisao_consumo_storage():
-            resposta = supabase.rpc('dejure_storage_uso_bytes').execute()
+            resposta = cliente_storage_servidor().rpc('dejure_storage_uso_bytes').execute()
             valor = resposta.data
             if isinstance(valor, list):
                 valor = valor[0] if valor else None
@@ -931,7 +943,7 @@ elif authentication_status == True:
             if uso_atual >= BLOQUEIO_STORAGE or uso_atual + len(conteudo) > BLOQUEIO_STORAGE:
                 raise ValueError('Upload bloqueado: o armazenamento atingiria o limite preventivo de 900 MB. Contate um administrador.')
             caminho = f"{processo_id}/{uuid4().hex}{ext}"
-            supabase.storage.from_('pecas-juridicas').upload(
+            cliente_storage_servidor().storage.from_('pecas-juridicas').upload(
                 caminho, conteudo, {'content-type': {
                     '.pdf': 'application/pdf', '.doc': 'application/msword',
                     '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
@@ -942,7 +954,7 @@ elif authentication_status == True:
                     'caminho_storage': caminho, 'tipo': tipo, 'enviado_por': username
                 }).execute()
             except Exception:
-                supabase.storage.from_('pecas-juridicas').remove([caminho])
+                cliente_storage_servidor().storage.from_('pecas-juridicas').remove([caminho])
                 raise
             return caminho
 
@@ -959,7 +971,7 @@ elif authentication_status == True:
                     st.caption(str(doc.get('criado_em', '')))
                     if st.button('Baixar arquivo', key=f"download_rev_{doc['id']}"):
                         try:
-                            arquivo = supabase.storage.from_('pecas-juridicas').download(doc['caminho_storage'])
+                            arquivo = cliente_storage_servidor().storage.from_('pecas-juridicas').download(doc['caminho_storage'])
                             st.session_state[f"arquivo_rev_{doc['id']}"] = arquivo
                         except Exception as e:
                             st.error(f'Não foi possível acessar o documento: {e}')

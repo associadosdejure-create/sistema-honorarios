@@ -1878,51 +1878,54 @@ elif authentication_status == True:
                 st.header("📝 Novo Contrato e Parcelamento")
                 cli_db = carregar_dados("clientes_cadastrados")
                 nomes = [c['nome'] for c in cli_db]
-                # Este seletor fica fora do formulário para a tela atualizar imediatamente.
-                modo_parcelamento = st.selectbox(
+                # Controles dinâmicos fora do formulário: Streamlit atualiza a cada alteração.
+                modo_parcelamento = st.radio(
                     "Forma de parcelamento do saldo:",
                     ["Parcelas iguais (automático)", "Parcelas personalizadas (valores diferentes)"],
-                    key="modo_parcelamento_honorarios"
+                    key="modo_parcelamento_honorarios",
+                    horizontal=True
                 )
-                # A quantidade deve ficar fora do st.form: widgets dentro de forms
-                # só disparam uma atualização quando o formulário é enviado.
-                if modo_parcelamento == "Parcelas iguais (automático)":
-                    npar = st.number_input("Quantidade de Parcelas (Restante)", min_value=1, max_value=36, value=3, step=1, key="hon_qtd_automatica")
-                else:
-                    npar = st.number_input("Quantidade de parcelas personalizadas", min_value=1, max_value=36, value=3, step=1, key="hon_qtd_personalizada")
-                    st.caption("Ao alterar a quantidade, os campos das parcelas aparecem automaticamente abaixo.")
+                personalizado = modo_parcelamento == "Parcelas personalizadas (valores diferentes)"
+                npar = int(st.number_input(
+                    "Quantidade de parcelas do saldo", min_value=1, max_value=36,
+                    value=3, step=1, key="hon_quantidade_parcelas_dinamica"
+                ))
 
-                with st.form("fc_hon", clear_on_submit=True):
-                    cli_op = st.selectbox("Cliente:", ["Outro"] + nomes) if nomes else "Outro"
-                    cli = st.text_input("Nome") if cli_op == "Outro" else cli_op
-                    serv = st.text_input("Serviço")
-                    vtot = st.number_input("Valor Total do Contrato (R$)", min_value=0.0, step=100.0)
+                # Dados e valores personalizados também ficam fora do st.form.
+                # Isso evita que o formulário congele a renderização dos campos.
+                cli_op = st.selectbox("Cliente:", ["Outro"] + nomes, key="hon_cliente_opcao") if nomes else "Outro"
+                cli = st.text_input("Nome", key="hon_cliente_nome") if cli_op == "Outro" else cli_op
+                serv = st.text_input("Serviço", key="hon_servico")
+                vtot = st.number_input("Valor Total do Contrato (R$)", min_value=0.0, step=100.0, key="hon_valor_total")
+                v_entrada = st.number_input("Valor de Entrada (R$)", min_value=0.0, step=50.0, key="hon_valor_entrada")
+                saldo_preview = round(float(vtot) - float(v_entrada), 2)
+                valores_parcelas = []
 
-                    col_e1, col_e2 = st.columns(2)
-                    with col_e1:
-                        v_entrada = st.number_input("Valor de Entrada (R$)", min_value=0.0, step=50.0, value=0.0)
-                    with col_e2:
-                        st.write("Modo selecionado:")
-                        st.info(modo_parcelamento)
-
-                    saldo_preview = max(0.0, float(vtot) - float(v_entrada))
-                    if modo_parcelamento == "Parcelas iguais (automático)":
-                        valores_parcelas = []
+                if personalizado:
+                    st.subheader(f"🧾 Preenchimento das {npar} parcelas personalizadas")
+                    st.info(f"Quantidade selecionada: {npar} parcelas. Saldo a distribuir: {formatar_moeda_br(max(0.0, saldo_preview))}.")
+                    # Cada campo aparece em sua própria linha, sem o limite visual de 3 colunas.
+                    for i in range(npar):
+                        valor_i = st.number_input(
+                            f"Parcela {i + 1} de {npar} — valor (R$)",
+                            min_value=0.0, step=50.0, format="%.2f",
+                            key=f"hon_parcela_personalizada_{i}"
+                        )
+                        valores_parcelas.append(round(float(valor_i), 2))
+                    soma_preview = round(sum(valores_parcelas), 2)
+                    diferenca_preview = round(saldo_preview - soma_preview, 2)
+                    st.write(f"**Campos exibidos: {len(valores_parcelas)} de {npar}**")
+                    st.write(f"**Total das parcelas:** {formatar_moeda_br(soma_preview)}")
+                    if diferenca_preview > 0:
+                        st.warning(f"Faltam {formatar_moeda_br(diferenca_preview)} para completar o saldo.")
+                    elif diferenca_preview < 0:
+                        st.error(f"As parcelas ultrapassam o saldo em {formatar_moeda_br(abs(diferenca_preview))}.")
                     else:
-                        st.caption(f"Saldo a distribuir: {formatar_moeda_br(saldo_preview)}. Informe o valor de cada parcela; a soma deve fechar exatamente esse saldo.")
-                        valores_parcelas = []
-                        colunas_valores = st.columns(3)
-                        for i in range(int(npar)):
-                            with colunas_valores[i % 3]:
-                                valor_i = st.number_input(
-                                    f"Valor da parcela {i + 1} (R$)",
-                                    min_value=0.0,
-                                    step=50.0,
-                                    value=0.0,
-                                    key=f"hon_parcela_personalizada_{i}"
-                                )
-                                valores_parcelas.append(round(float(valor_i), 2))
+                        st.success("A soma das parcelas corresponde ao saldo restante.")
+                else:
+                    st.caption(f"O saldo será dividido automaticamente em {npar} parcelas.")
 
+                with st.form("fc_hon", clear_on_submit=False):
                     dt1 = st.date_input("Vencimento da 1ª Parcela (ou Entrada)", datetime.now())
 
                     col_b_h1, col_b_h2 = st.columns(2)
@@ -1937,7 +1940,7 @@ elif authentication_status == True:
                             st.error("Preencha o cliente, o serviço e um valor total válido.")
                         elif v_entrada > vtot:
                             st.error("O valor da entrada não pode ser maior que o valor total do contrato.")
-                        elif modo_parcelamento == "Parcelas personalizadas (valores diferentes)" and round(soma_parcelas, 2) != round(saldo_preview, 2):
+                        elif personalizado and round(soma_parcelas, 2) != round(saldo_preview, 2):
                             st.error(f"A soma das parcelas ({formatar_moeda_br(soma_parcelas)}) deve ser igual ao saldo restante ({formatar_moeda_br(saldo_preview)}). Ajuste os valores antes de gerar o contrato.")
                         else:
                             res = supabase.table("honorarios").insert({"cliente": cli, "servico": serv, "valor_total": float(vtot)}).execute()

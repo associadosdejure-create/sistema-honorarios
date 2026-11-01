@@ -205,6 +205,47 @@ def campo_moeda_br(rotulo, chave, inicial=0.0, em_formulario=False):
         return None
 
 
+
+# Consulta pública de CEP: somente o CEP é enviado ao ViaCEP.
+def consultar_cep(cep):
+    import urllib.request
+    import json as _json
+    numeros = re.sub(r"\D", "", str(cep or ""))
+    if len(numeros) != 8:
+        raise ValueError("Informe um CEP com 8 dígitos.")
+    requisicao = urllib.request.Request(
+        f"https://viacep.com.br/ws/{numeros}/json/",
+        headers={"User-Agent": "DEJURE-Advocacia/1.0"}
+    )
+    try:
+        with urllib.request.urlopen(requisicao, timeout=6) as resposta:
+            dados = _json.load(resposta)
+    except Exception as erro:
+        raise RuntimeError("Serviço de CEP indisponível. Preencha o endereço manualmente.") from erro
+    if dados.get("erro"):
+        raise ValueError("CEP não encontrado. Confira os números digitados.")
+    return dados
+
+
+def aplicar_cep_campos(prefixo):
+    try:
+        dados = consultar_cep(st.session_state.get(prefixo + "cep", ""))
+        for campo, origem in (("logradouro", "logradouro"), ("bairro", "bairro"),
+                              ("cid", "localidade"), ("uf", "uf")):
+            if dados.get(origem):
+                st.session_state[prefixo + campo] = dados[origem]
+        st.session_state[prefixo + "cep_mensagem"] = "Endereço localizado. Confira os dados e informe o número."
+    except (ValueError, RuntimeError) as erro:
+        st.session_state[prefixo + "cep_mensagem"] = str(erro)
+
+
+def endereco_legado(logradouro, numero, bairro):
+    return ", ".join(parte for parte in [
+        str(logradouro or "").strip(),
+        str(numero or "").strip(),
+        str(bairro or "").strip()
+    ] if parte)
+
 def gerar_hash(senha: str) -> str:
     return bcrypt.hashpw(senha.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
 
@@ -1227,7 +1268,7 @@ elif authentication_status == True:
                 st.header("👤 Cadastro Completo de Cliente")
                 st.caption("Preencha as informações do cliente. Campos marcados com (*) são obrigatórios.")
                 
-                campos_cli = ['cli_nome', 'cli_doc', 'cli_prof', 'cli_ec', 'cli_tfixo', 'cli_cel', 'cli_email', 'cli_end', 'cli_cid', 'cli_uf', 'cli_gov', 'cli_obs']
+                campos_cli = ['cli_nome', 'cli_doc', 'cli_prof', 'cli_ec', 'cli_tfixo', 'cli_cel', 'cli_email', 'cli_end', 'cli_cep', 'cli_logradouro', 'cli_numero', 'cli_bairro', 'cli_complemento', 'cli_cid', 'cli_uf', 'cli_gov', 'cli_obs']
                 for campo in campos_cli:
                     if campo not in st.session_state:
                         st.session_state[campo] = ""
@@ -1321,9 +1362,19 @@ elif authentication_status == True:
                                 st.success("✅ E-mail válido.")
 
                     with c4:
-                        end = st.text_input("Endereço *", key="cli_end")
+                        st.text_input("CEP *", key="cli_cep", max_chars=9, placeholder="00000-000")
+                        if st.button("Buscar CEP", key="buscar_cep_cadastro"):
+                            aplicar_cep_campos("cli_")
+                            st.rerun()
+                        if st.session_state.get("cli_cep_mensagem"):
+                            st.caption(st.session_state["cli_cep_mensagem"])
+                        logradouro = st.text_input("Logradouro *", key="cli_logradouro")
+                        numero = st.text_input("Número *", key="cli_numero")
+                        bairro = st.text_input("Bairro *", key="cli_bairro")
+                        complemento = st.text_input("Complemento (opcional)", key="cli_complemento")
                         cid = st.text_input("Cidade *", key="cli_cid")
-                        uf = st.selectbox("Estado (UF) *", ufs, index=ufs.index("RN") if "RN" in ufs else 0, key="cli_uf")
+                        uf = st.selectbox("Estado (UF) *", ufs, index=ufs.index(st.session_state.get("cli_uf", "RN")) if st.session_state.get("cli_uf", "RN") in ufs else 0, key="cli_uf")
+                        end = endereco_legado(logradouro, numero, bairro)
 
                     st.subheader("🔐 Acesso & Observações")
                     c5, c6 = st.columns(2)
@@ -1346,7 +1397,10 @@ elif authentication_status == True:
                         errs = []
                         if not n.strip(): errs.append("O campo **Nome Completo** é obrigatório.")
                         if not profissao.strip(): errs.append("O campo **Profissão** é obrigatório.")
-                        if not end.strip(): errs.append("O campo **Endereço** é obrigatório.")
+                        if not logradouro.strip() or not bairro.strip() or not numero.strip():
+                            errs.append("Preencha logradouro, bairro e número.")
+                        if len(re.sub(r"\D", "", st.session_state.get("cli_cep", ""))) != 8:
+                            errs.append("Informe um CEP válido com 8 dígitos.")
                         if not cid.strip(): errs.append("O campo **Cidade** é obrigatório.")
                         
                         if tel_fixo.strip() and not validar_telefone_fixo(tel_fixo):
@@ -1397,6 +1451,11 @@ elif authentication_status == True:
                                     "celular": cel_fmt,
                                     "email": email.strip() if email.strip() else None,
                                     "endereco": end.strip(),
+                                    "cep": re.sub(r"\D", "", st.session_state["cli_cep"]),
+                                    "logradouro": logradouro.strip(),
+                                    "numero": numero.strip(),
+                                    "bairro": bairro.strip(),
+                                    "complemento": complemento.strip() or None,
                                     "cidade": cid.strip(),
                                     "uf": uf,
                                     "profissao": profissao.strip(),
@@ -1530,6 +1589,18 @@ elif authentication_status == True:
                             etel_prosp_ext_val = st.text_input("Telefone do Prospectador Externo (com DDD) *", value=tel_ext_init, key="ed_cli_pe_tel")
                         st.markdown("---")
 
+                    # Busca fora do formulário: o Streamlit permite atualizar campos imediatamente.
+                    chave_ed = f"ed_{obj['id']}_"
+                    for campo, coluna in (("cep", "cep"), ("logradouro", "logradouro"),
+                                          ("numero", "numero"), ("bairro", "bairro"),
+                                          ("complemento", "complemento"), ("cid", "cidade"), ("uf", "uf")):
+                        st.session_state.setdefault(chave_ed + campo, obj.get(coluna) or (obj.get("endereco", "") if campo == "logradouro" else ("RN" if campo == "uf" else "")))
+                    st.text_input("CEP do cliente", key=chave_ed + "cep", max_chars=9)
+                    if st.button("Buscar CEP para edição", key=f"buscar_cep_ed_{obj['id']}"):
+                        aplicar_cep_campos(chave_ed)
+                        st.rerun()
+                    if st.session_state.get(chave_ed + "cep_mensagem"):
+                        st.caption(st.session_state[chave_ed + "cep_mensagem"])
                     with st.form("fe_cli"):
                         st.subheader("📋 Informações Pessoais & Profissionais")
                         c1, c2 = st.columns(2)
@@ -1548,10 +1619,13 @@ elif authentication_status == True:
                             ecelular = st.text_input("Celular / WhatsApp *", value=obj.get('celular',''))
                             eemail = st.text_input("E-mail", value=obj.get('email','') or '')
                         with c4:
-                            eend = st.text_input("Endereço *", value=obj.get('endereco',''))
-                            ecid = st.text_input("Cidade *", value=obj.get('cidade',''))
-                            idx_uf = ufs.index(obj.get('uf')) if obj.get('uf') in ufs else 0
-                            euf = st.selectbox("Estado (UF) *", ufs, index=idx_uf)
+                            elog = st.text_input("Logradouro *", key=chave_ed + "logradouro")
+                            enum = st.text_input("Número *", key=chave_ed + "numero")
+                            ebairro = st.text_input("Bairro *", key=chave_ed + "bairro")
+                            ecomp = st.text_input("Complemento", key=chave_ed + "complemento")
+                            ecid = st.text_input("Cidade *", key=chave_ed + "cid")
+                            euf = st.selectbox("Estado (UF) *", ufs, key=chave_ed + "uf")
+                            eend = endereco_legado(elog, enum, ebairro)
 
                         st.subheader("🔐 Acesso & Observações")
                         c5, c6 = st.columns(2)
@@ -1570,7 +1644,10 @@ elif authentication_status == True:
                             errs = []
                             if not en.strip(): errs.append("O campo **Nome Completo** é obrigatório.")
                             if not eprofi.strip(): errs.append("O campo **Profissão** é obrigatório.")
-                            if not eend.strip(): errs.append("O campo **Endereço** é obrigatório.")
+                            if not elog.strip() or not enum.strip() or not ebairro.strip():
+                                errs.append("Preencha logradouro, número e bairro.")
+                            if len(re.sub(r"\D", "", st.session_state.get(chave_ed + "cep", ""))) != 8:
+                                errs.append("Informe um CEP válido com 8 dígitos.")
                             if not ecid.strip(): errs.append("O campo **Cidade** é obrigatório.")
                             
                             if etel_fixo.strip() and not validar_telefone_fixo(etel_fixo):
@@ -1618,6 +1695,11 @@ elif authentication_status == True:
                                         "celular": formatar_telefone(ecelular),
                                         "email": eemail.strip() if eemail.strip() else None,
                                         "endereco": eend.strip(),
+                                        "cep": re.sub(r"\D", "", st.session_state[chave_ed + "cep"]),
+                                        "logradouro": elog.strip(),
+                                        "numero": enum.strip(),
+                                        "bairro": ebairro.strip(),
+                                        "complemento": ecomp.strip() or None,
                                         "cidade": ecid.strip(),
                                         "uf": euf,
                                         "profissao": eprofi.strip(),

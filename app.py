@@ -157,6 +157,10 @@ def carregar_usuarios_db():
             for u in res.data:
                 uname = str(u.get("username", "")).strip().lower()
                 if not uname: continue
+
+                # A conta master é local e não deve ser sobrescrita pelo Supabase.
+                if uname == "master":
+                    continue
                 
                 senha_db = str(u.get("senha_hash", u.get("password", ""))).strip()
                 if senha_db and not senha_db.startswith("$2"):
@@ -1834,6 +1838,12 @@ elif authentication_status == True:
                 st.header("📝 Novo Contrato e Parcelamento")
                 cli_db = carregar_dados("clientes_cadastrados")
                 nomes = [c['nome'] for c in cli_db]
+                # Este seletor fica fora do formulário para a tela atualizar imediatamente.
+                modo_parcelamento = st.selectbox(
+                    "Forma de parcelamento do saldo:",
+                    ["Parcelas iguais (automático)", "Parcelas personalizadas (valores diferentes)"],
+                    key="modo_parcelamento_honorarios"
+                )
                 with st.form("fc_hon", clear_on_submit=True):
                     cli_op = st.selectbox("Cliente:", ["Outro"] + nomes) if nomes else "Outro"
                     cli = st.text_input("Nome") if cli_op == "Outro" else cli_op
@@ -1844,10 +1854,8 @@ elif authentication_status == True:
                     with col_e1:
                         v_entrada = st.number_input("Valor de Entrada (R$)", min_value=0.0, step=50.0, value=0.0)
                     with col_e2:
-                        modo_parcelamento = st.selectbox(
-                            "Forma de parcelamento do saldo:",
-                            ["Parcelas iguais (automático)", "Parcelas personalizadas (valores diferentes)"]
-                        )
+                        st.write("Modo selecionado:")
+                        st.info(modo_parcelamento)
 
                     saldo_preview = max(0.0, float(vtot) - float(v_entrada))
                     if modo_parcelamento == "Parcelas iguais (automático)":

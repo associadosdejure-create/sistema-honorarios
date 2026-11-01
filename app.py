@@ -158,8 +158,14 @@ def carregar_usuarios_db():
                 uname = str(u.get("username", "")).strip().lower()
                 if not uname: continue
 
-                # A conta master é local e não deve ser sobrescrita pelo Supabase.
+                # O master mantém perfil administrativo fixo, mas usa a senha
+                # persistida no Supabase quando já tiver sido alterada.
                 if uname == "master":
+                    senha_master_db = str(u.get("senha_hash") or u.get("password") or "").strip()
+                    if not senha_master_db.startswith("$2"):
+                        st.error("Registro master inválido no banco. Contate o administrador.")
+                        st.stop()
+                    cred_dict["usernames"]["master"]["password"] = senha_master_db
                     continue
                 
                 senha_db = str(u.get("senha_hash", u.get("password", ""))).strip()
@@ -178,8 +184,9 @@ def carregar_usuarios_db():
                     "observacoes_pessoais": u.get("observacoes_pessoais", ""),
                     "destaque_mes": u.get("destaque_mes", False)
                 }
-    except Exception:
-        pass
+    except Exception as erro:
+        st.error("Não foi possível consultar as credenciais no Supabase. Tente novamente mais tarde.")
+        st.stop()
         
     return cred_dict
 
@@ -1735,24 +1742,57 @@ elif authentication_status == True:
 
             elif sub == "Alterar Senha":
                 st.header("🔐 Alterar Minha Senha")
-                st.caption(f"Alterando senha para o usuário atual: **{username}**")
+                st.caption(f"Usuário: **{username}**")
                 with st.form("form_alt_senha"):
-                    nova_senha = st.text_input("Nova Senha", type="password")
-                    conf_senha = st.text_input("Confirmar Nova Senha", type="password")
-                    if st.form_submit_button("Atualizar Minha Senha"):
-                        if not nova_senha or nova_senha != conf_senha:
-                            st.error("As senhas não coincidem ou estão vazias.")
-                        elif username == 'master':
-                            st.error("A conta Master de emergência não pode ser alterada.")
-                        else:
-                            novo_hash = gerar_hash(nova_senha)
-                            try:
-                                supabase.table("usuarios_sistema").update({"senha_hash": novo_hash, "password": novo_hash}).eq("username", username).execute()
-                                registrar_auditoria(username, "Alterar Senha", "Segurança", f"Usuário {username} alterou a própria senha.")
-                                st.cache_data.clear()
-                                st.success("✅ Senha alterada com sucesso! Faça login novamente.")
-                            except Exception as e:
-                                st.error(f"Erro ao atualizar senha no banco: {e}")
+                    senha_atual = st.text_input("Senha atual", type="password")
+                    nova_senha = st.text_input("Nova senha", type="password")
+                    conf_senha = st.text_input("Confirmar nova senha", type="password")
+                    enviar_senha = st.form_submit_button("Salvar nova senha", type="primary")
+
+                if enviar_senha:
+                    hash_atual = credentials["usernames"].get(username, {}).get("password", "")
+                    try:
+                        senha_confere = bool(hash_atual) and bcrypt.checkpw(
+                            senha_atual.encode("utf-8"), hash_atual.encode("utf-8")
+                        )
+                    except (ValueError, TypeError):
+                        senha_confere = False
+
+                    if not senha_confere:
+                        st.error("A senha atual está incorreta.")
+                    elif len(nova_senha) < 12:
+                        st.error("A nova senha deve ter pelo menos 12 caracteres.")
+                    elif nova_senha != conf_senha:
+                        st.error("A confirmação não corresponde à nova senha.")
+                    elif nova_senha == senha_atual or nova_senha == "mudar123":
+                        st.error("Escolha uma senha nova, diferente da anterior e da senha padrão.")
+                    else:
+                        novo_hash = gerar_hash(nova_senha)
+                        try:
+                            if username == "master":
+                                # Salvar o master pela primeira vez ou atualizar registro existente.
+                                consulta = supabase.table("usuarios_sistema").select("id").eq("username", "master").execute()
+                                if consulta.data:
+                                    resposta = supabase.table("usuarios_sistema").update({
+                                        "senha_hash": novo_hash, "password": novo_hash
+                                    }).eq("username", "master").execute()
+                                else:
+                                    resposta = supabase.table("usuarios_sistema").insert({
+                                        "username": "master", "nome_completo": "Administrador Master",
+                                        "name": "Administrador Master", "senha_hash": novo_hash,
+                                        "password": novo_hash, "role": "admin", "trocar_senha": False
+                                    }).execute()
+                            else:
+                                resposta = supabase.table("usuarios_sistema").update({
+                                    "senha_hash": novo_hash, "password": novo_hash
+                                }).eq("username", username).execute()
+                            if not resposta.data:
+                                raise RuntimeError("O banco não confirmou a gravação da senha.")
+                            registrar_auditoria(username, "Alterar Senha", "Segurança", "Senha alterada pelo próprio usuário.")
+                            st.cache_data.clear()
+                            st.success("✅ Senha alterada! Saia e entre novamente com a nova senha.")
+                        except Exception as erro:
+                            st.error(f"Não foi possível salvar a senha: {erro}")
 
             elif sub == "Cadastrar Novo Usuário" and user_role == 'admin':
                 st.header("➕ Cadastrar Novo Usuário no Sistema")

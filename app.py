@@ -667,6 +667,71 @@ elif authentication_status == True:
                 limpar_flags_cadastro()
                 st.rerun()
         
+        # --- RADIO DEJURE: player independente, sem credenciais ou banco de dados ---
+        st.markdown("---")
+        st.markdown("<div style='color:#D4AF37;font-weight:700;font-size:1rem;margin-bottom:6px'>📻 Rádio DEJURE</div>", unsafe_allow_html=True)
+        import streamlit.components.v1 as dejure_components
+        dejure_components.html("""
+        <!DOCTYPE html><html lang="pt-BR"><head><meta charset="utf-8">
+        <style>
+          *{box-sizing:border-box}body{margin:0;background:#1a1e24;color:#eee;font:13px Arial,sans-serif}
+          .radio{padding:12px;border:1px solid #51452b;border-radius:12px;background:#1a1e24}
+          label{display:block;color:#d4af37;font-weight:600;margin-bottom:7px}
+          select{width:100%;background:#252a31;color:#f0f0f0;border:1px solid #555044;border-radius:7px;padding:9px;font-size:12px}
+          .controls{display:flex;align-items:center;gap:9px;margin-top:12px}
+          button{background:#d4af37;color:#17191d;border:0;border-radius:7px;padding:9px 13px;font-weight:700;cursor:pointer;white-space:nowrap}
+          button:hover{background:#e5c75d}input[type=range]{min-width:0;flex:1;accent-color:#d4af37}
+          .status{color:#b9bdc3;font-size:11px;margin-top:9px;min-height:15px;overflow-wrap:anywhere}
+        </style></head><body>
+        <div class="radio">
+          <label for="estacao">Escolha uma estação</label>
+          <select id="estacao">
+            <optgroup label="🇧🇷 Brasileiras · Música">
+              <option value="https://antenaone.crossradio.com.br/stream/1;">Antena 1 · Flashback / Adulto</option>
+              <option value="https://centova5.transmissaodigital.com:20104/live">Bossa Jazz Brasil · MPB / Jazz</option>
+              <option value="https://live.paineldj.com.br/proxy/jfloripa?mp=/stream">Jovem Pan FM Florianópolis · Pop</option>
+              <option value="https://8062.brasilstream.com.br/mp3">Jovem Pan BH · Pop</option>
+              <option value="https://stream.zeno.fm/erbpkq1cz55vv">Rádio Roberto Carlos · Românticas</option>
+              <option value="https://casthttps.suaradionanet.net/13805/stream">Rádio Reggae Brasil · Reggae</option>
+            </optgroup>
+            <optgroup label="🇧🇷 Brasileiras · Notícias e Cultura">
+              <option value="https://stream3.camara.leg.br/radiocamara1t64">Rádio Câmara · Notícias / Cultura</option>
+              <option value="https://radioaovivo.senado.leg.br:443/fm.mp3">Rádio Senado · Notícias / Cultura</option>
+            </optgroup>
+            <optgroup label="🌎 Internacionais">
+              <option value="https://ice1.somafm.com/groovesalad-128-mp3">Groove Salad · Ambient</option>
+              <option value="https://ice1.somafm.com/secretagent-128-mp3">Secret Agent · Lounge</option>
+              <option value="https://ice1.somafm.com/dronezone-128-mp3">Drone Zone · Relax</option>
+              <option value="https://ice1.somafm.com/indiepop-128-mp3">Indie Pop Rocks · Indie</option>
+              <option value="https://ice1.somafm.com/defcon-128-mp3">DEF CON Radio · Eletrônica</option>
+            </optgroup>
+          </select>
+          <div class="controls"><button id="toggle" type="button">▶ Ouvir</button>
+            <span title="Volume">🔊</span><input id="volume" type="range" min="0" max="100" value="65" aria-label="Volume"></div>
+          <div id="status" class="status" role="status">Selecione uma rádio e clique em Ouvir.</div>
+          <audio id="audio" preload="none"></audio>
+        </div>
+        <script>
+          const audio=document.getElementById('audio'), estacao=document.getElementById('estacao');
+          const toggle=document.getElementById('toggle'), status=document.getElementById('status');
+          audio.volume=.65;
+          function atualizar(){toggle.textContent=audio.paused?'▶ Ouvir':'❚❚ Pausar';}
+          async function tocar(){
+            if(audio.src!==estacao.value){audio.src=estacao.value;audio.load();}
+            status.textContent='Conectando à estação...';
+            try{await audio.play();status.textContent='Ao vivo · '+estacao.options[estacao.selectedIndex].text;}
+            catch(e){status.textContent='Não foi possível reproduzir esta rádio. Tente outra estação.';}
+            atualizar();
+          }
+          toggle.addEventListener('click',()=>{if(audio.paused)tocar();else{audio.pause();status.textContent='Reprodução pausada.';atualizar();}});
+          estacao.addEventListener('change',()=>{const estavaTocando=!audio.paused;audio.pause();audio.removeAttribute('src');audio.load();atualizar();status.textContent='Estação selecionada.';if(estavaTocando)tocar();});
+          document.getElementById('volume').addEventListener('input',e=>{audio.volume=Number(e.target.value)/100;});
+          audio.addEventListener('error',()=>{status.textContent='Estação indisponível no momento. Escolha outra.';atualizar();});
+          audio.addEventListener('pause',atualizar);audio.addEventListener('play',atualizar);
+        </script></body></html>
+        """, height=188, scrolling=False)
+        st.caption("Rádios brasileiras e internacionais. Reprodução sujeita à disponibilidade; pode parar ao mudar de página.")
+
         st.markdown("---")
         if os.path.exists("logo.png"): st.image("logo.png", use_container_width=True)
         else: st.write("**DEJURE ADVOCACIA**")

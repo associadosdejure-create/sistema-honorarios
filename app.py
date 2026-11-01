@@ -927,6 +927,126 @@ elif authentication_status == True:
             except Exception as erro:
                 st.error(f'Não foi possível consultar o armazenamento: {erro}. Por segurança, novos uploads ficam bloqueados.')
 
+        def revisao_inventario_storage():
+            """Lista todos os objetos do bucket privado, inclusive pastas paginadas."""
+            cliente = cliente_storage_servidor()
+            bucket = cliente.storage.from_('pecas-juridicas')
+            itens = []
+            pendentes = ['']
+            while pendentes:
+                pasta = pendentes.pop()
+                deslocamento = 0
+                while True:
+                    lote = bucket.list(pasta, {'limit': 100, 'offset': deslocamento}) or []
+                    for item in lote:
+                        nome = item.get('name', '')
+                        if not nome or nome == '.emptyFolderPlaceholder':
+                            continue
+                        caminho = f'{pasta}/{nome}' if pasta else nome
+                        metadados = item.get('metadata') or {}
+                        # Pastas do Storage não possuem metadata de objeto.
+                        if not metadados and not item.get('id'):
+                            pendentes.append(caminho)
+                        else:
+                            itens.append({
+                                'caminho': caminho,
+                                'bytes': int(metadados.get('size') or 0),
+                                'criado_em': item.get('created_at') or '',
+                                'tipo_mime': metadados.get('mimetype') or ''
+                            })
+                    if len(lote) < 100:
+                        break
+                    deslocamento += len(lote)
+            return sorted(itens, key=lambda x: x['caminho'])
+
+        def revisao_central_armazenamento():
+            if user_role != 'admin' or st.session_state.get('authentication_status') is not True:
+                st.error('Acesso exclusivo para administradores.')
+                return
+            st.subheader('Inventário e exclusão de arquivos')
+            st.warning('A exclusão é definitiva. Baixe uma cópia antes de excluir. '
+                       'Arquivos excluídos não poderão mais ser baixados no histórico de revisões.')
+            try:
+                arquivos = revisao_inventario_storage()
+                registros = (cliente_storage_servidor().table('revisao_documentos')
+                             .select('id,processo_id,nome_arquivo,caminho_storage,enviado_por,tipo')
+                             .execute().data or [])
+                por_caminho = {r.get('caminho_storage'): r for r in registros}
+                total = sum(a['bytes'] for a in arquivos)
+                c1, c2 = st.columns(2)
+                c1.metric('Arquivos no bucket peças jurídicas', len(arquivos))
+                c2.metric('Tamanho listado neste bucket', f'{total / 1048576:.2f} MB')
+                st.caption('O medidor acima da Central de Revisões considera todos os buckets. '
+                           'Este inventário lista somente o bucket privado pecas-juridicas.')
+                busca = st.text_input('Filtrar por nome, processo ou usuário', key='inv_busca')
+                linhas = []
+                for a in arquivos:
+                    r = por_caminho.get(a['caminho'], {})
+                    linha = {
+                        'Arquivo': r.get('nome_arquivo') or a['caminho'].split('/')[-1],
+                        'Processo ID': str(r.get('processo_id') or a['caminho'].split('/')[0]),
+                        'Enviado por': r.get('enviado_por') or 'Não identificado',
+                        'Tipo': r.get('tipo') or a['tipo_mime'],
+                        'Tamanho (MB)': round(a['bytes'] / 1048576, 3),
+                        'Criado em': a['criado_em'],
+                        'Caminho': a['caminho']
+                    }
+                    if not busca or busca.casefold() in ' '.join(str(v) for v in linha.values()).casefold():
+                        linhas.append(linha)
+                if not linhas:
+                    st.info('Nenhum arquivo encontrado para o filtro informado.')
+                    return
+                exibir_tabela(pd.DataFrame(linhas), use_container_width=True, hide_index=True)
+                opcoes = {f"{x['Arquivo']} | processo {x['Processo ID']} | {x['Caminho']}": x for x in linhas}
+                escolha = st.selectbox('Selecione um arquivo para baixar ou excluir', list(opcoes), key='inv_arquivo')
+                selecionado = opcoes[escolha]
+                caminho = selecionado['Caminho']
+                if st.button('Preparar download', key='inv_preparar'):
+                    try:
+                        dados = cliente_storage_servidor().storage.from_('pecas-juridicas').download(caminho)
+                        st.session_state['inv_download'] = (caminho, dados)
+                    except Exception as e:
+                        st.error(f'Não foi possível baixar o arquivo: {e}')
+                download = st.session_state.get('inv_download')
+                if download and download[0] == caminho:
+                    st.download_button('Baixar arquivo selecionado', data=download[1],
+                                       file_name=selecionado['Arquivo'], key='inv_baixar')
+                st.divider()
+                st.markdown('**Excluir arquivo selecionado**')
+                st.caption('A exclusão remove o objeto do Storage e seu registro em revisao_documentos. '
+                           'O histórico de eventos do processo é preservado.')
+                confirmacao = st.checkbox('Confirmo a exclusão definitiva deste arquivo específico',
+                                           key=f'inv_conf_{caminho}')
+                if st.button('Excluir definitivamente', type='primary', disabled=not confirmacao,
+                             key='inv_excluir'):
+                    try:
+                        # Verificação no momento da ação, nunca confiar apenas na interface.
+                        if user_role != 'admin' or st.session_state.get('authentication_status') is not True:
+                            raise PermissionError('Operação não autorizada.')
+                        cliente = cliente_storage_servidor()
+                        cliente.storage.from_('pecas-juridicas').remove([caminho])
+                        registro = por_caminho.get(caminho)
+                        erro_db = None
+                        if registro:
+                            try:
+                                cliente.table('revisao_documentos').delete().eq('id', registro['id']).execute()
+                            except Exception as e:
+                                erro_db = e
+                        registrar_auditoria(username, 'Exclusão definitiva de documento', 'Armazenamento',
+                            f"Bucket pecas-juridicas; caminho: {caminho}; processo: {selecionado['Processo ID']}; "
+                            f"tamanho_bytes: {int(selecionado['Tamanho (MB)'] * 1048576)}")
+                        st.session_state.pop('inv_download', None)
+                        st.cache_data.clear()
+                        if erro_db:
+                            st.error(f'Arquivo removido do Storage, mas não foi possível limpar o registro no banco: {erro_db}')
+                        else:
+                            confirmar_operacao('Arquivo excluído do Storage. O espaço liberado aparecerá após atualização da medição.')
+                            st.rerun()
+                    except Exception as e:
+                        st.error(f'Falha ao excluir: {e}. Verifique o arquivo no Storage antes de tentar novamente.')
+            except Exception as e:
+                st.error(f'Não foi possível listar o armazenamento: {e}')
+
         def revisao_upload(arquivo, processo_id, tipo):
             if arquivo is None:
                 return None
@@ -998,7 +1118,7 @@ elif authentication_status == True:
             if user_role == 'admin': acoes.append("Excluir Prospectado Pendente")
         elif menu_principal == "Meus Processos":
             acoes = ["Consultar Meus Processos", "Cadastrar Processo"]
-            if user_role == 'admin': acoes.append("Central de Revisões")
+            if user_role == 'admin': acoes.extend(['Central de Revisões', 'Armazenamento'])
         elif menu_principal == "Pagamentos":
             acoes = ["Ver Parcelas", "Cadastrar Contrato", "Editar Contrato"]
             if user_role == 'admin': acoes = ["Ver Parcelas", "Cadastrar Contrato", "Baixar Parcela", "Extrato de Repasses", "Relatório por Período", "Editar Contrato", "Excluir Contrato"]
@@ -1847,6 +1967,10 @@ elif authentication_status == True:
                                     st.rerun()
                                 except Exception as e:
                                     st.error(f"Erro ao excluir processo: {e}")
+
+            elif sub == 'Armazenamento' and user_role == 'admin':
+                revisao_painel_storage()
+                revisao_central_armazenamento()
 
             elif sub == "Central de Revisões" and user_role == 'admin':
                 st.header('Central de Revisões')

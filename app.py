@@ -11,6 +11,7 @@ import bcrypt
 import json
 import base64
 import re
+from decimal import Decimal, InvalidOperation
 
 st.set_page_config(page_title="Controle DEJURE ADVOCACIA", layout="wide", page_icon="⚖️")
 
@@ -73,15 +74,109 @@ def preparar_tabela_visualizacao(dados):
     return tabela
 
 
+def largura_automatica_colunas(tabela):
+    """Dimensiona as colunas conforme cabeçalho e conteúdo exibido.
+
+    O Streamlit usa uma grade com rolagem horizontal quando a soma das
+    larguras excede a tela; assim não é necessário comprimir o texto.
+    """
+    configuracao = {}
+    for coluna in tabela.columns:
+        # Trabalha somente com a cópia de exibição; não altera os dados.
+        serie = tabela[coluna]
+        textos = [str(coluna)]
+        textos.extend(str(valor) for valor in serie if valor is not None and str(valor) != "")
+        # Aproxima a largura do texto na fonte padrão da grade, com folga.
+        # Para campos muito longos, permite até 2400 px por coluna.
+        maior = max((len(linha) for texto in textos for linha in texto.splitlines()), default=0)
+        largura = min(2400, max(110, int(maior * 8.5 + 40)))
+        configuracao[str(coluna)] = st.column_config.Column(width=largura)
+    return configuracao
+
+
 def exibir_tabela(dados, **kwargs):
-    """Exibe DataFrame ou Styler com valores ausentes em branco."""
+    """Exibe valores ausentes em branco e ajusta a largura das colunas."""
     if isinstance(dados, pd.io.formats.style.Styler):
-        # Preserva as regras de cor e formatação já aplicadas pelo sistema.
-        dados.data = preparar_tabela_visualizacao(dados.data)
+        # Preserva os estilos e trabalha com uma cópia dos dados.
+        tabela = preparar_tabela_visualizacao(dados.data)
+        dados = dados._copy(deepcopy=True)
+        dados.data = tabela
+    elif isinstance(dados, pd.DataFrame):
+        tabela = preparar_tabela_visualizacao(dados)
+        dados = tabela
+    else:
         return st.dataframe(dados, **kwargs)
-    if isinstance(dados, pd.DataFrame):
-        return st.dataframe(preparar_tabela_visualizacao(dados), **kwargs)
-    return st.dataframe(dados, **kwargs)
+
+    # Não sobrescreve eventuais configurações específicas já fornecidas.
+    configuracao = largura_automatica_colunas(tabela)
+    configuracao.update(kwargs.pop("column_config", {}) or {})
+    return st.dataframe(dados, column_config=configuracao, **kwargs)
+
+# --- ENTRADAS MONETÁRIAS EM PADRÃO BRASILEIRO ---
+def interpretar_moeda_br(texto):
+    """Aceita R$ 10.000,00; 10000,00; 10000; 10000.00; retorna float."""
+    valor = str(texto or "").strip().replace("R$", "").replace(" ", "")
+    if not valor:
+        return 0.0
+    if not re.fullmatch(r"[0-9.,]+", valor):
+        raise ValueError("Informe apenas números, pontos de milhar e vírgula decimal.")
+    if "," in valor:
+        if valor.count(",") != 1 or len(valor.split(",")[1]) > 2:
+            raise ValueError("Use até duas casas decimais, por exemplo R$ 10.000,00.")
+        inteiro, centavos = valor.split(",")
+        if "." in inteiro and not re.fullmatch(r"[0-9]{1,3}(\.[0-9]{3})+", inteiro):
+            raise ValueError("Separe os milhares com pontos, por exemplo 10.000,00.")
+        normalizado = inteiro.replace(".", "") + "." + (centavos or "0")
+    elif "." in valor:
+        if re.fullmatch(r"[0-9]{1,3}(\.[0-9]{3})+", valor):
+            normalizado = valor.replace(".", "")
+        elif valor.count(".") == 1 and len(valor.split(".")[1]) <= 2:
+            normalizado = valor  # aceita também 10000.50
+        else:
+            raise ValueError("Formato inválido. Exemplo: R$ 10.000,00.")
+    else:
+        normalizado = valor
+    try:
+        numero = Decimal(normalizado)
+        if numero < 0 or not numero.is_finite():
+            raise ValueError("O valor não pode ser negativo.")
+        return float(numero.quantize(Decimal("0.01")))
+    except (InvalidOperation, OverflowError):
+        raise ValueError("Valor monetário inválido.")
+
+
+def campo_valor_invalido(texto):
+    try:
+        interpretar_moeda_br(texto)
+        return False
+    except ValueError:
+        return True
+
+
+def normalizar_campo_moeda(chave):
+    """Formata ao confirmar o campo (Enter/Tab/clique fora)."""
+    try:
+        numero = interpretar_moeda_br(st.session_state[chave])
+        st.session_state[chave] = formatar_moeda_br(numero)
+    except ValueError:
+        pass  # Mantém o texto para o usuário corrigir.
+
+
+def campo_moeda_br(rotulo, chave, inicial=0.0, em_formulario=False):
+    """Campo textual com valor numérico retornado para cálculos/Supabase."""
+    if chave not in st.session_state:
+        st.session_state[chave] = formatar_moeda_br(inicial)
+    kwargs = {"key": chave, "help": "Exemplo: R$ 10.000,00. Ao sair do campo, o valor será formatado."}
+    if not em_formulario:
+        kwargs["on_change"] = normalizar_campo_moeda
+        kwargs["args"] = (chave,)
+    texto = st.text_input(rotulo, **kwargs)
+    try:
+        return interpretar_moeda_br(texto)
+    except ValueError as erro:
+        st.error(f"{rotulo}: {erro}")
+        return None
+
 
 def gerar_hash(senha: str) -> str:
     return bcrypt.hashpw(senha.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
@@ -1927,9 +2022,9 @@ elif authentication_status == True:
                 cli_op = st.selectbox("Cliente:", ["Outro"] + nomes, key="hon_cliente_opcao") if nomes else "Outro"
                 cli = st.text_input("Nome", key="hon_cliente_nome") if cli_op == "Outro" else cli_op
                 serv = st.text_input("Serviço", key="hon_servico")
-                vtot = st.number_input("Valor Total do Contrato (R$)", min_value=0.0, step=100.0, key="hon_valor_total")
-                v_entrada = st.number_input("Valor de Entrada (R$)", min_value=0.0, step=50.0, key="hon_valor_entrada")
-                saldo_preview = round(float(vtot) - float(v_entrada), 2)
+                vtot = campo_moeda_br("Valor Total do Contrato (R$)", "hon_valor_total")
+                v_entrada = campo_moeda_br("Valor de Entrada (R$)", "hon_valor_entrada")
+                saldo_preview = round(float(vtot or 0) - float(v_entrada or 0), 2)
                 valores_parcelas = []
 
                 if personalizado:
@@ -1937,12 +2032,11 @@ elif authentication_status == True:
                     st.info(f"Quantidade selecionada: {npar} parcelas. Saldo a distribuir: {formatar_moeda_br(max(0.0, saldo_preview))}.")
                     # Cada campo aparece em sua própria linha, sem o limite visual de 3 colunas.
                     for i in range(npar):
-                        valor_i = st.number_input(
+                        valor_i = campo_moeda_br(
                             f"Parcela {i + 1} de {npar} — valor (R$)",
-                            min_value=0.0, step=50.0, format="%.2f",
-                            key=f"hon_parcela_personalizada_{i}"
+                            f"hon_parcela_personalizada_{i}"
                         )
-                        valores_parcelas.append(round(float(valor_i), 2))
+                        valores_parcelas.append(round(float(valor_i or 0), 2))
                     soma_preview = round(sum(valores_parcelas), 2)
                     diferenca_preview = round(saldo_preview - soma_preview, 2)
                     st.write(f"**Campos exibidos: {len(valores_parcelas)} de {npar}**")
@@ -1966,6 +2060,9 @@ elif authentication_status == True:
                         voltar_hon = st.form_submit_button("⬅️ Voltar", use_container_width=True)
 
                     if salvar_hon:
+                        if vtot is None or v_entrada is None or (personalizado and any(campo_valor_invalido(st.session_state.get(f"hon_parcela_personalizada_{i}", "0")) for i in range(npar))):
+                            st.error("Corrija os campos monetários antes de salvar.")
+                            st.stop()
                         soma_parcelas = round(sum(valores_parcelas), 2) if modo_parcelamento == "Parcelas personalizadas (valores diferentes)" else round(saldo_preview, 2)
                         if not cli or not serv or vtot <= 0:
                             st.error("Preencha o cliente, o serviço e um valor total válido.")
@@ -2097,7 +2194,7 @@ elif authentication_status == True:
                             
                             val_prosp_input = 0.0
                             if prosp_name not in ["Nenhum / Sem Prospectador", resp_name]:
-                                val_prosp_input = st.number_input("💵 Valor de Captação deliberado (R$):", min_value=0.0, step=10.0, max_value=valor_bruto)
+                                val_prosp_input = min(campo_moeda_br("💵 Valor de Captação deliberado (R$):", "pag_cap_entrada") or 0.0, valor_bruto)
                             elif prosp_name == resp_name:
                                 st.warning("📌 **Acúmulo Detectado:** O Prospectador e Operador são os mesmos. A comissão incidirá direto no bruto.")
 
@@ -2119,9 +2216,9 @@ elif authentication_status == True:
 
                             val_prosp_input = 0.0
                             if prosp_name not in ["Nenhum / Sem Prospectador", resp_name]:
-                                val_prosp_input = st.number_input("💵 Valor de Captação do Prospectador (R$):", min_value=0.0, max_value=val_total_contrato, step=10.0)
+                                val_prosp_input = min(campo_moeda_br("💵 Valor de Captação do Prospectador (R$):", "pag_cap_saldo") or 0.0, val_total_contrato)
 
-                            val_op_input = st.number_input("💵 Valor do Operador avaliado para esta parcela (R$):", min_value=0.0, max_value=valor_bruto, step=50.0)
+                            val_op_input = min(campo_moeda_br("💵 Valor do Operador avaliado para esta parcela (R$):", "pag_val_operador") or 0.0, valor_bruto)
 
                             resp_role = "estagiario"
                             for u in lista_usuarios:
@@ -2489,7 +2586,7 @@ elif authentication_status == True:
                     sel = st.selectbox("Contrato:", list(hdict.keys()))
                     obj = hdict[sel]
                     with st.form("fe_hon"):
-                        ec, es, ev = st.text_input("Cliente", value=obj.get('cliente','')), st.text_input("Serviço", value=obj.get('servico','')), st.number_input("Valor", value=float(obj.get('valor_total',0)))
+                        ec, es, ev = st.text_input("Cliente", value=obj.get('cliente','')), st.text_input("Serviço", value=obj.get('servico','')), campo_moeda_br("Valor", f"ed_hon_valor_{obj['id']}", inicial=float(obj.get('valor_total') or 0), em_formulario=True)
                         
                         col_eh1, col_eh2 = st.columns(2)
                         with col_eh1:
@@ -2498,6 +2595,9 @@ elif authentication_status == True:
                             voltar_ed_hon = st.form_submit_button("⬅️ Voltar", use_container_width=True)
 
                         if salvar_ed_hon:
+                            if ev is None:
+                                st.error("Corrija o valor antes de salvar.")
+                                st.stop()
                             supabase.table("honorarios").update({"cliente": ec, "servico": es, "valor_total": float(ev)}).eq("id", obj['id']).execute()
                             registrar_auditoria(username, "Editar Contrato", "Pagamentos", f"ID: {obj['id']}")
                             st.cache_data.clear(); st.success("Atualizado!"); st.rerun()

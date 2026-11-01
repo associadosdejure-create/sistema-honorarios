@@ -669,70 +669,134 @@ elif authentication_status == True:
                 limpar_flags_cadastro()
                 st.rerun()
         
-        # --- RADIO DEJURE: player independente, sem credenciais ou banco de dados ---
+        # --- RADIO DEJURE: catálogo brasileiro dinâmico, sem alterações no banco ---
         st.markdown("---")
         st.markdown("<div style='color:#D4AF37;font-weight:700;font-size:1rem;margin-bottom:6px'>📻 Rádio DEJURE</div>", unsafe_allow_html=True)
         import streamlit.components.v1 as dejure_components
-        dejure_components.html("""
+        dejure_components.html(r"""
         <!DOCTYPE html><html lang="pt-BR"><head><meta charset="utf-8">
         <style>
-          *{box-sizing:border-box}body{margin:0;background:#1a1e24;color:#eee;font:13px Arial,sans-serif}
-          .radio{padding:12px;border:1px solid #51452b;border-radius:12px;background:#1a1e24}
-          label{display:block;color:#d4af37;font-weight:600;margin-bottom:7px}
-          select{width:100%;background:#252a31;color:#f0f0f0;border:1px solid #555044;border-radius:7px;padding:9px;font-size:12px}
-          .controls{display:flex;align-items:center;gap:9px;margin-top:12px}
-          button{background:#d4af37;color:#17191d;border:0;border-radius:7px;padding:9px 13px;font-weight:700;cursor:pointer;white-space:nowrap}
+          *{box-sizing:border-box}body{margin:0;background:#1a1e24;color:#eee;font:12px Arial,sans-serif}
+          .radio{padding:11px;border:1px solid #51452b;border-radius:12px;background:#1a1e24}
+          label{display:block;color:#d4af37;font-weight:600;margin:0 0 5px}
+          select,input[type=search]{width:100%;background:#252a31;color:#f0f0f0;border:1px solid #555044;border-radius:7px;padding:8px;font-size:12px;min-width:0}
+          input[type=search]{margin-bottom:8px}select{margin-bottom:6px}
+          .controls{display:flex;align-items:center;gap:7px;margin-top:7px}
+          button{background:#d4af37;color:#17191d;border:0;border-radius:7px;padding:9px 11px;font-weight:700;cursor:pointer;white-space:nowrap}
           button:hover{background:#e5c75d}input[type=range]{min-width:0;flex:1;accent-color:#d4af37}
-          .status{color:#b9bdc3;font-size:11px;margin-top:9px;min-height:15px;overflow-wrap:anywhere}
+          .status{color:#b9bdc3;font-size:11px;margin-top:8px;min-height:28px;overflow-wrap:anywhere;line-height:1.4}
+          .small{color:#a9adb5;font-size:10px;margin:3px 0 0}
         </style></head><body>
         <div class="radio">
-          <label for="estacao">Escolha uma estação</label>
-          <select id="estacao">
-            <optgroup label="🇧🇷 Brasileiras · Música">
-              <option value="https://antenaone.crossradio.com.br/stream/1;">Antena 1 · Flashback / Adulto</option>
-              <option value="https://centova5.transmissaodigital.com:20104/live">Bossa Jazz Brasil · MPB / Jazz</option>
-              <option value="https://live.paineldj.com.br/proxy/jfloripa?mp=/stream">Jovem Pan FM Florianópolis · Pop</option>
-              <option value="https://8062.brasilstream.com.br/mp3">Jovem Pan BH · Pop</option>
-              <option value="https://stream.zeno.fm/erbpkq1cz55vv">Rádio Roberto Carlos · Românticas</option>
-              <option value="https://casthttps.suaradionanet.net/13805/stream">Rádio Reggae Brasil · Reggae</option>
-            </optgroup>
-            <optgroup label="🇧🇷 Brasileiras · Notícias e Cultura">
-              <option value="https://stream3.camara.leg.br/radiocamara1t64">Rádio Câmara · Notícias / Cultura</option>
-              <option value="https://radioaovivo.senado.leg.br:443/fm.mp3">Rádio Senado · Notícias / Cultura</option>
-            </optgroup>
-            <optgroup label="🌎 Internacionais">
-              <option value="https://ice1.somafm.com/groovesalad-128-mp3">Groove Salad · Ambient</option>
-              <option value="https://ice1.somafm.com/secretagent-128-mp3">Secret Agent · Lounge</option>
-              <option value="https://ice1.somafm.com/dronezone-128-mp3">Drone Zone · Relax</option>
-              <option value="https://ice1.somafm.com/indiepop-128-mp3">Indie Pop Rocks · Indie</option>
-              <option value="https://ice1.somafm.com/defcon-128-mp3">DEF CON Radio · Eletrônica</option>
-            </optgroup>
-          </select>
+          <label for="busca">Buscar estação</label><input type="search" id="busca" placeholder="Nome ou estilo musical..." autocomplete="off">
+          <label for="estacao">Escolha uma rádio</label><select id="estacao" aria-label="Estação de rádio"></select>
           <div class="controls"><button id="toggle" type="button">▶ Ouvir</button>
             <span title="Volume">🔊</span><input id="volume" type="range" min="0" max="100" value="65" aria-label="Volume"></div>
-          <div id="status" class="status" role="status">Selecione uma rádio e clique em Ouvir.</div>
+          <div id="status" class="status" role="status">Carregando catálogo de rádios brasileiras...</div>
+          <div class="small">30+ brasileiras (catálogo online) e 5 internacionais.</div>
           <audio id="audio" preload="none"></audio>
         </div>
         <script>
-          const audio=document.getElementById('audio'), estacao=document.getElementById('estacao');
-          const toggle=document.getElementById('toggle'), status=document.getElementById('status');
-          audio.volume=.65;
-          function atualizar(){toggle.textContent=audio.paused?'▶ Ouvir':'❚❚ Pausar';}
+        (()=>{
+          const audio=document.getElementById('audio'), sel=document.getElementById('estacao');
+          const btn=document.getElementById('toggle'), msg=document.getElementById('status');
+          const busca=document.getElementById('busca'); audio.volume=.65;
+          const fixas=[
+            ['🇧🇷 Brasileiras · Música','Antena 1','https://antenaone.crossradio.com.br/stream/1;'],
+            ['🇧🇷 Brasileiras · Música','Bossa Jazz Brasil','https://centova5.transmissaodigital.com:20104/live'],
+            ['🇧🇷 Brasileiras · Música','Jovem Pan FM Florianópolis','https://live.paineldj.com.br/proxy/jfloripa?mp=/stream'],
+            ['🇧🇷 Brasileiras · Música','Jovem Pan BH','https://8062.brasilstream.com.br/mp3'],
+            ['🇧🇷 Brasileiras · Música','Rádio Roberto Carlos','https://stream.zeno.fm/erbpkq1cz55vv'],
+            ['🇧🇷 Brasileiras · Música','Rádio Reggae Brasil','https://casthttps.suaradionanet.net/13805/stream'],
+            ['🇧🇷 Brasileiras · Notícias e Cultura','Rádio Câmara','https://stream3.camara.leg.br/radiocamara1t64'],
+            ['🇧🇷 Brasileiras · Notícias e Cultura','Rádio Senado','https://radioaovivo.senado.leg.br:443/fm.mp3'],
+            ['🌎 Internacionais','Groove Salad · Ambient','https://ice1.somafm.com/groovesalad-128-mp3'],
+            ['🌎 Internacionais','Secret Agent · Lounge','https://ice1.somafm.com/secretagent-128-mp3'],
+            ['🌎 Internacionais','Drone Zone · Relax','https://ice1.somafm.com/dronezone-128-mp3'],
+            ['🌎 Internacionais','Indie Pop Rocks · Indie','https://ice1.somafm.com/indiepop-128-mp3'],
+            ['🌎 Internacionais','DEF CON Radio · Eletrônica','https://ice1.somafm.com/defcon-128-mp3']
+          ];
+          let catalogo=fixas.slice(); let urlAtual='';
+          const texto=(s)=>String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase();
+          function categoria(r){
+            const t=texto((r.name||'')+' '+(r.tags||''));
+            if(/noticia|news|jornal|talk|informativ|esporte|politic/.test(t))return '🇧🇷 Notícias e Esportes';
+            if(/sertanej|country|modao|forro|piseiro/.test(t))return '🇧🇷 Sertanejo e Regional';
+            if(/gospel|crista|religios|evangelic/.test(t))return '🇧🇷 Gospel e Religiosas';
+            if(/mpb|bossa|samba|pagode|brasilidades|jazz/.test(t))return '🇧🇷 MPB, Samba e Jazz';
+            if(/rock|metal|alternativ/.test(t))return '🇧🇷 Rock';
+            if(/pop|hits|dance|eletron|jovem/.test(t))return '🇧🇷 Pop e Eletrônica';
+            return '🇧🇷 Variedades e Música';
+          }
+          function desenhar(){
+            const anterior=sel.value; const filtro=texto(busca.value.trim()); sel.replaceChildren();
+            const grupos=new Map();
+            for(const item of catalogo){
+              if(filtro&&!texto(item[1]+' '+item[0]).includes(filtro))continue;
+              if(!grupos.has(item[0]))grupos.set(item[0],[]); grupos.get(item[0]).push(item);
+            }
+            for(const [titulo,itens] of grupos){
+              const grupo=document.createElement('optgroup');grupo.label=titulo;
+              for(const [,nome,url] of itens){const op=document.createElement('option');op.value=url;op.textContent=nome;grupo.appendChild(op);}
+              sel.appendChild(grupo);
+            }
+            if(anterior&&Array.from(sel.options).some(x=>x.value===anterior))sel.value=anterior;
+            if(!sel.options.length){const op=document.createElement('option');op.textContent='Nenhuma estação encontrada';op.value='';sel.appendChild(op);}
+          }
+          function atualizar(){btn.textContent=audio.paused?'▶ Ouvir':'❚❚ Pausar';}
           async function tocar(){
-            if(audio.src!==estacao.value){audio.src=estacao.value;audio.load();}
-            status.textContent='Conectando à estação...';
-            try{await audio.play();status.textContent='Ao vivo · '+estacao.options[estacao.selectedIndex].text;}
-            catch(e){status.textContent='Não foi possível reproduzir esta rádio. Tente outra estação.';}
+            if(!sel.value)return;
+            if(urlAtual!==sel.value){audio.src=sel.value;urlAtual=sel.value;audio.load();}
+            msg.textContent='Conectando à estação...';
+            try{await audio.play();msg.textContent='Ao vivo · '+sel.options[sel.selectedIndex].textContent;}
+            catch(e){msg.textContent='Não foi possível reproduzir esta estação. Tente outra.';}
             atualizar();
           }
-          toggle.addEventListener('click',()=>{if(audio.paused)tocar();else{audio.pause();status.textContent='Reprodução pausada.';atualizar();}});
-          estacao.addEventListener('change',()=>{const estavaTocando=!audio.paused;audio.pause();audio.removeAttribute('src');audio.load();atualizar();status.textContent='Estação selecionada.';if(estavaTocando)tocar();});
+          btn.addEventListener('click',()=>{if(audio.paused)tocar();else{audio.pause();msg.textContent='Reprodução pausada.';atualizar();}});
+          sel.addEventListener('change',()=>{const tocando=!audio.paused;audio.pause();audio.removeAttribute('src');urlAtual='';audio.load();atualizar();msg.textContent='Estação selecionada.';if(tocando)tocar();});
+          busca.addEventListener('input',desenhar);
           document.getElementById('volume').addEventListener('input',e=>{audio.volume=Number(e.target.value)/100;});
-          audio.addEventListener('error',()=>{status.textContent='Estação indisponível no momento. Escolha outra.';atualizar();});
+          audio.addEventListener('error',()=>{msg.textContent='Transmissão indisponível ou bloqueada pelo navegador. Selecione outra.';atualizar();});
           audio.addEventListener('pause',atualizar);audio.addEventListener('play',atualizar);
+          desenhar();
+          async function carregarBrasileiras(){
+            // Catálogo público com verificações periódicas de funcionamento.
+            // Não depende de chave, Supabase nem alterações no requirements.txt.
+            const servidores=['https://de1.api.radio-browser.info','https://nl1.api.radio-browser.info','https://at1.api.radio-browser.info'];
+            for(const servidor of servidores){
+              const ctrl=new AbortController();const timer=setTimeout(()=>ctrl.abort(),6500);
+              try{
+                const url=servidor+'/json/stations/search?countrycode=BR&hidebroken=true&order=votes&reverse=true&limit=350';
+                const res=await fetch(url,{signal:ctrl.signal,headers:{'Accept':'application/json'}});
+                if(!res.ok)throw Error('Serviço temporariamente indisponível');
+                const lista=await res.json();if(!Array.isArray(lista))throw Error('Resposta inválida');
+                const existentes=new Set(catalogo.map(x=>texto(x[1])));
+                const urls=new Set(catalogo.map(x=>x[2].toLowerCase()));
+                const novas=[];
+                for(const r of lista){
+                  const nome=String(r.name||'').trim().replace(/\s+/g,' ');
+                  const link=String(r.url_resolved||r.url||'').trim();
+                  if(!nome||nome.length>75||!link.startsWith('https://'))continue;
+                  if(!['MP3','AAC','AAC+'].includes(String(r.codec||'').toUpperCase()))continue;
+                  if(r.hls||r.lastcheckok===0||/\.(m3u8?|pls)(\?|$)/i.test(link))continue;
+                  if(existentes.has(texto(nome))||urls.has(link.toLowerCase()))continue;
+                  existentes.add(texto(nome));urls.add(link.toLowerCase());
+                  novas.push([categoria(r),nome,link]);
+                  if(novas.length>=35)break;
+                }
+                if(novas.length<20)throw Error('Catálogo insuficiente');
+                catalogo=fixas.concat(novas);desenhar();
+                msg.textContent='Catálogo carregado: '+(novas.length+8)+' rádios brasileiras e 5 internacionais. Escolha uma estação e clique em Ouvir.';
+                return;
+              }catch(e){}finally{clearTimeout(timer);}
+            }
+            msg.textContent='Catálogo online indisponível. As 8 brasileiras e 5 internacionais fixas continuam disponíveis.';
+          }
+          carregarBrasileiras();
+        })();
         </script></body></html>
-        """, height=188, scrolling=False)
-        st.caption("Rádios brasileiras e internacionais. Reprodução sujeita à disponibilidade; pode parar ao mudar de página.")
+        """, height=256, scrolling=False)
+        st.caption("Busca e categorias; catálogo brasileiro atualizado online. O áudio pode parar ao navegar entre módulos.")
 
         st.markdown("---")
         if os.path.exists("logo.png"): st.image("logo.png", use_container_width=True)

@@ -32,6 +32,42 @@ label, [data-testid="stWidgetLabel"] p { color: #D4AF37 !important; font-weight:
 [data-testid="stCaptionContainer"], .stCaption { color: #ADB0B5 !important; }
 [data-testid="stMetric"] { background: var(--dejure-painel); border: 1px solid #393A3B; border-radius: 11px; padding: 1rem 1.1rem; min-height: 108px; }
 [data-testid="stMetricLabel"] p { color: #D4AF37 !important; font-weight: 550 !important; }
+/* PADRONIZAÇÃO DE LEGIBILIDADE: títulos inteiros, sem reticências */
+[data-testid="stMetric"] { min-width: 0 !important; height: auto !important; }
+[data-testid="stMetricLabel"], [data-testid="stMetricLabel"] > div { min-width: 0 !important; max-width: 100% !important; }
+[data-testid="stMetricLabel"] p, [data-testid="stMetricLabel"] [data-testid="stMarkdownContainer"] p {
+    font-size: clamp(.79rem, .9vw, .91rem) !important;
+    line-height: 1.4 !important;
+    white-space: normal !important;
+    overflow: visible !important;
+    text-overflow: clip !important;
+    overflow-wrap: anywhere !important;
+    display: block !important;
+    -webkit-line-clamp: unset !important;
+}
+[data-testid="stMetricValue"] { font-size: clamp(1.4rem, 1.8vw, 1.9rem) !important; }
+.stButton > button, .stDownloadButton > button, [data-testid="stBaseButton-secondary"], [data-testid="stBaseButton-primary"] {
+    height: auto !important;
+    min-height: 2.65rem !important;
+    white-space: normal !important;
+    overflow-wrap: anywhere !important;
+    line-height: 1.35 !important;
+    font-size: .88rem !important;
+    padding: .55rem .85rem !important;
+}
+.stButton > button p, .stDownloadButton > button p, button[data-testid^="stBaseButton"] p {
+    white-space: normal !important;
+    overflow: visible !important;
+    text-overflow: clip !important;
+    overflow-wrap: anywhere !important;
+    line-height: 1.35 !important;
+    font-size: inherit !important;
+}
+[data-testid="stSidebar"] .stButton > button { min-height: 2.5rem !important; font-size: .87rem !important; }
+[data-baseweb="tab-list"] button[data-baseweb="tab"] { height: auto !important; min-height: 2.5rem !important; white-space: normal !important; font-size: .87rem !important; }
+[data-baseweb="tab-list"] button[data-baseweb="tab"] p { white-space: normal !important; overflow-wrap: anywhere !important; }
+[data-testid="stWidgetLabel"] p { white-space: normal !important; overflow-wrap: anywhere !important; line-height: 1.4 !important; }
+
 [data-testid="stMetricValue"] { color: #D4AF37 !important; font-weight: 700; letter-spacing: -.025em; }
 [data-testid="stForm"], [data-testid="stExpander"] { background: #1A1E24 !important; border: 1px solid #383B3E !important; border-radius: 11px !important; }
 .stButton > button, .stDownloadButton > button, [data-testid="stBaseButton-secondary"] { background: #242930 !important; color: #D4AF37 !important; border: 1px solid #424039 !important; border-radius: 8px !important; font-weight: 600; min-height: 2.6rem; transition: background .15s ease, border-color .15s ease; }
@@ -777,14 +813,16 @@ elif authentication_status == True:
                 if p.get('status') == 'Pendente' and (p.get('data_pm') or p.get('data_ps')):
                     per_pendentes_com_data += 1
 
-            c1, c2, c3, c4, c5, c6, c7 = st.columns(7)
+            # Duas linhas evitam truncamento em telas comuns e notebooks.
+            c1, c2, c3, c4 = st.columns(4)
             c1.metric("Clientes", len(cli))
-            c2.metric("Prospectados Pend.", len(pros_pendentes_reais))
+            c2.metric("Prospectados Pendentes", len(pros_pendentes_reais))
             c3.metric("Contratos", len(hon))
-            c4.metric("Perícias Pend.", per_pendentes_com_data)
-            c5.metric("Expedientes Pend.", len([e for e in exp if e.get('status') == 'Pendente' and e.get('data_manifestacao')]))
-            c6.metric("Exp. TRF Pend.", len([et for et in exp_trf if et.get('status') == 'Pendente' and et.get('data_manifestacao')]))
-            c7.metric("Parcelas Pend.", len([pc for pc in parcelas_db if pc.get('status') == 'Pendente' and pc.get('vencimento')]))
+            c4.metric("Perícias Pendentes", per_pendentes_com_data)
+            c5, c6, c7 = st.columns(3)
+            c5.metric("Expedientes Pendentes", len([e for e in exp if e.get('status') == 'Pendente' and e.get('data_manifestacao')]))
+            c6.metric("Expedientes TRF Pendentes", len([et for et in exp_trf if et.get('status') == 'Pendente' and et.get('data_manifestacao')]))
+            c7.metric("Parcelas Pendentes", len([pc for pc in parcelas_db if pc.get('status') == 'Pendente' and pc.get('vencimento')]))
         except Exception: pass
 
         st.markdown("---")

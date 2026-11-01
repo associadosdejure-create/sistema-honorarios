@@ -15,41 +15,39 @@ from decimal import Decimal, InvalidOperation
 
 st.set_page_config(page_title="Controle DEJURE ADVOCACIA", layout="wide", page_icon="⚖️")
 
-# --- LAYOUT DEJURE | PREMIUM JURIDICO DISCRETO (SOMENTE VISUAL) ---
+# --- LAYOUT DEJURE | GRAFITE E DOURADO ORIGINAL (SOMENTE VISUAL) ---
 st.markdown("""
 <style>
-:root { color-scheme: dark; }
-.stApp, [data-testid="stAppViewContainer"] { background: #101317 !important; color: #E8E9EA !important; }
-[data-testid="stHeader"] { background: rgba(16,19,23,.95) !important; }
-[data-testid="stSidebar"] { background: #171B20 !important; border-right: 1px solid #30353B !important; }
-[data-testid="stSidebar"] [data-testid="stVerticalBlock"] { gap: .65rem; }
-.block-container { max-width: 1500px; padding-top: 1.65rem; padding-bottom: 3rem; }
-h1, h2, h3, h4, h5, h6 { font-family: 'Inter', 'Segoe UI', Arial, sans-serif !important; letter-spacing: -.025em; font-weight: 650 !important; }
-h1 { color: #D5B66B !important; font-size: clamp(1.65rem, 2.6vw, 2.25rem) !important; }
-h2, h3 { color: #D9C28A !important; }
-h4, h5, h6, label, .stMarkdown p { color: #E5E7EB !important; }
-[data-testid="stCaptionContainer"], .stCaption { color: #A8ADB5 !important; }
-[data-testid="stMetric"] { background: #1B2026; border: 1px solid #333A42; border-radius: 12px; padding: 1rem 1.15rem; min-height: 112px; }
-[data-testid="stMetricLabel"] { color: #B5BAC2 !important; font-weight: 500; }
-[data-testid="stMetricValue"] { color: #D8BC78 !important; font-weight: 700; letter-spacing: -.03em; }
-[data-testid="stMetricDelta"] { font-size: .9rem; }
-[data-testid="stForm"], [data-testid="stExpander"] { background: #1A1F25 !important; border: 1px solid #343A42 !important; border-radius: 12px !important; }
-[data-testid="stExpander"] details { border-radius: 12px !important; }
-.stButton > button, .stDownloadButton > button, [data-testid="stBaseButton-secondary"] { background: #252B32 !important; color: #E7E9EC !important; border: 1px solid #414852 !important; border-radius: 9px !important; font-weight: 550; min-height: 2.65rem; transition: background .15s ease, border-color .15s ease; }
-.stButton > button:hover, .stDownloadButton > button:hover { background: #313840 !important; border-color: #BAA16B !important; color: #EAD49C !important; }
-.stButton > button[kind="primary"], [data-testid="stBaseButton-primary"] { background: #C8A85D !important; color: #17191C !important; border: 1px solid #C8A85D !important; font-weight: 700 !important; }
-.stButton > button[kind="primary"]:hover, [data-testid="stBaseButton-primary"]:hover { background: #E0C27C !important; color: #15171A !important; border-color: #E0C27C !important; }
-[data-baseweb="input"], [data-baseweb="select"], [data-baseweb="textarea"], [data-testid="stDateInput"] input, textarea { background: #222830 !important; color: #F0F1F2 !important; border-color: #454C55 !important; border-radius: 8px !important; }
-input, textarea { color: #F0F1F2 !important; }
-[data-baseweb="tab-list"] { gap: .5rem; border-bottom: 1px solid #363D45; }
-button[data-baseweb="tab"] { color: #C0C5CC !important; }
-button[data-baseweb="tab"][aria-selected="true"] { color: #E3C47F !important; border-bottom-color: #C8A85D !important; }
-[data-testid="stDataFrame"], [data-testid="stTable"] { border: 1px solid #353C45; border-radius: 10px; overflow: hidden; }
-[data-testid="stDataFrame"] div[data-baseweb="table"] tr, [data-testid="stDataFrame"] table, [data-testid="stTable"] { width: 100% !important; }
+:root { color-scheme: dark; --dejure-ouro: #D4AF37; --dejure-fundo: #101216; --dejure-painel: #1A1E24; }
+.stApp, [data-testid="stAppViewContainer"] { background: var(--dejure-fundo) !important; color: #E9E9EA !important; }
+[data-testid="stHeader"] { background: rgba(16,18,22,.96) !important; }
+[data-testid="stSidebar"] { background: #171A1F !important; border-right: 1px solid #36332A !important; }
+[data-testid="stSidebar"] [data-testid="stVerticalBlock"] { gap: .55rem; }
+.block-container { max-width: 1500px; padding-top: 1.5rem; padding-bottom: 3rem; }
+h1, h2, h3, h4, h5, h6 { font-family: 'Inter', 'Segoe UI', Arial, sans-serif !important; letter-spacing: -.018em; font-weight: 650 !important; color: var(--dejure-ouro) !important; }
+h1 { font-size: clamp(1.65rem, 2.6vw, 2.25rem) !important; }
+.stMarkdown p, .stMarkdown li { color: #E2E3E5; }
+label, [data-testid="stWidgetLabel"] p { color: #D4AF37 !important; font-weight: 550 !important; }
+[data-testid="stCaptionContainer"], .stCaption { color: #ADB0B5 !important; }
+[data-testid="stMetric"] { background: var(--dejure-painel); border: 1px solid #393A3B; border-radius: 11px; padding: 1rem 1.1rem; min-height: 108px; }
+[data-testid="stMetricLabel"] p { color: #D4AF37 !important; font-weight: 550 !important; }
+[data-testid="stMetricValue"] { color: #D4AF37 !important; font-weight: 700; letter-spacing: -.025em; }
+[data-testid="stForm"], [data-testid="stExpander"] { background: #1A1E24 !important; border: 1px solid #383B3E !important; border-radius: 11px !important; }
+.stButton > button, .stDownloadButton > button, [data-testid="stBaseButton-secondary"] { background: #242930 !important; color: #D4AF37 !important; border: 1px solid #424039 !important; border-radius: 8px !important; font-weight: 600; min-height: 2.6rem; transition: background .15s ease, border-color .15s ease; }
+.stButton > button:hover, .stDownloadButton > button:hover { background: #30343A !important; border-color: #D4AF37 !important; color: #F0D678 !important; }
+.stButton > button[kind="primary"], [data-testid="stBaseButton-primary"] { background: #D4AF37 !important; color: #141619 !important; border: 1px solid #D4AF37 !important; font-weight: 700 !important; }
+.stButton > button[kind="primary"]:hover, [data-testid="stBaseButton-primary"]:hover { background: #E5C75D !important; color: #141619 !important; }
+[data-testid="stSidebar"] .stButton > button { justify-content: flex-start; text-align: left; width: 100%; }
+[data-baseweb="input"], [data-baseweb="select"], [data-baseweb="textarea"], [data-testid="stDateInput"] input, textarea { background: #22272D !important; color: #F0F0F0 !important; border-color: #45494D !important; border-radius: 8px !important; }
+input, textarea { color: #F0F0F0 !important; }
+[data-baseweb="tab-list"] { gap: .45rem; border-bottom: 1px solid #393A3C; }
+button[data-baseweb="tab"] { color: #BFC2C7 !important; }
+button[data-baseweb="tab"][aria-selected="true"] { color: #D4AF37 !important; border-bottom-color: #D4AF37 !important; }
+[data-testid="stDataFrame"], [data-testid="stTable"] { border: 1px solid #393C40; border-radius: 9px; overflow: hidden; }
 [data-testid="stDataFrame"] th, [data-testid="stDataFrame"] td, [data-testid="stTable"] th, [data-testid="stTable"] td { white-space: normal !important; word-break: break-word !important; overflow-wrap: break-word !important; }
-hr { border-color: #363D45 !important; }
-[data-testid="stAlert"] { border-radius: 10px !important; }
-@media (max-width: 768px) { .block-container { padding: 1rem .85rem 2rem; } [data-testid="stMetric"] { padding: .8rem; min-height: 95px; } }
+hr { border-color: #393A3C !important; }
+[data-testid="stAlert"] { border-radius: 9px !important; }
+@media (max-width: 768px) { .block-container { padding: 1rem .8rem 2rem; } [data-testid="stMetric"] { padding: .8rem; min-height: 92px; } }
 </style>
 """, unsafe_allow_html=True)
 

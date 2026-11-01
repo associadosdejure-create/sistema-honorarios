@@ -456,13 +456,13 @@ if authentication_status == False:
     st.error('❌ Usuário ou senha incorretos.')
 elif authentication_status == None:
     if st.session_state.get('sessao_expirada'):
-        st.warning('⏱️ Sua sessão expirou (5 min inativa). Faça login novamente.')
+        st.warning('⏱️ Sua sessão expirou (15 minutos de inatividade). Faça login novamente.')
     else:
         pass  
 elif authentication_status == True:
     
     agora = time.time()
-    TEMPO_MAXIMO = 300
+    TEMPO_MAXIMO = 900  # 15 minutos sem interação
     if 'ultima_atividade' in st.session_state and agora - st.session_state['ultima_atividade'] > TEMPO_MAXIMO:
         registrar_auditoria(username, "Logout (Inatividade)", "Acesso", f"Sessão de {username} expirou por inatividade.")
         st.session_state.update({'authentication_status': None, 'sessao_expirada': True, 'login_registrado': False})
@@ -1691,7 +1691,7 @@ elif authentication_status == True:
             if user_role == 'admin': acoes.extend(['Central de Revisões', 'Armazenamento'])
         elif menu_principal == "Pagamentos":
             acoes = ["Ver Parcelas", "Cadastrar Contrato", "Editar Contrato"]
-            if user_role == 'admin': acoes = ["Ver Parcelas", "Cadastrar Contrato", "Baixar Parcela", "Extrato de Repasses", "Relatório por Período", "Editar Contrato", "Excluir Contrato"]
+            if user_role == 'admin': acoes = ["Ver Parcelas", "Cadastrar Contrato", "Cadastrar Parcelamento em Andamento", "Baixar Parcela", "Extrato de Repasses", "Relatório por Período", "Editar Contrato", "Excluir Contrato"]
         elif menu_principal == "Perícias":
             acoes = ["Ver Perícias", "Cadastrar Perícia", "Importar Excel", "Editar Perícia"]
             if user_role == 'admin': acoes.append("Excluir Perícia")
@@ -3129,6 +3129,96 @@ elif authentication_status == True:
                                 st.session_state['cad_hon_sucesso'] = True
                                 confirmar_operacao('Contrato e parcelas gerados com sucesso!')
                                 st.rerun()
+
+            elif sub == "Cadastrar Parcelamento em Andamento" and user_role == 'admin':
+                st.header("📚 Cadastrar Parcelamento em Andamento")
+                st.info("Registre o contrato completo, incluindo parcelas já recebidas fora do DEJURE. As parcelas históricas ficam como **Pago**, sem gerar novos repasses ou comissões. Somente as parcelas pendentes poderão passar pela baixa financeira normal.")
+                cli_db_hist = carregar_dados("clientes_cadastrados")
+                nomes_hist = sorted(set(c.get("nome", "") for c in cli_db_hist if c.get("nome")))
+                cliente_hist_op = st.selectbox("Cliente", ["Outro"] + nomes_hist, key="hist_cliente_op")
+                cliente_hist = st.text_input("Nome do cliente", key="hist_cliente_nome") if cliente_hist_op == "Outro" else cliente_hist_op
+                servico_hist = st.text_input("Serviço / descrição do contrato", key="hist_servico")
+                col_hist_1, col_hist_2, col_hist_3 = st.columns(3)
+                with col_hist_1:
+                    qtd_hist = int(st.number_input("Total de parcelas", min_value=1, max_value=120, value=10, step=1, key="hist_qtd"))
+                with col_hist_2:
+                    pagas_hist = int(st.number_input("Parcelas já recebidas", min_value=0, max_value=qtd_hist, value=min(7, qtd_hist), step=1, key="hist_pagas"))
+                with col_hist_3:
+                    valor_total_hist = campo_moeda_br("Valor total negociado (R$)", "hist_total")
+                modo_hist = st.radio("Valores das parcelas", ["Parcelas iguais", "Informar valor de cada parcela"], horizontal=True, key="hist_modo")
+                primeira_data_hist = st.date_input("Vencimento original da primeira parcela", value=date.today(), key="hist_primeiro_venc")
+                st.caption("Os vencimentos seguintes são calculados mensalmente. Informe a data real do recebimento para cada parcela histórica.")
+                if valor_total_hist is not None and valor_total_hist > 0:
+                    centavos_hist = int((Decimal(str(valor_total_hist)) * 100).quantize(Decimal("1")))
+                else:
+                    centavos_hist = 0
+                base_hist, sobra_hist = divmod(centavos_hist, qtd_hist)
+                valores_hist = []
+                datas_receb_hist = []
+                for i_hist in range(qtd_hist):
+                    valor_padrao_hist = (base_hist + (sobra_hist if i_hist == qtd_hist - 1 else 0)) / 100
+                    venc_hist = primeira_data_hist + relativedelta(months=i_hist)
+                    with st.expander(f"Parcela {i_hist+1}/{qtd_hist} — {'JÁ RECEBIDA' if i_hist < pagas_hist else 'A RECEBER'} — vencimento {venc_hist.strftime('%d/%m/%Y')}", expanded=(i_hist < 2)):
+                        if modo_hist == "Informar valor de cada parcela":
+                            v_hist = campo_moeda_br(f"Valor da parcela {i_hist+1} (R$)", f"hist_valor_{i_hist}")
+                        else:
+                            v_hist = valor_padrao_hist
+                            st.write(f"Valor: **{formatar_moeda_br(v_hist)}**")
+                        valores_hist.append(v_hist)
+                        if i_hist < pagas_hist:
+                            data_rec = st.date_input(f"Data em que a parcela {i_hist+1} foi efetivamente recebida", value=venc_hist if venc_hist <= date.today() else date.today(), key=f"hist_data_rec_{i_hist}")
+                            datas_receb_hist.append(data_rec)
+                        else:
+                            datas_receb_hist.append(None)
+                soma_hist = sum(Decimal(str(v or 0)) for v in valores_hist)
+                st.markdown(f"**Recebido historicamente:** {formatar_moeda_br(sum(float(v or 0) for v in valores_hist[:pagas_hist]))}  |  **A receber:** {formatar_moeda_br(sum(float(v or 0) for v in valores_hist[ pagas_hist:]))}")
+                if modo_hist == "Informar valor de cada parcela" and abs(soma_hist - Decimal(str(valor_total_hist or 0))) > Decimal("0.009"):
+                    st.warning("A soma das parcelas deve corresponder exatamente ao valor total negociado.")
+                with st.form("form_confirmar_parcelamento_historico"):
+                    confirm_hist = st.checkbox("Confirmo que as parcelas já recebidas são históricas e NÃO devem gerar novos repasses aos sócios.")
+                    salvar_hist = st.form_submit_button("Salvar contrato e histórico de parcelas", type="primary", use_container_width=True)
+                if salvar_hist:
+                    if not confirm_hist:
+                        st.error("Confirme a regra dos recebimentos históricos.")
+                    elif not cliente_hist or not cliente_hist.strip() or not servico_hist.strip():
+                        st.error("Informe o cliente e o serviço.")
+                    elif valor_total_hist is None or valor_total_hist <= 0 or any(v is None or v <= 0 for v in valores_hist):
+                        st.error("Informe valores positivos e válidos.")
+                    elif abs(soma_hist - Decimal(str(valor_total_hist))) > Decimal("0.009"):
+                        st.error("A soma das parcelas precisa ser igual ao valor total do contrato.")
+                    elif any(d > date.today() for d in datas_receb_hist if d is not None):
+                        st.error("A data de recebimento histórico não pode estar no futuro.")
+                    else:
+                        novo_h_id = None
+                        try:
+                            db_hist = cliente_storage_servidor()
+                            contrato_hist = db_hist.table("honorarios").insert({"cliente": cliente_hist.strip(), "servico": servico_hist.strip(), "valor_total": float(valor_total_hist)}).execute()
+                            if not contrato_hist.data:
+                                raise RuntimeError("Não foi possível criar o contrato.")
+                            novo_h_id = contrato_hist.data[0]["id"]
+                            linhas_hist = []
+                            for i_hist, valor_hist in enumerate(valores_hist):
+                                linhas_hist.append({"honorario_id": novo_h_id, "numero_parcela": f"{i_hist+1}/{qtd_hist}", "valor": float(Decimal(str(valor_hist)).quantize(Decimal("0.01"))), "vencimento": (primeira_data_hist + relativedelta(months=i_hist)).isoformat(), "status": "Pago" if i_hist < pagas_hist else "Pendente"})
+                            # A tabela parcelas é a mesma do fluxo normal: o Balanço considera somente pendentes na projeção.
+                            for linha_hist in linhas_hist:
+                                db_hist.table("parcelas").insert(linha_hist).execute()
+                            # Registro informativo separado dos repasses: módulo "Pagamentos", nunca "Repasses".
+                            info_hist = {"tipo": "parcelamento_historico_sem_repasses", "honorario_id": novo_h_id, "cliente": cliente_hist.strip(), "total_parcelas": qtd_hist, "parcelas_ja_pagas": pagas_hist, "recebimentos_historicos": [{"parcela": i+1, "data_recebimento": d.isoformat(), "valor": float(valores_hist[i])} for i, d in enumerate(datas_receb_hist) if d is not None]}
+                            try:
+                                registrar_auditoria(username, "Importar Parcelamento Histórico (sem repasses)", "Pagamentos", json.dumps(info_hist, ensure_ascii=False))
+                            except Exception:
+                                st.warning("Contrato salvo, mas não foi possível registrar os detalhes das datas no log de auditoria.")
+                            st.cache_data.clear()
+                            confirmar_operacao(f"Contrato cadastrado: {pagas_hist} parcela(s) histórica(s) paga(s), {qtd_hist-pagas_hist} pendente(s). Nenhum repasse foi gerado.")
+                        except Exception as erro_hist:
+                            # Evita contratos parciais se houver falha de conexão durante a gravação.
+                            if novo_h_id is not None:
+                                try:
+                                    db_hist.table("parcelas").delete().eq("honorario_id", novo_h_id).execute()
+                                    db_hist.table("honorarios").delete().eq("id", novo_h_id).execute()
+                                except Exception:
+                                    st.error(f"A gravação foi interrompida e pode ter restado um contrato parcial (ID {novo_h_id}). Verifique antes de tentar novamente.")
+                            st.error(f"Não foi possível concluir o cadastro: {erro_hist}")
 
             elif sub == "Ver Parcelas":
                 st.header("📋 Visualizar Parcelas")

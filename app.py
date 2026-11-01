@@ -15,36 +15,42 @@ from decimal import Decimal, InvalidOperation
 
 st.set_page_config(page_title="Controle DEJURE ADVOCACIA", layout="wide", page_icon="⚖️")
 
-# --- ESTILIZAÇÃO CSS (PRETO, DOURADO E TABELAS COM TEXTO EXPANDIDO) ---
+# --- LAYOUT DEJURE | PREMIUM JURIDICO DISCRETO (SOMENTE VISUAL) ---
 st.markdown("""
-    <style>
-    .stApp { background-color: #0A0A0A !important; }
-    [data-testid="stSidebar"], [data-testid="stExpander"], [data-testid="stForm"] {
-        background-color: #121212 !important; border: 1px solid #222222 !important;
-    }
-    h1, h2, h3, h4, h5, h6, label, .stMarkdown p { color: #E0E0E0 !important; }
-    h1, h2, h3 { color: #D4AF37 !important; }
-    .stButton > button[kind="primary"] {
-        background-color: #D4AF37 !important; color: #0A0A0A !important; font-weight: bold; border: none;
-    }
-    .stButton > button[kind="primary"]:hover { background-color: #C5A028 !important; color: #000000 !important; }
-    .stButton > button { background-color: #1F1F1F !important; color: #E0E0E0 !important; border: 1px solid #333333 !important; }
-    .stButton > button:hover { background-color: #2D2D2D !important; color: #D4AF37 !important; border-color: #D4AF37 !important; }
-    [data-testid="stMetricValue"] { color: #D4AF37 !important; }
-    input, select, textarea { background-color: #1A1A1A !important; color: #FFFFFF !important; border-color: #333333 !important; }
-    
-    [data-testid="stDataFrame"] div[data-baseweb="table"] tr,
-    [data-testid="stDataFrame"] table, 
-    [data-testid="stTable"] {
-        width: 100% !important;
-    }
-    [data-testid="stDataFrame"] th, [data-testid="stDataFrame"] td,
-    [data-testid="stTable"] th, [data-testid="stTable"] td {
-        white-space: normal !important;
-        word-break: break-word !important;
-        overflow-wrap: break-word !important;
-    }
-    </style>
+<style>
+:root { color-scheme: dark; }
+.stApp, [data-testid="stAppViewContainer"] { background: #101317 !important; color: #E8E9EA !important; }
+[data-testid="stHeader"] { background: rgba(16,19,23,.95) !important; }
+[data-testid="stSidebar"] { background: #171B20 !important; border-right: 1px solid #30353B !important; }
+[data-testid="stSidebar"] [data-testid="stVerticalBlock"] { gap: .65rem; }
+.block-container { max-width: 1500px; padding-top: 1.65rem; padding-bottom: 3rem; }
+h1, h2, h3, h4, h5, h6 { font-family: 'Inter', 'Segoe UI', Arial, sans-serif !important; letter-spacing: -.025em; font-weight: 650 !important; }
+h1 { color: #D5B66B !important; font-size: clamp(1.65rem, 2.6vw, 2.25rem) !important; }
+h2, h3 { color: #D9C28A !important; }
+h4, h5, h6, label, .stMarkdown p { color: #E5E7EB !important; }
+[data-testid="stCaptionContainer"], .stCaption { color: #A8ADB5 !important; }
+[data-testid="stMetric"] { background: #1B2026; border: 1px solid #333A42; border-radius: 12px; padding: 1rem 1.15rem; min-height: 112px; }
+[data-testid="stMetricLabel"] { color: #B5BAC2 !important; font-weight: 500; }
+[data-testid="stMetricValue"] { color: #D8BC78 !important; font-weight: 700; letter-spacing: -.03em; }
+[data-testid="stMetricDelta"] { font-size: .9rem; }
+[data-testid="stForm"], [data-testid="stExpander"] { background: #1A1F25 !important; border: 1px solid #343A42 !important; border-radius: 12px !important; }
+[data-testid="stExpander"] details { border-radius: 12px !important; }
+.stButton > button, .stDownloadButton > button, [data-testid="stBaseButton-secondary"] { background: #252B32 !important; color: #E7E9EC !important; border: 1px solid #414852 !important; border-radius: 9px !important; font-weight: 550; min-height: 2.65rem; transition: background .15s ease, border-color .15s ease; }
+.stButton > button:hover, .stDownloadButton > button:hover { background: #313840 !important; border-color: #BAA16B !important; color: #EAD49C !important; }
+.stButton > button[kind="primary"], [data-testid="stBaseButton-primary"] { background: #C8A85D !important; color: #17191C !important; border: 1px solid #C8A85D !important; font-weight: 700 !important; }
+.stButton > button[kind="primary"]:hover, [data-testid="stBaseButton-primary"]:hover { background: #E0C27C !important; color: #15171A !important; border-color: #E0C27C !important; }
+[data-baseweb="input"], [data-baseweb="select"], [data-baseweb="textarea"], [data-testid="stDateInput"] input, textarea { background: #222830 !important; color: #F0F1F2 !important; border-color: #454C55 !important; border-radius: 8px !important; }
+input, textarea { color: #F0F1F2 !important; }
+[data-baseweb="tab-list"] { gap: .5rem; border-bottom: 1px solid #363D45; }
+button[data-baseweb="tab"] { color: #C0C5CC !important; }
+button[data-baseweb="tab"][aria-selected="true"] { color: #E3C47F !important; border-bottom-color: #C8A85D !important; }
+[data-testid="stDataFrame"], [data-testid="stTable"] { border: 1px solid #353C45; border-radius: 10px; overflow: hidden; }
+[data-testid="stDataFrame"] div[data-baseweb="table"] tr, [data-testid="stDataFrame"] table, [data-testid="stTable"] { width: 100% !important; }
+[data-testid="stDataFrame"] th, [data-testid="stDataFrame"] td, [data-testid="stTable"] th, [data-testid="stTable"] td { white-space: normal !important; word-break: break-word !important; overflow-wrap: break-word !important; }
+hr { border-color: #363D45 !important; }
+[data-testid="stAlert"] { border-radius: 10px !important; }
+@media (max-width: 768px) { .block-container { padding: 1rem .85rem 2rem; } [data-testid="stMetric"] { padding: .8rem; min-height: 95px; } }
+</style>
 """, unsafe_allow_html=True)
 
 try:

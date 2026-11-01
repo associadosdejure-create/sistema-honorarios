@@ -53,6 +53,17 @@ except Exception:
     st.error("⚠️ ERRO CRÍTICO: Chaves do Supabase ausentes nos Secrets.")
     st.stop()
 
+# --- CONFIRMAÇÃO VISUAL DE OPERAÇÕES ---
+def confirmar_operacao(mensagem):
+    """Mostra confirmação imediata e mantém aviso após st.rerun()."""
+    st.session_state['_dejure_ultima_confirmacao'] = str(mensagem)
+    st.success(mensagem, icon="✅")
+    st.toast(str(mensagem), icon="✅")
+
+# Exibe a confirmação após um rerun (por exemplo, depois de cadastrar ou excluir).
+if st.session_state.get('_dejure_ultima_confirmacao'):
+    st.success(st.session_state.pop('_dejure_ultima_confirmacao'), icon="✅")
+
 # --- APRESENTAÇÃO DE TABELAS: CAMPOS SEM DADOS FICAM EM BRANCO ---
 def preparar_tabela_visualizacao(dados):
     """Limpa apenas a visualização, sem alterar os registros do Supabase."""
@@ -403,7 +414,7 @@ elif authentication_status == True:
                             
                             registrar_auditoria(username, "Troca de Senha Obrigatória", "Segurança", "Senha alterada com sucesso no primeiro acesso.")
                             st.cache_data.clear()
-                            st.success("🎉 Senha alterada com sucesso! Liberando acesso ao sistema...")
+                            confirmar_operacao("🎉 Senha alterada com sucesso! Liberando acesso ao sistema...")
                             time.sleep(1)
                             st.rerun()
                         except Exception as e:
@@ -473,7 +484,7 @@ elif authentication_status == True:
             supabase.table(tabela).insert(dadosLimpos).execute()
             registrar_auditoria(username, "Importação Excel", tabela, f"{len(dadosLimpos)} registros importados.")
             st.cache_data.clear()
-            st.success(f"🎉 {len(dadosLimpos)} registros importados com sucesso!")
+            confirmar_operacao(f"🎉 {len(dadosLimpos)} registros importados com sucesso!")
             st.rerun()
         except Exception as e:
             st.error(f"⚠️ Erro ao importar planilha: {e}")
@@ -764,7 +775,7 @@ elif authentication_status == True:
 
                                 registrar_auditoria(username, "Distribuir Processo", "Distribuição", f"Cliente {obj_sel_dist['cliente_nome']} atribuído a {adv_responsavel}")
                                 st.cache_data.clear()
-                                st.success(f"✅ Processo distribuído e enviado automaticamente para 'Meus Processos' de **{adv_responsavel}**!")
+                                confirmar_operacao(f"✅ Processo distribuído e enviado automaticamente para 'Meus Processos' de **{adv_responsavel}**!")
                                 time.sleep(1)
                                 st.rerun()
                             except Exception as e:
@@ -782,7 +793,7 @@ elif authentication_status == True:
                                 supabase.table("distribuicao_processos").delete().eq("id", id_para_excluir).execute()
                                 registrar_auditoria(username, "Excluir da Fila de Distribuição", "Distribuição", f"Registro ID {id_para_excluir} excluído.")
                                 st.cache_data.clear()
-                                st.success("✅ Registro excluído da fila com sucesso!")
+                                confirmar_operacao("✅ Registro excluído da fila com sucesso!")
                                 time.sleep(1)
                                 st.rerun()
                             except Exception as e:
@@ -801,7 +812,7 @@ elif authentication_status == True:
             if st.button("🔥 ZERAR LOGS GERAIS", key="btn_zerar_geral"):
                 try:
                     supabase.table("logs_auditoria").delete().neq("id", 0).execute()
-                    st.success("Logs gerais zerados com sucesso!")
+                    confirmar_operacao("Logs gerais zerados com sucesso!")
                     st.rerun()
                 except Exception as e:
                     st.error(f"Erro: {e}")
@@ -821,7 +832,7 @@ elif authentication_status == True:
             if st.button("🔥 ZERAR LOGS DE ACESSO", key="btn_zerar_acesso"):
                 try:
                     supabase.table("logs_auditoria").delete().eq("modulo", "Acesso").execute()
-                    st.success("Logs de acesso zerados com sucesso!")
+                    confirmar_operacao("Logs de acesso zerados com sucesso!")
                     st.rerun()
                 except Exception as e:
                     st.error(f"Erro: {e}")
@@ -932,7 +943,7 @@ elif authentication_status == True:
                                 }).execute()
                                 registrar_auditoria(username, "Enviar para Distribuição", "Clientes", f"Cliente: {cli_nome_cad} enviado para distribuição.")
                                 st.cache_data.clear()
-                                st.success("✅ Cliente enviado para a Distribuição de Processos com sucesso!")
+                                confirmar_operacao("✅ Cliente enviado para a Distribuição de Processos com sucesso!")
                                 time.sleep(1)
                                 limpar_flags_cadastro()
                                 st.rerun()
@@ -1088,6 +1099,7 @@ elif authentication_status == True:
                                 st.cache_data.clear()
                                 
                                 st.session_state['cad_cli_sucesso'] = True
+                                confirmar_operacao('Cliente cadastrado com sucesso!')
                                 st.session_state['ultimo_cliente_cadastrado_id'] = cli_cad_id
                                 st.session_state['ultimo_cliente_cadastrado_nome'] = n.strip()
                                 st.session_state['ultimo_cliente_cadastrado_doc'] = doc.strip()
@@ -1255,7 +1267,7 @@ elif authentication_status == True:
 
                                     registrar_auditoria(username, "Editar Cliente", "Clientes", f"ID: {obj['id']} - {en.strip()}")
                                     st.cache_data.clear()
-                                    st.success("🎉 Cliente atualizado com sucesso!")
+                                    confirmar_operacao("🎉 Cliente atualizado com sucesso!")
                                     time.sleep(1)
                                     st.rerun()
                                 except Exception as ex:
@@ -1276,7 +1288,7 @@ elif authentication_status == True:
                     if st.checkbox("Confirmo exclusão permanente deste cliente.") and st.button("EXCLUIR SELECIONADO", type="primary"):
                         supabase.table("clientes_cadastrados").delete().eq("id", cdict[sel]).execute()
                         registrar_auditoria(username, "Excluir Cliente", "Clientes", f"ID: {cdict[sel]}")
-                        st.cache_data.clear(); st.success("Excluído!"); st.rerun()
+                        st.cache_data.clear(); confirmar_operacao("Excluído!"); st.rerun()
                     
                     st.markdown("---")
                     st.warning("⚠️ **ÁREA CRÍTICA:** Exclusão em massa de toda a base de clientes.")
@@ -1284,7 +1296,7 @@ elif authentication_status == True:
                         if st.button("🔥 EXCLUIR TODOS OS CLIENTES", type="primary"):
                             supabase.table("clientes_cadastrados").delete().neq("id", 0).execute()
                             registrar_auditoria(username, "EXCLUIR TODOS OS CLIENTES", "Clientes", "Exclusão em massa executada.")
-                            st.cache_data.clear(); st.success("Todos os registros foram excluídos com sucesso!"); st.rerun()
+                            st.cache_data.clear(); confirmar_operacao("Todos os registros foram excluídos com sucesso!"); st.rerun()
                 else: st.info("Nenhum cliente cadastrado.")
 
             elif sub == "Exportar Base (Backup)":
@@ -1352,7 +1364,7 @@ elif authentication_status == True:
                         st.rerun()
 
                 if st.session_state.get('cad_pros_pend_sucesso'):
-                    st.success("🎉 Prospectado pendente cadastrado com sucesso!")
+                    confirmar_operacao("🎉 Prospectado pendente cadastrado com sucesso!")
                     col_1, col_2 = st.columns(2)
                     with col_1:
                         if st.button("➕ Cadastrar Outro", key="btn_novo_pros_pend", type="primary", use_container_width=True):
@@ -1457,7 +1469,7 @@ elif authentication_status == True:
 
                                     registrar_auditoria(username, "Editar Prospectado Pendente", "Prospectados Pendentes", f"ID: {obj_p['id']} - {ep_nome.strip()}")
                                     st.cache_data.clear()
-                                    st.success("🎉 Prospectado atualizado com sucesso!")
+                                    confirmar_operacao("🎉 Prospectado atualizado com sucesso!")
                                     time.sleep(1)
                                     st.rerun()
                                 except Exception as ex:
@@ -1481,7 +1493,7 @@ elif authentication_status == True:
                             supabase.table("prospectados_pendentes").delete().eq("id", pdict[sel_p_del]).execute()
                             registrar_auditoria(username, "Excluir Prospectado Pendente", "Prospectados Pendentes", f"ID: {pdict[sel_p_del]}")
                             st.cache_data.clear()
-                            st.success("✅ Excluído com sucesso!")
+                            confirmar_operacao("✅ Excluído com sucesso!")
                             st.rerun()
                 else:
                     st.info("Nenhum prospectado pendente cadastrado.")
@@ -1520,7 +1532,7 @@ elif authentication_status == True:
                                 }).execute()
                                 registrar_auditoria(username, "Cadastrar Processo", "Meus Processos", f"Proc: {c_proc}")
                                 st.cache_data.clear()
-                                st.success("✅ Processo cadastrado com sucesso!")
+                                confirmar_operacao("✅ Processo cadastrado com sucesso!")
                                 st.rerun()
                             except Exception as e:
                                 st.error(f"Erro ao cadastrar processo: {e}")
@@ -1576,7 +1588,7 @@ elif authentication_status == True:
                                 }).eq("id", obj_proc['id']).execute()
                                 registrar_auditoria(username, "Atualizar Processo", "Meus Processos", f"ID {obj_proc['id']} alterado para {novo_status}")
                                 st.cache_data.clear()
-                                st.success("✅ Processo atualizado com sucesso!")
+                                confirmar_operacao("✅ Processo atualizado com sucesso!")
                                 st.rerun()
                             except Exception as e:
                                 st.error(f"Erro ao atualizar: {e}")
@@ -1591,7 +1603,7 @@ elif authentication_status == True:
                                     }).eq("id", obj_proc['id']).execute()
                                     registrar_auditoria(username, "Enviar para Revisão", "Meus Processos", f"Proc ID {obj_proc['id']} enviado para revisão.")
                                     st.cache_data.clear()
-                                    st.success("🚀 Processo enviado para revisão!")
+                                    confirmar_operacao("🚀 Processo enviado para revisão!")
                                     st.rerun()
                                 except Exception as e:
                                     st.error(f"Erro ao enviar para revisão: {e}")
@@ -1605,7 +1617,7 @@ elif authentication_status == True:
                                     supabase.table("meus_processos").delete().eq("id", obj_proc['id']).execute()
                                     registrar_auditoria(username, "Excluir Processo (Admin)", "Meus Processos", f"Processo ID {obj_proc['id']} ({obj_proc['numero_processo']}) do usuário {obj_proc.get('responsavel')} excluído.")
                                     st.cache_data.clear()
-                                    st.success("✅ Processo excluído permanentemente da base de dados!")
+                                    confirmar_operacao("✅ Processo excluído permanentemente da base de dados!")
                                     time.sleep(1)
                                     st.rerun()
                                 except Exception as e:
@@ -1653,7 +1665,7 @@ elif authentication_status == True:
                                     }).eq("id", obj_r['id']).execute()
                                     registrar_auditoria(username, "Revisar e Devolver", "Meus Processos", f"Proc ID {obj_r['id']} devolvido para {novo_responsavel_devolucao}.")
                                     st.cache_data.clear()
-                                    st.success(f"✅ Processo revisado e devolvido para **{novo_responsavel_devolucao}**!")
+                                    confirmar_operacao(f"✅ Processo revisado e devolvido para **{novo_responsavel_devolucao}**!")
                                     time.sleep(1)
                                     st.rerun()
                                 except Exception as e:
@@ -1712,7 +1724,7 @@ elif authentication_status == True:
                                         registrar_auditoria(username, "Destaque do Mês", "Equipe", f"Destaque definido para: {sel_destaque}")
                                     
                                     st.cache_data.clear()
-                                    st.success("Destaque atualizado com sucesso! Recarregando...")
+                                    confirmar_operacao("Destaque atualizado com sucesso! Recarregando...")
                                     time.sleep(1)
                                     st.rerun()
                                 except Exception as e:
@@ -1859,7 +1871,7 @@ elif authentication_status == True:
                                     
                                     registrar_auditoria(username, "Atualizar Perfil", "Segurança", "Dados de perfil atualizados.")
                                     st.cache_data.clear()
-                                    st.success("✅ Perfil atualizado com sucesso!")
+                                    confirmar_operacao("✅ Perfil atualizado com sucesso!")
                                     time.sleep(1)
                                     st.rerun()
                                 except Exception as e:
@@ -1916,7 +1928,7 @@ elif authentication_status == True:
                                 raise RuntimeError("O banco não confirmou a gravação da senha.")
                             registrar_auditoria(username, "Alterar Senha", "Segurança", "Senha alterada pelo próprio usuário.")
                             st.cache_data.clear()
-                            st.success("✅ Senha alterada! Saia e entre novamente com a nova senha.")
+                            confirmar_operacao("✅ Senha alterada! Saia e entre novamente com a nova senha.")
                         except Exception as erro:
                             st.error(f"Não foi possível salvar a senha: {erro}")
 
@@ -1958,7 +1970,7 @@ elif authentication_status == True:
                                 st.error(f"Erro ao cadastrar usuário: {e}")
 
                 if st.session_state.get('cad_user_sucesso'):
-                    st.success("🎉 Usuário cadastrado com sucesso!")
+                    confirmar_operacao("🎉 Usuário cadastrado com sucesso!")
                     col1, col2 = st.columns(2)
                     with col1:
                         if st.button("➕ Cadastrar Novo Usuário", key="btn_novo_user", type="primary", use_container_width=True):
@@ -1993,7 +2005,7 @@ elif authentication_status == True:
                                 supabase.table("usuarios_sistema").delete().eq("id", uid_del).execute()
                                 registrar_auditoria(username, "Excluir Usuário", "Segurança", f"Usuário ID {uid_del} excluído.")
                                 st.cache_data.clear()
-                                st.success("Usuário excluído com sucesso!")
+                                confirmar_operacao("Usuário excluído com sucesso!")
                                 st.rerun()
                 except Exception as e:
                     st.error(f"Erro ao carregar usuários: {e}")
@@ -2110,6 +2122,7 @@ elif authentication_status == True:
                                 registrar_auditoria(username, "Cadastrar Contrato com Entrada", "Pagamentos", f"Cliente: {cli} - Total: {formatar_moeda_br(vtot)} - Parcelamento: {modo_parcelamento}")
                                 st.cache_data.clear()
                                 st.session_state['cad_hon_sucesso'] = True
+                                confirmar_operacao('Contrato e parcelas gerados com sucesso!')
                                 st.rerun()
 
             elif sub == "Ver Parcelas":
@@ -2351,7 +2364,7 @@ elif authentication_status == True:
                                 supabase.table("parcelas").update({"status": "Pago"}).eq("id", parcela_obj['id']).execute()
                                 registrar_auditoria(username, "Baixa e Rateio", "Repasses", json_repasse)
                                 st.cache_data.clear()
-                                st.success("✅ Parcela baixada e repasse validado com sucesso! Consulte o Extrato de Repasses.")
+                                confirmar_operacao("✅ Parcela baixada e repasse validado com sucesso! Consulte o Extrato de Repasses.")
                                 st.rerun()
                             except Exception as e:
                                 st.error(f"Erro ao processar baixa: {e}")
@@ -2600,7 +2613,7 @@ elif authentication_status == True:
                                 st.stop()
                             supabase.table("honorarios").update({"cliente": ec, "servico": es, "valor_total": float(ev)}).eq("id", obj['id']).execute()
                             registrar_auditoria(username, "Editar Contrato", "Pagamentos", f"ID: {obj['id']}")
-                            st.cache_data.clear(); st.success("Atualizado!"); st.rerun()
+                            st.cache_data.clear(); confirmar_operacao("Atualizado!"); st.rerun()
                         if voltar_ed_hon:
                             st.session_state['submenu_atual'] = "Ver Parcelas"
                             st.rerun()
@@ -2614,7 +2627,7 @@ elif authentication_status == True:
                     if st.checkbox("Confirmo exclusão do contrato selecionado.") and st.button("EXCLUIR SELECIONADO", type="primary"):
                         supabase.table("honorarios").delete().eq("id", hdict[sel]).execute()
                         registrar_auditoria(username, "Excluir Contrato", "Pagamentos", f"ID: {hdict[sel]}")
-                        st.cache_data.clear(); st.success("Excluído!"); st.rerun()
+                        st.cache_data.clear(); confirmar_operacao("Excluído!"); st.rerun()
 
                     st.markdown("---")
                     st.warning("⚠️ **ÁREA CRÍTICA:** Exclusão em massa de TODOS os contratos e parcelas.")
@@ -2623,7 +2636,7 @@ elif authentication_status == True:
                             supabase.table("parcelas").delete().neq("id", 0).execute()
                             supabase.table("honorarios").delete().neq("id", 0).execute()
                             registrar_auditoria(username, "EXCLUIR TODOS OS CONTRATOS", "Pagamentos", "Exclusão em massa.")
-                            st.cache_data.clear(); st.success("Todos os contratos e parcelas foram excluídos!"); st.rerun()
+                            st.cache_data.clear(); confirmar_operacao("Todos os contratos e parcelas foram excluídos!"); st.rerun()
                 else: st.info("Sem contratos cadastrados.")
 
         # --- MÓDULO PERÍCIAS ---
@@ -2677,7 +2690,7 @@ elif authentication_status == True:
                         st.rerun()
 
                 if st.session_state.get('cad_per_sucesso'):
-                    st.success("🎉 Perícia cadastrada com sucesso!")
+                    confirmar_operacao("🎉 Perícia cadastrada com sucesso!")
                     col1, col2 = st.columns(2)
                     with col1:
                         if st.button("➕ Cadastrar Nova Perícia", key="btn_novo_per", type="primary", use_container_width=True):
@@ -2776,7 +2789,7 @@ elif authentication_status == True:
                             }).eq("id", obj['id']).execute()
                             registrar_auditoria(username, "Editar Perícia", "Perícias", f"ID: {obj['id']}")
                             st.cache_data.clear()
-                            st.success("Perícia atualizada com sucesso!")
+                            confirmar_operacao("Perícia atualizada com sucesso!")
                             st.rerun()
                         if voltar_ed_per:
                             st.session_state['submenu_atual'] = "Ver Perícias"
@@ -2794,7 +2807,7 @@ elif authentication_status == True:
                         supabase.table("pericias").delete().eq("id", pdict[sel]).execute()
                         registrar_auditoria(username, "Excluir Perícia", "Perícias", f"ID: {pdict[sel]}")
                         st.cache_data.clear()
-                        st.success("Perícia excluída!")
+                        confirmar_operacao("Perícia excluída!")
                         st.rerun()
 
                     st.markdown("---")
@@ -2804,7 +2817,7 @@ elif authentication_status == True:
                             supabase.table("pericias").delete().neq("id", 0).execute()
                             registrar_auditoria(username, "EXCLUIR TODAS AS PERÍCIAS", "Perícias", "Exclusão em massa.")
                             st.cache_data.clear()
-                            st.success("Todas as perícias foram excluídas!")
+                            confirmar_operacao("Todas as perícias foram excluídas!")
                             st.rerun()
                 else: 
                     st.info("Sem perícias cadastradas.")
@@ -2833,7 +2846,7 @@ elif authentication_status == True:
                         st.rerun()
 
                 if st.session_state.get('cad_exp_sucesso'):
-                    st.success("🎉 Expediente cadastrado com sucesso!")
+                    confirmar_operacao("🎉 Expediente cadastrado com sucesso!")
                     col1, col2 = st.columns(2)
                     with col1:
                         if st.button("➕ Cadastrar Novo Expediente", key="btn_novo_exp", type="primary", use_container_width=True):
@@ -2877,7 +2890,7 @@ elif authentication_status == True:
                         supabase.table("expedientes").update({"status": novo_status_exp}).eq("id", obj_exp['id']).execute()
                         registrar_auditoria(username, "Atualizar Status", "Expedientes", f"Processo ID {obj_exp['id']} para {novo_status_exp}")
                         st.cache_data.clear()
-                        st.success("Status atualizado com sucesso!")
+                        confirmar_operacao("Status atualizado com sucesso!")
                         st.rerun()
                 else: st.info("Sem expedientes cadastrados.")
 
@@ -2900,7 +2913,7 @@ elif authentication_status == True:
                         if salvar_ed_exp:
                             supabase.table("expedientes").update({"numero_processo": ep, "cliente": ec, "descricao": ed, "responsavel": er, "status": es}).eq("id", obj['id']).execute()
                             registrar_auditoria(username, "Editar Expediente", "Expedientes", f"ID: {obj['id']}")
-                            st.cache_data.clear(); st.success("Atualizado!"); st.rerun()
+                            st.cache_data.clear(); confirmar_operacao("Atualizado!"); st.rerun()
                         if voltar_ed_exp:
                             st.session_state['submenu_atual'] = "Consultar Expedientes"
                             st.rerun()
@@ -2914,7 +2927,7 @@ elif authentication_status == True:
                     if st.checkbox("Confirmo exclusão do expediente selecionado.") and st.button("EXCLUIR SELECIONADO", type="primary"):
                         supabase.table("expedientes").delete().eq("id", edict[sel]).execute()
                         registrar_auditoria(username, "Excluir Expediente", "Expedientes", f"ID: {edict[sel]}")
-                        st.cache_data.clear(); st.success("Excluído!"); st.rerun()
+                        st.cache_data.clear(); confirmar_operacao("Excluído!"); st.rerun()
 
                     st.markdown("---")
                     st.warning("⚠️ **ÁREA CRÍTICA:** Exclusão em massa de TODOS os expedientes.")
@@ -2922,7 +2935,7 @@ elif authentication_status == True:
                         if st.button("🔥 EXCLUIR TODOS OS EXPEDIENTES", type="primary"):
                             supabase.table("expedientes").delete().neq("id", 0).execute()
                             registrar_auditoria(username, "EXCLUIR TODOS OS EXPEDIENTES", "Expedientes", "Exclusão em massa.")
-                            st.cache_data.clear(); st.success("Todos os expedientes foram excluídos!"); st.rerun()
+                            st.cache_data.clear(); confirmar_operacao("Todos os expedientes foram excluídos!"); st.rerun()
                 else: st.info("Sem expedientes cadastrados.")
 
         # --- MÓDULO EXPEDIENTES TRF ---
@@ -2949,7 +2962,7 @@ elif authentication_status == True:
                         st.rerun()
 
                 if st.session_state.get('cad_trf_sucesso'):
-                    st.success("🎉 Expediente TRF cadastrado com sucesso!")
+                    confirmar_operacao("🎉 Expediente TRF cadastrado com sucesso!")
                     col1, col2 = st.columns(2)
                     with col1:
                         if st.button("➕ Cadastrar Novo Expediente TRF", key="btn_novo_trf", type="primary", use_container_width=True):
@@ -2993,7 +3006,7 @@ elif authentication_status == True:
                         supabase.table("expedientes_trf").update({"status": novo_status_trf}).eq("id", obj_trf['id']).execute()
                         registrar_auditoria(username, "Atualizar Status TRF", "Expedientes TRF", f"Processo ID {obj_trf['id']} para {novo_status_trf}")
                         st.cache_data.clear()
-                        st.success("Status atualizado com sucesso!")
+                        confirmar_operacao("Status atualizado com sucesso!")
                         st.rerun()
                 else: st.info("Sem expedientes TRF cadastrados.")
 
@@ -3016,7 +3029,7 @@ elif authentication_status == True:
                         if salvar_ed_trf:
                             supabase.table("expedientes_trf").update({"numero_processo": ep, "cliente": ec, "descricao": ed, "responsavel": er, "status": es}).eq("id", obj['id']).execute()
                             registrar_auditoria(username, "Editar Expediente TRF", "Expedientes TRF", f"ID: {obj['id']}")
-                            st.cache_data.clear(); st.success("Atualizado!"); st.rerun()
+                            st.cache_data.clear(); confirmar_operacao("Atualizado!"); st.rerun()
                         if voltar_ed_trf:
                             st.session_state['submenu_atual'] = "Consultar Expedientes TRF"
                             st.rerun()
@@ -3031,7 +3044,7 @@ elif authentication_status == True:
                     if st.checkbox("Confirmo exclusão do expediente TRF selecionado.") and st.button("EXCLUIR SELECIONADO", type="primary"):
                         supabase.table("expedientes_trf").delete().eq("id", edict[sel]).execute()
                         registrar_auditoria(username, "Excluir Expediente TRF", "Expedientes TRF", f"ID: {edict[sel]}")
-                        st.cache_data.clear(); st.success("Excluído!"); st.rerun()
+                        st.cache_data.clear(); confirmar_operacao("Excluído!"); st.rerun()
 
                     st.markdown("---")
                     st.warning("⚠️ **ÁREA CRÍTICA:** Exclusão em massa de TODOS os expedientes TRF.")
@@ -3039,7 +3052,7 @@ elif authentication_status == True:
                         if st.button("🔥 EXCLUIR TODOS OS EXPEDIENTES TRF", type="primary"):
                             supabase.table("expedientes_trf").delete().neq("id", 0).execute()
                             registrar_auditoria(username, "EXCLUIR TODOS OS EXPEDIENTES TRF", "Expedientes TRF", "Exclusão em massa.")
-                            st.cache_data.clear(); st.success("Todas as expedientes TRF foram excluídos!"); st.rerun()
+                            st.cache_data.clear(); confirmar_operacao("Todas as expedientes TRF foram excluídos!"); st.rerun()
                 else: st.info("Sem expedientes TRF cadastrados.")
 
         # --- MÓDULO PENDÊNCIAS ---
@@ -3072,7 +3085,7 @@ elif authentication_status == True:
                         st.rerun()
 
                 if st.session_state.get('cad_pen_sucesso'):
-                    st.success("🎉 Pendência cadastrada com sucesso!")
+                    confirmar_operacao("🎉 Pendência cadastrada com sucesso!")
                     col1, col2 = st.columns(2)
                     with col1:
                         if st.button("➕ Cadastrar Nova Pendência", key="btn_novo_pen", type="primary", use_container_width=True):
@@ -3108,7 +3121,7 @@ elif authentication_status == True:
                     if st.button("Marcar como Entregue"):
                         supabase.table("pendencias").update({"status": "Entregue"}).eq("id", pid).execute()
                         registrar_auditoria(username, "Marcar Entregue", "Pendências", f"Pendência ID: {pid}")
-                        st.cache_data.clear(); st.success("Atualizado!"); st.rerun()
+                        st.cache_data.clear(); confirmar_operacao("Atualizado!"); st.rerun()
                 else: st.info("Sem pendências.")
 
             elif sub == "Editar Pendência":
@@ -3130,7 +3143,7 @@ elif authentication_status == True:
                         if salvar_ed_pen:
                             supabase.table("pendencias").update({"cliente": ec, "processo": ep, "documento_devido": ed}).eq("id", obj['id']).execute()
                             registrar_auditoria(username, "Editar Pendência", "Pendências", f"ID: {obj['id']}")
-                            st.cache_data.clear(); st.success("Excluído!"); st.rerun()
+                            st.cache_data.clear(); confirmar_operacao("Excluído!"); st.rerun()
                         if voltar_ed_pen:
                             st.session_state['submenu_atual'] = "Consultar Pendências"
                             st.rerun()
@@ -3144,7 +3157,7 @@ elif authentication_status == True:
                     if st.checkbox("Confirmo exclusão da pendência selecionada.") and st.button("EXCLUIR SELECIONADO", type="primary"):
                         supabase.table("pendencias").delete().eq("id", pdict[sel]).execute()
                         registrar_auditoria(username, "Excluir Pendência", "Pendências", f"ID: {pdict[sel]}")
-                        st.cache_data.clear(); st.success("Excluído!"); st.rerun()
+                        st.cache_data.clear(); confirmar_operacao("Excluído!"); st.rerun()
 
                     st.markdown("---")
                     st.warning("⚠️ **ÁREA CRÍTICA:** Exclusão em massa de TODOS as pendências.")
@@ -3152,5 +3165,5 @@ elif authentication_status == True:
                         if st.button("🔥 EXCLUIR TODOS AS PENDÊNCIAS", type="primary"):
                             supabase.table("pendencias").delete().neq("id", 0).execute()
                             registrar_auditoria(username, "EXCLUIR TODAS AS PENDÊNCIAS", "Pendências", "Exclusão em massa.")
-                            st.cache_data.clear(); st.success("Todas as pendências foram excluídas!"); st.rerun()
+                            st.cache_data.clear(); confirmar_operacao("Todas as pendências foram excluídas!"); st.rerun()
                 else: st.info("Sem pendências cadastradas.")

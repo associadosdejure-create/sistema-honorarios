@@ -624,6 +624,56 @@ elif authentication_status == True:
         except Exception: pass
 
         st.markdown("---")
+        # Placar calculado a partir dos eventos de protocolo, sem alterar
+        # os registros existentes nem depender da data de atualização.
+        st.subheader("Placar mensal de processos protocolados")
+        hoje_placar = date.today()
+        meses_placar = [(hoje_placar.replace(day=1) - relativedelta(months=i)) for i in range(12)]
+        opcoes_meses = {m.strftime("%m/%Y"): m for m in meses_placar}
+        mes_escolhido = st.selectbox("Mês de referência", list(opcoes_meses), key="mes_placar_inicio")
+        inicio_mes = opcoes_meses[mes_escolhido]
+        fim_mes = inicio_mes + relativedelta(months=1)
+        ranking_placar = []
+        destaque_automatico = None
+        try:
+            # Consulta privilegiada somente no servidor, após login.
+            consulta = (cliente_storage_servidor().table('dejure_protocolos')
+                .select('processo_id,protocolado_por,protocolado_em')
+                .gte('protocolado_em', inicio_mes.isoformat())
+                .lt('protocolado_em', fim_mes.isoformat())
+                .limit(10000).execute())
+            eventos = consulta.data or []
+            if len(eventos) == 10000:
+                st.warning('O limite de 10.000 eventos foi atingido. O placar pode estar incompleto.')
+            contagem = {}
+            for ev in eventos:
+                responsavel = (ev.get('protocolado_por') or '').strip()
+                if responsavel:
+                    contagem[responsavel] = contagem.get(responsavel, 0) + 1
+            ranking_placar = sorted(contagem.items(), key=lambda item: (-item[1], item[0].casefold()))
+            c_total, c_ativos, c_lider = st.columns(3)
+            c_total.metric('Protocolos no mês', sum(contagem.values()))
+            c_ativos.metric('Colaboradores com protocolos', len(contagem))
+            c_lider.metric('Maior pontuação', ranking_placar[0][1] if ranking_placar else 0)
+            if ranking_placar:
+                maior_pontuacao = ranking_placar[0][1]
+                lideres = [p for p, total in ranking_placar if total == maior_pontuacao]
+                if len(lideres) == 1:
+                    st.success(f"Destaque de {mes_escolhido}: {lideres[0]} — {maior_pontuacao} protocolo(s)")
+                else:
+                    st.info('Empate na liderança: ' + ', '.join(lideres) + f' — {maior_pontuacao} protocolo(s) cada')
+                df_placar = pd.DataFrame([{'Posição': i + 1, 'Colaborador': pessoa, 'Protocolos': total}
+                    for i, (pessoa, total) in enumerate(ranking_placar)])
+                exibir_tabela(df_placar, hide_index=True, use_container_width=True)
+                st.bar_chart(pd.DataFrame(ranking_placar, columns=['Colaborador','Protocolos']).set_index('Colaborador'))
+            else:
+                st.info('Nenhum protocolo registrado neste mês.')
+            st.caption('Conta somente protocolos confirmados pelo usuário que realizou a ação, uma vez por processo. Registros antigos sem identificação do protocolante não entram no placar.')
+        except Exception:
+            st.error('Placar indisponível. Execute o SQL de protocolos no Supabase e confira os Secrets do Streamlit.')
+
+
+        st.markdown("---")
         try:
             hoje = date.today()
             alertas_pericias = []
@@ -1890,10 +1940,34 @@ elif authentication_status == True:
                     with col_g2:
                         nova_desc = st.text_area("Atualizar Observações / Andamento:", value=obj_proc.get('descricao', ''))
 
+                    if novo_status == 'Protocolado' and obj_proc.get('status') != 'Protocolado':
+                        st.info('Para protocolar, use o botão Registrar Protocolo abaixo. A pontuação será atribuída ao usuário conectado.')
+                    if obj_proc.get('status') != 'Protocolado':
+                        with st.expander('Registrar protocolo da ação', expanded=False):
+                            st.caption(f'Protocolante: {name} ({username}). O registro vale um ponto e não pode ser duplicado.')
+                            confirmar_protocolo = st.checkbox('Confirmo que eu efetivamente protocolei esta ação.', key=f'confirmar_protocolo_{obj_proc["id"]}')
+                            if st.button('Registrar Protocolo', key=f'registrar_protocolo_{obj_proc["id"]}', disabled=not confirmar_protocolo, type='primary'):
+                                try:
+                                    if user_role != 'admin' and obj_proc.get('responsavel') != name:
+                                        raise PermissionError('Você não tem acesso autorizado a este processo.')
+                                    cliente_storage_servidor().rpc('dejure_confirmar_protocolo', {
+                                        'p_processo_id': int(obj_proc['id']),
+                                        'p_usuario_login': str(username),
+                                        'p_usuario_nome': str(name)
+                                    }).execute()
+                                    registrar_auditoria(username, 'Protocolo confirmado', 'Meus Processos', f'Processo ID {obj_proc["id"]}; protocolante {name}')
+                                    st.cache_data.clear()
+                                    confirmar_operacao('Protocolo registrado e ponto atribuído ao seu usuário.')
+                                    st.rerun()
+                                except Exception as erro:
+                                    st.error(f'Não foi possível registrar o protocolo: {erro}')
+
                     col_btn1, col_btn2, col_btn3 = st.columns(3)
                     with col_btn1:
                         if st.button("💾 Salvar Alterações", type="primary", use_container_width=True):
                             try:
+                                if novo_status == 'Protocolado' and obj_proc.get('status') != 'Protocolado':
+                                    raise ValueError('Use Registrar Protocolo para identificar corretamente quem protocolou.')
                                 supabase.table("meus_processos").update({
                                     "status": novo_status,
                                     "descricao": nova_desc
@@ -2062,7 +2136,7 @@ elif authentication_status == True:
                 else:
                     # Placar calculado a partir dos eventos de protocolo, sem alterar
                     # os registros existentes nem depender da data de atualização.
-                    st.subheader("Placar mensal de processos protocolados")
+                    st.subheader("Destaque do mês")
                     hoje_placar = date.today()
                     meses_placar = [(hoje_placar.replace(day=1) - relativedelta(months=i)) for i in range(12)]
                     opcoes_meses = {m.strftime("%m/%Y"): m for m in meses_placar}
@@ -2074,7 +2148,7 @@ elif authentication_status == True:
                     try:
                         # Consulta privilegiada somente no servidor, após login.
                         consulta = (cliente_storage_servidor().table('dejure_protocolos')
-                            .select('processo_id,responsavel_nome,protocolado_em')
+                            .select('processo_id,protocolado_por,protocolado_em')
                             .gte('protocolado_em', inicio_mes.isoformat())
                             .lt('protocolado_em', fim_mes.isoformat())
                             .limit(10000).execute())
@@ -2083,7 +2157,7 @@ elif authentication_status == True:
                             st.warning('O limite de 10.000 eventos foi atingido. O placar pode estar incompleto.')
                         contagem = {}
                         for ev in eventos:
-                            responsavel = (ev.get('responsavel_nome') or '').strip()
+                            responsavel = (ev.get('protocolado_por') or '').strip()
                             if responsavel:
                                 contagem[responsavel] = contagem.get(responsavel, 0) + 1
                         ranking_placar = sorted(contagem.items(), key=lambda item: (-item[1], item[0].casefold()))
@@ -2105,7 +2179,7 @@ elif authentication_status == True:
                             st.bar_chart(pd.DataFrame(ranking_placar, columns=['Colaborador','Protocolos']).set_index('Colaborador'))
                         else:
                             st.info('Nenhum protocolo registrado neste mês.')
-                        st.caption('Contabiliza o primeiro registro de mudança para Protocolado por processo. Não contabiliza cadastros antigos retroativamente.')
+                        st.caption('Conta somente protocolos confirmados pelo usuário que realizou a ação, uma vez por processo. Registros antigos sem identificação do protocolante não entram no placar.')
                     except Exception:
                         st.error('Placar indisponível. Execute o SQL de protocolos no Supabase e confira os Secrets do Streamlit.')
 

@@ -1884,6 +1884,14 @@ elif authentication_status == True:
                     ["Parcelas iguais (automático)", "Parcelas personalizadas (valores diferentes)"],
                     key="modo_parcelamento_honorarios"
                 )
+                # A quantidade deve ficar fora do st.form: widgets dentro de forms
+                # só disparam uma atualização quando o formulário é enviado.
+                if modo_parcelamento == "Parcelas iguais (automático)":
+                    npar = st.number_input("Quantidade de Parcelas (Restante)", min_value=1, max_value=36, value=3, step=1, key="hon_qtd_automatica")
+                else:
+                    npar = st.number_input("Quantidade de parcelas personalizadas", min_value=1, max_value=36, value=3, step=1, key="hon_qtd_personalizada")
+                    st.caption("Ao alterar a quantidade, os campos das parcelas aparecem automaticamente abaixo.")
+
                 with st.form("fc_hon", clear_on_submit=True):
                     cli_op = st.selectbox("Cliente:", ["Outro"] + nomes) if nomes else "Outro"
                     cli = st.text_input("Nome") if cli_op == "Outro" else cli_op
@@ -1899,10 +1907,8 @@ elif authentication_status == True:
 
                     saldo_preview = max(0.0, float(vtot) - float(v_entrada))
                     if modo_parcelamento == "Parcelas iguais (automático)":
-                        npar = st.number_input("Quantidade de Parcelas (Restante)", min_value=1, max_value=36, value=3, step=1)
                         valores_parcelas = []
                     else:
-                        npar = st.number_input("Quantidade de parcelas personalizadas", min_value=1, max_value=36, value=3, step=1)
                         st.caption(f"Saldo a distribuir: {formatar_moeda_br(saldo_preview)}. Informe o valor de cada parcela; a soma deve fechar exatamente esse saldo.")
                         valores_parcelas = []
                         colunas_valores = st.columns(3)

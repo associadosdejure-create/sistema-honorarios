@@ -634,6 +634,62 @@ elif authentication_status == True:
         if os.path.exists("logo.png"): st.image("logo.png", use_container_width=True)
         else: st.write("**DEJURE ADVOCACIA**")
 
+
+    # --- PLACAR DE PROTOCOLOS: inclui toda a equipe, mesmo com zero pontos ---
+    def montar_ranking_protocolos(eventos, credenciais):
+        # O protocolo armazena o nome do usuário autenticado.
+        nomes = {}
+        for login, info in credenciais['usernames'].items():
+            if login != 'master' and info.get('role') not in ('inativo', 'bloqueado'):
+                nome = str(info.get('name') or login).strip()
+                if nome:
+                    nomes[nome.casefold()] = nome
+        contagem = {chave: 0 for chave in nomes}
+        for evento in eventos:
+            nome = str(evento.get('protocolado_por') or '').strip()
+            if nome:
+                chave = nome.casefold()
+                # Preserva pontuação de usuários removidos, sem perder histórico.
+                if chave not in nomes:
+                    nomes[chave] = nome
+                    contagem[chave] = 0
+                contagem[chave] += 1
+        return sorted(((nomes[chave], total) for chave, total in contagem.items()),
+                      key=lambda item: (-item[1], item[0].casefold()))
+
+    def exibir_placar_protocolos(eventos, mes_escolhido, credenciais):
+        ranking = montar_ranking_protocolos(eventos, credenciais)
+        total = sum(pontos for _, pontos in ranking)
+        com_protocolos = sum(pontos > 0 for _, pontos in ranking)
+        c1, c2, c3 = st.columns(3)
+        c1.metric('Protocolos no mês', total)
+        c2.metric('Usuários no placar', len(ranking))
+        c3.metric('Colaboradores com protocolos', com_protocolos)
+        lideres = []
+        if total > 0:
+            maior = ranking[0][1]
+            lideres = [nome for nome, pontos in ranking if pontos == maior]
+            if len(lideres) == 1:
+                st.success(f'Destaque de {mes_escolhido}: {lideres[0]} — {maior} protocolo(s)')
+            else:
+                st.info(f'Empate no destaque de {mes_escolhido}: ' + ', '.join(lideres) + f' — {maior} protocolo(s) cada')
+        else:
+            st.info('Nenhum protocolo registrado neste mês. Todos os usuários aparecem com zero.')
+        if ranking:
+            maior = max((pontos for _, pontos in ranking), default=0)
+            linhas = [{'Posição': pos, 'Colaborador': nome, 'Protocolos': pontos,
+                       'Desempenho': round(100 * pontos / maior) if maior else 0}
+                      for pos, (nome, pontos) in enumerate(ranking, 1)]
+            st.dataframe(pd.DataFrame(linhas), hide_index=True, use_container_width=True,
+                         column_config={'Posição': st.column_config.NumberColumn('Posição', format='%d'),
+                                        'Colaborador': st.column_config.TextColumn('Colaborador'),
+                                        'Protocolos': st.column_config.NumberColumn('Protocolos', format='%d'),
+                                        'Desempenho': st.column_config.ProgressColumn('Desempenho',
+                                            help='Percentual em relação ao maior número de protocolos do mês',
+                                            min_value=0, max_value=100, format='%d%%')})
+        st.caption('Pontuação atribuída a quem registrou o protocolo. Cada processo conta uma vez; registros antigos sem protocolante não entram no placar.')
+        return lideres
+
     menu_escolha = st.session_state['pagina_atual']
 
     if menu_escolha == "🏠 Página Inicial":
@@ -690,30 +746,7 @@ elif authentication_status == True:
             eventos = consulta.data or []
             if len(eventos) == 10000:
                 st.warning('O limite de 10.000 eventos foi atingido. O placar pode estar incompleto.')
-            contagem = {}
-            for ev in eventos:
-                responsavel = (ev.get('protocolado_por') or '').strip()
-                if responsavel:
-                    contagem[responsavel] = contagem.get(responsavel, 0) + 1
-            ranking_placar = sorted(contagem.items(), key=lambda item: (-item[1], item[0].casefold()))
-            c_total, c_ativos, c_lider = st.columns(3)
-            c_total.metric('Protocolos no mês', sum(contagem.values()))
-            c_ativos.metric('Colaboradores com protocolos', len(contagem))
-            c_lider.metric('Maior pontuação', ranking_placar[0][1] if ranking_placar else 0)
-            if ranking_placar:
-                maior_pontuacao = ranking_placar[0][1]
-                lideres = [p for p, total in ranking_placar if total == maior_pontuacao]
-                if len(lideres) == 1:
-                    st.success(f"Destaque de {mes_escolhido}: {lideres[0]} — {maior_pontuacao} protocolo(s)")
-                else:
-                    st.info('Empate na liderança: ' + ', '.join(lideres) + f' — {maior_pontuacao} protocolo(s) cada')
-                df_placar = pd.DataFrame([{'Posição': i + 1, 'Colaborador': pessoa, 'Protocolos': total}
-                    for i, (pessoa, total) in enumerate(ranking_placar)])
-                exibir_tabela(df_placar, hide_index=True, use_container_width=True)
-                st.bar_chart(pd.DataFrame(ranking_placar, columns=['Colaborador','Protocolos']).set_index('Colaborador'))
-            else:
-                st.info('Nenhum protocolo registrado neste mês.')
-            st.caption('Conta somente protocolos confirmados pelo usuário que realizou a ação, uma vez por processo. Registros antigos sem identificação do protocolante não entram no placar.')
+            lideres = exibir_placar_protocolos(eventos, mes_escolhido, credentials)
         except Exception:
             st.error('Placar indisponível. Execute o SQL de protocolos no Supabase e confira os Secrets do Streamlit.')
 
@@ -2241,31 +2274,9 @@ elif authentication_status == True:
                         eventos = consulta.data or []
                         if len(eventos) == 10000:
                             st.warning('O limite de 10.000 eventos foi atingido. O placar pode estar incompleto.')
-                        contagem = {}
-                        for ev in eventos:
-                            responsavel = (ev.get('protocolado_por') or '').strip()
-                            if responsavel:
-                                contagem[responsavel] = contagem.get(responsavel, 0) + 1
-                        ranking_placar = sorted(contagem.items(), key=lambda item: (-item[1], item[0].casefold()))
-                        c_total, c_ativos, c_lider = st.columns(3)
-                        c_total.metric('Protocolos no mês', sum(contagem.values()))
-                        c_ativos.metric('Colaboradores com protocolos', len(contagem))
-                        c_lider.metric('Maior pontuação', ranking_placar[0][1] if ranking_placar else 0)
-                        if ranking_placar:
-                            maior_pontuacao = ranking_placar[0][1]
-                            lideres = [p for p, total in ranking_placar if total == maior_pontuacao]
-                            if len(lideres) == 1:
-                                destaque_automatico = next((u for u in usuarios_equipe if u['name'] == lideres[0]), None)
-                                st.success(f"Destaque de {mes_escolhido}: {lideres[0]} — {maior_pontuacao} protocolo(s)")
-                            else:
-                                st.info('Empate na liderança: ' + ', '.join(lideres) + f' — {maior_pontuacao} protocolo(s) cada')
-                            df_placar = pd.DataFrame([{'Posição': i + 1, 'Colaborador': pessoa, 'Protocolos': total}
-                                for i, (pessoa, total) in enumerate(ranking_placar)])
-                            exibir_tabela(df_placar, hide_index=True, use_container_width=True)
-                            st.bar_chart(pd.DataFrame(ranking_placar, columns=['Colaborador','Protocolos']).set_index('Colaborador'))
-                        else:
-                            st.info('Nenhum protocolo registrado neste mês.')
-                        st.caption('Conta somente protocolos confirmados pelo usuário que realizou a ação, uma vez por processo. Registros antigos sem identificação do protocolante não entram no placar.')
+                        lideres = exibir_placar_protocolos(eventos, mes_escolhido, credentials)
+                        if len(lideres) == 1:
+                            destaque_automatico = next((u for u in usuarios_equipe if u['name'].casefold() == lideres[0].casefold()), None)
                     except Exception:
                         st.error('Placar indisponível. Execute o SQL de protocolos no Supabase e confira os Secrets do Streamlit.')
 

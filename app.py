@@ -646,6 +646,7 @@ elif authentication_status == True:
         if user_role == 'admin':
             modulos["Distribuição de Processos"] = "Distribuição de Processos"
             modulos["Auditoria"] = "Auditoria"
+            modulos["Balanço Financeiro"] = "Balanço Financeiro"
 
         for label, pag in modulos.items():
             if st.button(label, use_container_width=True):
@@ -662,7 +663,8 @@ elif authentication_status == True:
                     "Equipe Dejure": "Nossa Equipe",
                     "Segurança": "Meu Perfil",
                     "Distribuição de Processos": "Fila de Distribuição",
-                    "Auditoria": "Ver Logs"
+                    "Auditoria": "Ver Logs",
+                    "Balanço Financeiro": "Painel Financeiro"
                 }.get(pag, "")
                 limpar_flags_cadastro()
                 st.rerun()
@@ -1021,6 +1023,216 @@ elif authentication_status == True:
                 st.info("🎉 Nenhum alerta de prazo ou pagamento pendente para hoje!")
         except Exception as e: 
             st.error(f"Erro ao carregar central de alertas: {e}")
+
+    elif menu_escolha == "Balanço Financeiro":
+        # Proteção no servidor, além de ocultar o item do menu.
+        if user_role != 'admin':
+            st.error('Acesso exclusivo aos administradores.')
+            st.stop()
+
+        st.title('Balanço Financeiro DEJURE')
+        st.caption('Honorários: Leônidas 60% / Nelson 40% | Despesas: 50% para cada sócio.')
+        from collections import defaultdict
+        from decimal import Decimal, ROUND_HALF_UP
+
+        def centavos(valor):
+            try:
+                return int((Decimal(str(valor or 0)) * 100).quantize(Decimal('1'), rounding=ROUND_HALF_UP))
+            except Exception:
+                return 0
+
+        def moeda_c(valor):
+            return formatar_moeda_br(valor / 100)
+
+        def data_segura(valor):
+            try:
+                return date.fromisoformat(str(valor)[:10])
+            except (ValueError, TypeError):
+                return None
+
+        def consulta_toda(tabela, colunas='*', filtros=None):
+            registros = []
+            inicio = 0
+            while True:
+                q = cliente_storage_servidor().table(tabela).select(colunas)
+                for campo, valor in (filtros or []):
+                    q = q.eq(campo, valor)
+                lote = q.range(inicio, inicio + 999).execute().data or []
+                registros.extend(lote)
+                if len(lote) < 1000:
+                    break
+                inicio += 1000
+            return registros
+
+        try:
+            despesas = consulta_toda('dejure_despesas')
+            repasses_logs = consulta_toda('logs_auditoria', 'id,detalhes,data_hora', [('modulo', 'Repasses')])
+            parcelas = consulta_toda('parcelas')
+        except Exception:
+            st.error('Não foi possível carregar o balanço. Execute primeiro o arquivo SQL fornecido no Supabase e confira a chave de serviço nos Secrets.')
+            st.stop()
+
+        abas = st.tabs(['Resumo e saldos', 'Cadastrar despesas', 'Gerenciar despesas', 'Projeção de parcelas'])
+        hoje_fin = date.today()
+        with abas[1]:
+            st.subheader('Nova despesa')
+            with st.form('form_despesa_dejure', clear_on_submit=True):
+                tipo = st.selectbox('Tipo', ['Fixa', 'Variável', 'Outras'])
+                descricao = st.text_input('Descrição', max_chars=180)
+                valor = st.number_input('Valor total (R$)', min_value=0.01, step=10.0, format='%.2f')
+                competencia = st.date_input('Competência (mês de referência)', hoje_fin.replace(day=1))
+                vencimento = st.date_input('Vencimento', hoje_fin)
+                situacao = st.selectbox('Situação', ['Pendente', 'Paga'])
+                observacoes = st.text_area('Observações (opcional)')
+                salvar = st.form_submit_button('Cadastrar despesa', type='primary')
+            if salvar:
+                if not descricao.strip():
+                    st.error('Informe a descrição da despesa.')
+                else:
+                    try:
+                        cliente_storage_servidor().table('dejure_despesas').insert({
+                            'tipo': tipo, 'descricao': descricao.strip(), 'valor': str(Decimal(str(valor)).quantize(Decimal('0.01'))),
+                            'competencia': competencia.replace(day=1).isoformat(), 'vencimento': vencimento.isoformat(),
+                            'situacao': situacao, 'observacoes': observacoes.strip(), 'criado_por': str(username),
+                            'pago_em': hoje_fin.isoformat() if situacao == 'Paga' else None
+                        }).execute()
+                        registrar_auditoria(username, 'Cadastrar despesa', 'Balanço Financeiro', descricao.strip())
+                        st.success('Despesa cadastrada.')
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f'Falha ao cadastrar despesa: {e}')
+
+        with abas[2]:
+            st.subheader('Despesas cadastradas')
+            if despesas:
+                linhas_d = [{
+                    'ID': d['id'], 'Tipo': d.get('tipo'), 'Descrição': d.get('descricao'),
+                    'Valor': moeda_c(centavos(d.get('valor'))), 'Competência': str(d.get('competencia') or '')[:7],
+                    'Vencimento': formatar_data_br(d.get('vencimento')), 'Situação': d.get('situacao')
+                } for d in sorted(despesas, key=lambda d: str(d.get('vencimento') or ''), reverse=True)]
+                st.dataframe(pd.DataFrame(linhas_d), hide_index=True, use_container_width=True)
+                opcoes_d = {f"#{d['id']} | {d.get('descricao')} | {moeda_c(centavos(d.get('valor')))}": d for d in despesas}
+                escolha_d = st.selectbox('Selecionar despesa para atualizar', list(opcoes_d), key='bal_despesa_edicao')
+                alvo = opcoes_d[escolha_d]
+                with st.form('bal_editar_despesa'):
+                    novo_tipo = st.selectbox('Categoria', ['Fixa', 'Variável', 'Outras'], index=['Fixa','Variável','Outras'].index(alvo.get('tipo')) if alvo.get('tipo') in ['Fixa','Variável','Outras'] else 2)
+                    nova_desc = st.text_input('Descrição', value=str(alvo.get('descricao') or ''))
+                    novo_valor = st.number_input('Valor (R$)', min_value=0.01, value=max(0.01, centavos(alvo.get('valor')) / 100), format='%.2f')
+                    nova_comp = st.date_input('Competência', value=data_segura(alvo.get('competencia')) or hoje_fin)
+                    novo_venc = st.date_input('Vencimento', value=data_segura(alvo.get('vencimento')) or hoje_fin)
+                    nova_sit = st.selectbox('Situação', ['Pendente','Paga'], index=1 if alvo.get('situacao') == 'Paga' else 0)
+                    nova_obs = st.text_area('Observações', value=str(alvo.get('observacoes') or ''))
+                    atualizar = st.form_submit_button('Salvar alterações')
+                if atualizar:
+                    if not nova_desc.strip():
+                        st.error('Descrição obrigatória.')
+                    else:
+                        try:
+                            cliente_storage_servidor().table('dejure_despesas').update({
+                                'tipo': novo_tipo, 'descricao': nova_desc.strip(), 'valor': str(Decimal(str(novo_valor)).quantize(Decimal('0.01'))),
+                                'competencia': nova_comp.replace(day=1).isoformat(), 'vencimento': novo_venc.isoformat(),
+                                'situacao': nova_sit, 'observacoes': nova_obs.strip(),
+                                'pago_em': (alvo.get('pago_em') or hoje_fin.isoformat()) if nova_sit == 'Paga' else None
+                            }).eq('id', alvo['id']).execute()
+                            registrar_auditoria(username, 'Atualizar despesa', 'Balanço Financeiro', f"ID {alvo['id']}")
+                            st.success('Despesa atualizada.')
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f'Falha ao atualizar: {e}')
+                with st.expander('Excluir despesa (ação irreversível)'):
+                    confirmar = st.checkbox('Confirmo a exclusão da despesa selecionada', key='bal_confirma_exclusao')
+                    if st.button('Excluir despesa selecionada', disabled=not confirmar):
+                        try:
+                            cliente_storage_servidor().table('dejure_despesas').delete().eq('id', alvo['id']).execute()
+                            registrar_auditoria(username, 'Excluir despesa', 'Balanço Financeiro', f"ID {alvo['id']} - {alvo.get('descricao')}")
+                            st.success('Despesa excluída.')
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f'Falha ao excluir: {e}')
+            else:
+                st.info('Nenhuma despesa cadastrada.')
+
+        repasses = []
+        vistos = set()
+        for log in sorted(repasses_logs, key=lambda x: str(x.get('data_hora') or '')):
+            try:
+                r = json.loads(log.get('detalhes') or '{}')
+                pid = r.get('parcela_id')
+                # Evita duplicação de um mesmo pagamento no histórico de auditoria.
+                if pid is not None and str(pid) in vistos:
+                    continue
+                if pid is not None:
+                    vistos.add(str(pid))
+                dt = data_segura(r.get('data_baixa')) or data_segura(log.get('data_hora'))
+                if dt:
+                    repasses.append({'data': dt, 'leonidas': centavos(r.get('leonidas')),
+                                     'nelson': centavos(r.get('nelson')), 'contrato': r.get('contrato','')})
+            except (ValueError, TypeError, AttributeError):
+                continue
+
+        with abas[0]:
+            c_a, c_b = st.columns(2)
+            mes_ref = c_a.date_input('Mês do balanço', value=hoje_fin.replace(day=1), key='bal_mes_ref')
+            modo = c_b.selectbox('Período', ['Mês selecionado', 'Acumulado até o mês'], key='bal_modo')
+            inicio = mes_ref.replace(day=1)
+            fim = inicio + relativedelta(months=1)
+            def no_periodo(dt):
+                return (inicio <= dt < fim) if modo == 'Mês selecionado' else dt < fim
+            rep = [r for r in repasses if no_periodo(r['data'])]
+            desp = [d for d in despesas if (data_segura(d.get('competencia')) is not None and no_periodo(data_segura(d.get('competencia'))))]
+            # Competência é a referência contábil; apenas despesas pagas afetam o saldo realizado.
+            total_leo = sum(r['leonidas'] for r in rep)
+            total_nel = sum(r['nelson'] for r in rep)
+            despesas_pagas = sum(centavos(d.get('valor')) for d in desp if d.get('situacao') == 'Paga')
+            despesas_pendentes = sum(centavos(d.get('valor')) for d in desp if d.get('situacao') != 'Paga')
+            # Centavos ímpares são atribuídos a Leônidas para manter a soma exata.
+            metade_nel = despesas_pagas // 2
+            metade_leo = despesas_pagas - metade_nel
+            l1,l2,l3,l4 = st.columns(4)
+            l1.metric('Honorários dos sócios', moeda_c(total_leo + total_nel))
+            l2.metric('Despesas pagas', moeda_c(despesas_pagas))
+            l3.metric('Despesas pendentes', moeda_c(despesas_pendentes))
+            l4.metric('Resultado realizado', moeda_c(total_leo + total_nel - despesas_pagas))
+            st.subheader('Demonstrativo por sócio')
+            df_s = pd.DataFrame([
+                {'Sócio': 'Leônidas', 'Honorários recebidos': moeda_c(total_leo), 'Despesas (50%)': moeda_c(metade_leo), 'Saldo realizado': moeda_c(total_leo - metade_leo)},
+                {'Sócio': 'Nelson', 'Honorários recebidos': moeda_c(total_nel), 'Despesas (50%)': moeda_c(metade_nel), 'Saldo realizado': moeda_c(total_nel - metade_nel)}
+            ])
+            st.dataframe(df_s, hide_index=True, use_container_width=True)
+            st.caption('Saldo realizado = repasses registrados menos metade das despesas marcadas como pagas. Despesas pendentes são mostradas separadamente.')
+            if desp:
+                resumo_tipo = defaultdict(int)
+                for d in desp:
+                    resumo_tipo[str(d.get('tipo') or 'Outras')] += centavos(d.get('valor'))
+                st.subheader('Despesas por categoria (pagas e pendentes)')
+                st.dataframe(pd.DataFrame([{'Categoria': k, 'Total': moeda_c(v)} for k,v in resumo_tipo.items()]), hide_index=True, use_container_width=True)
+            st.subheader('Extrato dos repasses no período')
+            if rep:
+                st.dataframe(pd.DataFrame([{'Data': r['data'].strftime('%d/%m/%Y'), 'Contrato': r['contrato'], 'Leônidas': moeda_c(r['leonidas']), 'Nelson': moeda_c(r['nelson'])} for r in rep]), hide_index=True, use_container_width=True)
+            else:
+                st.info('Nenhum repasse encontrado neste período.')
+
+        with abas[3]:
+            st.subheader('Projeção dos próximos meses')
+            st.caption('Estimativa sobre parcelas pendentes. Os honorários futuros são simulados em 60/40 sobre o valor bruto da parcela; não descontam prospectador, operador ou fundo de colaboradores. Não representam repasse garantido.')
+            meses = st.slider('Meses à frente', min_value=1, max_value=24, value=12)
+            base = hoje_fin.replace(day=1)
+            proj = []
+            for i in range(meses):
+                mi = base + relativedelta(months=i)
+                mf = mi + relativedelta(months=1)
+                parcelas_mes = [p for p in parcelas if str(p.get('status') or '').lower() == 'pendente' and (data_segura(p.get('vencimento')) is not None and mi <= data_segura(p.get('vencimento')) < mf)]
+                bruto = sum(centavos(p.get('valor')) for p in parcelas_mes)
+                despesas_mes = sum(centavos(d.get('valor')) for d in despesas if d.get('situacao') != 'Paga' and (data_segura(d.get('competencia')) is not None and mi <= data_segura(d.get('competencia')) < mf))
+                estim_leo = (bruto * 60 + 50) // 100
+                estim_nel = bruto - estim_leo
+                custo_nel = despesas_mes // 2
+                custo_leo = despesas_mes - custo_nel
+                proj.append({'Mês': mi.strftime('%m/%Y'), 'Parcelas': len(parcelas_mes), 'A receber (bruto)': moeda_c(bruto),
+                             'Despesas pendentes': moeda_c(despesas_mes), 'Leônidas estimado': moeda_c(estim_leo - custo_leo),
+                             'Nelson estimado': moeda_c(estim_nel - custo_nel)})
+            st.dataframe(pd.DataFrame(proj), hide_index=True, use_container_width=True)
+            st.warning('Despesas fixas cadastradas não são replicadas automaticamente para meses futuros. Cadastre cada competência para incluí-la na projeção. Parcelas vencidas antes do mês atual não entram nesta tabela.')
 
     elif menu_escolha == "Distribuição de Processos":
         if user_role != 'admin':

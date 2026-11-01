@@ -377,8 +377,6 @@ elif authentication_status == True:
         
     st.session_state['sessao_expirada'] = False
     st.session_state['ultima_atividade'] = agora
-    t_rest = TEMPO_MAXIMO - (agora - st.session_state['ultima_atividade'])
-    min_res, seg_res = max(0, int(t_rest // 60)), max(0, int(t_rest % 60))
 
     user_info = credentials["usernames"].get(username, {})
     user_role = user_info.get("role", "estagiario")
@@ -519,6 +517,20 @@ elif authentication_status == True:
             st.session_state.update({'authentication_status': None, 'login_registrado': False})
             st.rerun()
 
+        # Atualização automática do cronômetro sem reiniciar a página inteira.
+        # A execução periódica NÃO renova a última atividade do usuário.
+        @st.fragment(run_every="1s")
+        def mostrar_tempo_sessao():
+            restante = max(0, int(TEMPO_MAXIMO - (time.time() - st.session_state.get('ultima_atividade', time.time())) + 0.999))
+            minutos, segundos = divmod(restante, 60)
+            st.markdown(f"**Sessão expira em:**  `{minutos:02d}:{segundos:02d}`")
+            if restante <= 0:
+                registrar_auditoria(username, "Logout (Inatividade)", "Acesso", f"Sessão de {username} expirou por inatividade.")
+                st.session_state.update({'authentication_status': None, 'sessao_expirada': True, 'login_registrado': False})
+                st.session_state.pop('ultima_atividade', None)
+                st.rerun(scope="app")
+
+        mostrar_tempo_sessao()
         st.markdown("---")
         
         st.subheader("Módulos do Sistema")
@@ -561,8 +573,6 @@ elif authentication_status == True:
                 limpar_flags_cadastro()
                 st.rerun()
         
-        st.markdown("---")
-        st.markdown(f"⏳ **Sessão expira em:**\n### `{min_res:02d}:{seg_res:02d}`")
         st.markdown("---")
         if os.path.exists("logo.png"): st.image("logo.png", use_container_width=True)
         else: st.write("**DEJURE ADVOCACIA**")

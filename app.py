@@ -2631,36 +2631,9 @@ elif authentication_status == True:
                 if not usuarios_equipe:
                     st.info("Nenhum membro da equipe encontrado.")
                 else:
-                    # Placar calculado a partir dos eventos de protocolo, sem alterar
-                    # os registros existentes nem depender da data de atualização.
-                    st.subheader("Destaque do mês")
-                    hoje_placar = date.today()
-                    meses_placar = [(hoje_placar.replace(day=1) - relativedelta(months=i)) for i in range(12)]
-                    opcoes_meses = {m.strftime("%m/%Y"): m for m in meses_placar}
-                    mes_escolhido = st.selectbox("Mês de referência", list(opcoes_meses), key="mes_placar_dejure")
-                    inicio_mes = opcoes_meses[mes_escolhido]
-                    fim_mes = inicio_mes + relativedelta(months=1)
-                    ranking_placar = []
-                    destaque_automatico = None
-                    try:
-                        # Consulta privilegiada somente no servidor, após login.
-                        consulta = (cliente_storage_servidor().table('dejure_protocolos')
-                            .select('processo_id,protocolado_por,protocolado_em')
-                            .gte('protocolado_em', inicio_mes.isoformat())
-                            .lt('protocolado_em', fim_mes.isoformat())
-                            .limit(10000).execute())
-                        eventos = consulta.data or []
-                        if len(eventos) == 10000:
-                            st.warning('O limite de 10.000 eventos foi atingido. O placar pode estar incompleto.')
-                        lideres = exibir_placar_protocolos(eventos, mes_escolhido, credentials)
-                        if len(lideres) == 1:
-                            destaque_automatico = next((u for u in usuarios_equipe if u['name'].casefold() == lideres[0].casefold()), None)
-                    except Exception:
-                        st.error('Placar indisponível. Execute o SQL de protocolos no Supabase e confira os Secrets do Streamlit.')
-
-                    st.markdown("---")
-                    
-                    destaque = destaque_automatico
+                    # O ranking de protocolos é exibido exclusivamente na Página Inicial.
+                    # A seção Equipe Dejure permanece dedicada à apresentação da equipe.
+                    destaque = None
                     outros_brutos = [u for u in usuarios_equipe if not u.get("destaque_mes")]
 
                     ordem_cargos = {"admin": 1, "advogado": 2, "bacharel": 3, "estagiario": 4}

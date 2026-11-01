@@ -1126,6 +1126,56 @@ elif authentication_status == True:
                 else: 
                     st.info("Nenhum cliente cadastrado.")
 
+                if res:
+                    st.markdown("---")
+                    st.subheader("📤 Enviar cliente cadastrado para Distribuição")
+                    st.caption("Selecione um cliente da lista acima. O sistema verifica se ele já está na fila antes de enviar.")
+                    opcoes_envio = {f"ID: {c['id']} — {c.get('nome', 'Sem nome')}": c for c in res}
+                    selecionado_envio = st.selectbox(
+                        "Cliente a enviar:", list(opcoes_envio.keys()), key="cliente_envio_distribuicao"
+                    )
+                    cliente_envio = opcoes_envio[selecionado_envio]
+                    if st.button("📤 Enviar para Distribuição", type="primary", key="btn_envio_cliente_existente"):
+                        try:
+                            nome_envio = str(cliente_envio.get("nome") or "").strip()
+                            doc_envio = str(cliente_envio.get("cpf_cnpj") or "").strip()
+                            fila_atual = supabase.table("distribuicao_processos").select(
+                                "id,cliente_nome,cpf_cnpj,status"
+                            ).execute().data or []
+
+                            def normalizar_documento(valor):
+                                return "".join(ch for ch in str(valor or "") if ch.isdigit())
+
+                            doc_normalizado = normalizar_documento(doc_envio)
+                            ja_enviado = any(
+                                (doc_normalizado and normalizar_documento(item.get("cpf_cnpj")) == doc_normalizado)
+                                or (not doc_normalizado and
+                                    str(item.get("cliente_nome") or "").strip().casefold() == nome_envio.casefold())
+                                for item in fila_atual
+                            )
+                            if ja_enviado:
+                                st.warning("⚠️ Este cliente já consta na Distribuição de Processos. Nenhum registro duplicado foi criado.")
+                            else:
+                                telefone_envio = cliente_envio.get("celular") or cliente_envio.get("telefone") or None
+                                supabase.table("distribuicao_processos").insert({
+                                    "cliente_nome": nome_envio,
+                                    "cpf_cnpj": doc_envio or None,
+                                    "telefone": telefone_envio,
+                                    "cadastrado_por": name,
+                                    "status": "Pendente",
+                                    "data_envio": date.today().strftime("%Y-%m-%d"),
+                                    "observacoes": cliente_envio.get("observacoes") or None
+                                }).execute()
+                                registrar_auditoria(
+                                    username, "Enviar para Distribuição", "Clientes",
+                                    f"Cliente existente: {nome_envio} (ID: {cliente_envio['id']})"
+                                )
+                                st.cache_data.clear()
+                                confirmar_operacao(f"✅ {nome_envio} enviado para a Distribuição de Processos!")
+                                st.rerun()
+                        except Exception as ex:
+                            st.error(f"Erro ao enviar cliente para distribuição: {ex}")
+
             elif sub == "Editar Cliente":
                 st.header("✏️ Editar Cadastro de Cliente")
                 res = carregar_dados("clientes_cadastrados")

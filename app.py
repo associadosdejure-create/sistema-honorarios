@@ -862,6 +862,119 @@ elif authentication_status == True:
                 st.error(f"Erro ao carregar logs de acesso: {e}")
 
     else:
+        # --- DOCUMENTOS E HISTÓRICO DE REVISÕES ---
+        def revisao_administradores():
+            return {u['name']: login for login, u in credentials['usernames'].items()
+                    if u.get('role') == 'admin' and u.get('name')}
+
+        def revisao_usuarios_ativos():
+            # Contas disponíveis para receber correções; a conta master também pode receber.
+            return {u.get('name') or login: login for login, u in credentials['usernames'].items()
+                    if u.get('name') and u.get('role') not in ('inativo', 'bloqueado')}
+
+        def revisao_arquivos(processo_id):
+            return (supabase.table('revisao_documentos').select('*')
+                    .eq('processo_id', processo_id).order('criado_em', desc=True).execute().data or [])
+
+        def revisao_eventos(processo_id):
+            return (supabase.table('revisao_eventos').select('*')
+                    .eq('processo_id', processo_id).order('criado_em', desc=True).execute().data or [])
+
+        # Cota preventiva: considera TODOS os buckets registrados em storage.objects.
+        # A função RPC é instalada pelo SQL complementar e liberada apenas ao service_role.
+        LIMITE_ARQUIVO_REVISAO = 10 * 1024 * 1024
+        ALERTA_STORAGE = 700 * 1024 * 1024
+        BLOQUEIO_STORAGE = 900 * 1024 * 1024
+
+        def revisao_consumo_storage():
+            resposta = supabase.rpc('dejure_storage_uso_bytes').execute()
+            valor = resposta.data
+            if isinstance(valor, list):
+                valor = valor[0] if valor else None
+            if isinstance(valor, dict):
+                valor = next(iter(valor.values()), None)
+            if valor is None:
+                raise RuntimeError('Consulta de armazenamento sem resultado. Execute o SQL de monitoramento.')
+            return int(valor)
+
+        def revisao_painel_storage():
+            if user_role != 'admin':
+                return
+            st.subheader('Armazenamento de Documentos')
+            try:
+                uso = revisao_consumo_storage()
+                st.metric('Espaço ocupado nos buckets do Supabase', f'{uso / (1024**2):,.1f} MB'.replace(',', 'X').replace('.', ',').replace('X', '.'))
+                st.progress(min(1.0, uso / BLOQUEIO_STORAGE), text=f'{uso / BLOQUEIO_STORAGE:.0%} do limite preventivo de 900 MB')
+                if uso >= BLOQUEIO_STORAGE:
+                    st.error('Uploads de peças bloqueados: uso igual ou superior a 900 MB.')
+                elif uso >= ALERTA_STORAGE:
+                    st.warning('Atenção: uso de armazenamento acima de 700 MB.')
+                else:
+                    st.caption('Monitoramento preventivo ativo. Alertas a partir de 700 MB; bloqueio a partir de 900 MB.')
+                st.caption('Mede arquivos registrados em todos os buckets Storage deste projeto, não o banco de dados nem outras cotas do plano Free.')
+            except Exception as erro:
+                st.error(f'Não foi possível consultar o armazenamento: {erro}. Por segurança, novos uploads ficam bloqueados.')
+
+        def revisao_upload(arquivo, processo_id, tipo):
+            if arquivo is None:
+                return None
+            from uuid import uuid4
+            nome = os.path.basename(arquivo.name)
+            ext = os.path.splitext(nome)[1].lower()
+            if ext not in ('.pdf', '.doc', '.docx'):
+                raise ValueError('Formato não permitido. Utilize PDF, DOC ou DOCX.')
+            conteudo = arquivo.getvalue()
+            if len(conteudo) > LIMITE_ARQUIVO_REVISAO:
+                raise ValueError('O limite é de 10 MB por arquivo.')
+            # Falha fechada: sem medição confiável, não há novo upload.
+            uso_atual = revisao_consumo_storage()
+            if uso_atual >= BLOQUEIO_STORAGE or uso_atual + len(conteudo) > BLOQUEIO_STORAGE:
+                raise ValueError('Upload bloqueado: o armazenamento atingiria o limite preventivo de 900 MB. Contate um administrador.')
+            caminho = f"{processo_id}/{uuid4().hex}{ext}"
+            supabase.storage.from_('pecas-juridicas').upload(
+                caminho, conteudo, {'content-type': {
+                    '.pdf': 'application/pdf', '.doc': 'application/msword',
+                    '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+                }[ext], 'upsert': 'false'})
+            try:
+                supabase.table('revisao_documentos').insert({
+                    'processo_id': processo_id, 'nome_arquivo': nome,
+                    'caminho_storage': caminho, 'tipo': tipo, 'enviado_por': username
+                }).execute()
+            except Exception:
+                supabase.storage.from_('pecas-juridicas').remove([caminho])
+                raise
+            return caminho
+
+        def revisao_evento(processo_id, acao, destino='', observacoes=''):
+            supabase.table('revisao_eventos').insert({
+                'processo_id': processo_id, 'acao': acao, 'usuario': username,
+                'destinatario': destino or None, 'observacoes': observacoes or None
+            }).execute()
+
+        def revisao_mostrar_documentos(processo_id):
+            for doc in revisao_arquivos(processo_id):
+                with st.container(border=True):
+                    st.write(f"{doc.get('nome_arquivo')} — {doc.get('tipo')} — {doc.get('enviado_por')}")
+                    st.caption(str(doc.get('criado_em', '')))
+                    if st.button('Baixar arquivo', key=f"download_rev_{doc['id']}"):
+                        try:
+                            arquivo = supabase.storage.from_('pecas-juridicas').download(doc['caminho_storage'])
+                            st.session_state[f"arquivo_rev_{doc['id']}"] = arquivo
+                        except Exception as e:
+                            st.error(f'Não foi possível acessar o documento: {e}')
+                    if st.session_state.get(f"arquivo_rev_{doc['id']}") is not None:
+                        st.download_button('Salvar documento', data=st.session_state[f"arquivo_rev_{doc['id']}"],
+                            file_name=doc['nome_arquivo'], key=f"salvar_rev_{doc['id']}")
+
+        def revisao_mostrar_historico(processo_id):
+            for ev in revisao_eventos(processo_id):
+                st.markdown(f"**{ev.get('acao')}** — {ev.get('usuario')} — {ev.get('criado_em')}")
+                if ev.get('destinatario'):
+                    st.caption(f"Destinatário: {ev['destinatario']}")
+                if ev.get('observacoes'):
+                    st.write(ev['observacoes'])
+
         menu_principal = menu_escolha
         st.title(f"{menu_principal}")
 
@@ -1568,6 +1681,8 @@ elif authentication_status == True:
                 "Aguardando Documentação",
                 "Produzindo Peça",
                 "Aguardando Revisão",
+                "Devolvida para Correção",
+                "Peça Aprovada",
                 "Protocolado",
                 "Acompanhando Movimentações"
             ]
@@ -1658,21 +1773,55 @@ elif authentication_status == True:
                                 st.error(f"Erro ao atualizar: {e}")
 
                     with col_btn2:
-                        if not obj_proc.get('solicitou_revisao') and obj_proc.get('status') != "Aguardando Revisão":
-                            if st.button("🚀 Enviar para Revisão", use_container_width=True):
-                                try:
-                                    supabase.table("meus_processos").update({
-                                        "status": "Aguardando Revisão",
-                                        "solicitou_revisao": True
-                                    }).eq("id", obj_proc['id']).execute()
-                                    registrar_auditoria(username, "Enviar para Revisão", "Meus Processos", f"Proc ID {obj_proc['id']} enviado para revisão.")
-                                    st.cache_data.clear()
-                                    confirmar_operacao("🚀 Processo enviado para revisão!")
-                                    st.rerun()
-                                except Exception as e:
-                                    st.error(f"Erro ao enviar para revisão: {e}")
+                        st.caption('Envio de peças disponível na seção abaixo.')
+
+                    st.markdown('---')
+                    st.subheader('Documentos e Revisão')
+                    try:
+                        with st.expander('Documentos anexados', expanded=True):
+                            revisao_mostrar_documentos(obj_proc['id'])
+                        with st.expander('Histórico de revisões'):
+                            revisao_mostrar_historico(obj_proc['id'])
+                        em_revisao = obj_proc.get('status') == 'Aguardando Revisão' or obj_proc.get('solicitou_revisao')
+                        if em_revisao:
+                            st.info('Esta peça está aguardando a análise do administrador escolhido.')
                         else:
-                            st.info("ℹ️ Já em revisão.")
+                            admins = revisao_administradores()
+                            if not admins:
+                                st.warning('Não há administradores cadastrados para receber a revisão.')
+                            else:
+                                with st.form(f"form_enviar_peca_{obj_proc['id']}"):
+                                    st.caption('Anexe a petição e escolha o administrador responsável pela revisão.')
+                                    anexo = st.file_uploader('Petição ou documento (PDF, DOC, DOCX; até 10 MB)',
+                                        type=['pdf','doc','docx'], key=f"anexo_peca_{obj_proc['id']}")
+                                    admin_escolhido = st.selectbox('Administrador destinatário', list(admins))
+                                    obs_envio = st.text_area('Observações para o administrador')
+                                    enviar_peca = st.form_submit_button('Enviar para Revisão', type='primary')
+                                if enviar_peca:
+                                    if anexo is None and not revisao_arquivos(obj_proc['id']):
+                                        st.error('Anexe pelo menos um documento antes de enviar.')
+                                    else:
+                                        try:
+                                            if anexo:
+                                                revisao_upload(anexo, obj_proc['id'], 'envio')
+                                            supabase.table('meus_processos').update({
+                                                'status': 'Aguardando Revisão', 'solicitou_revisao': True
+                                            }).eq('id', obj_proc['id']).execute()
+                                            supabase.table('revisao_atribuicoes').upsert({
+                                                'processo_id': obj_proc['id'],
+                                                'admin_username': admins[admin_escolhido],
+                                                'responsavel_username': username,
+                                                'situacao': 'Aguardando Revisão'
+                                            }, on_conflict='processo_id').execute()
+                                            revisao_evento(obj_proc['id'], 'Enviada para revisão', admin_escolhido, obs_envio)
+                                            registrar_auditoria(username, 'Enviar peça para revisão', 'Meus Processos', f"ID {obj_proc['id']} para {admin_escolhido}")
+                                            st.cache_data.clear()
+                                            confirmar_operacao('Peça encaminhada ao administrador escolhido.')
+                                            st.rerun()
+                                        except Exception as e:
+                                            st.error(f'Falha no envio: {e}')
+                    except Exception as e:
+                        st.error(f'Módulo de documentos indisponível. Confira a configuração SQL e Storage: {e}')
 
                     with col_btn3:
                         if user_role == 'admin':
@@ -1688,72 +1837,75 @@ elif authentication_status == True:
                                     st.error(f"Erro ao excluir processo: {e}")
 
             elif sub == "Central de Revisões" and user_role == 'admin':
-                st.header("🛡️ Central de Revisões de Peças e Processos")
-                st.caption("Processos enviados pelos colaboradores aguardando validação administrativa.")
-
+                st.header('Central de Revisões')
+                revisao_painel_storage()
+                st.caption('Administradores podem acompanhar e revisar todas as peças, mesmo as destinadas a outro administrador.')
                 try:
-                    res_rev = supabase.table("meus_processos").select("*").eq("solicitou_revisao", True).execute()
-                    lista_revisoes = res_rev.data if res_rev.data else []
-
-                    if not lista_revisoes:
-                        st.success("🎉 Nenhum processo aguardando revisão no momento!")
+                    filtro_revisoes = st.radio('Exibir', ['Minhas Revisões', 'Todas as Revisões'], horizontal=True)
+                    consulta_rev = (supabase.table('revisao_atribuicoes').select('*')
+                        .eq('situacao', 'Aguardando Revisão'))
+                    if filtro_revisoes == 'Minhas Revisões':
+                        consulta_rev = consulta_rev.eq('admin_username', username)
+                    atribuicoes = consulta_rev.execute().data or []
+                    if not atribuicoes:
+                        st.info('Nenhuma peça aguardando sua revisão.')
                     else:
-                        dict_rev = {f"ID: {r['id']} | Proc: {r['numero_processo']} | Resp: {r.get('responsavel', 'N/D')}": r for r in lista_revisoes}
-                        sel_r_str = st.selectbox("Selecione o Processo para Revisar:", list(dict_rev.keys()))
-                        obj_r = dict_rev[sel_r_str]
-
-                        st.info(f"**Cliente:** {obj_r.get('cliente')} | **Responsável Atual:** {obj_r.get('responsavel')} \n\n **Descrição/Peça:** {obj_r.get('descricao')}")
-
-                        obs_admin = st.text_input("Feedback / Observações da Revisão para o Colaborador:")
-
-                        lista_usuarios_rev = []
-                        for u in credentials['usernames'].values():
-                            n_u = u.get('name', '')
-                            if n_u:
-                                lista_usuarios_rev.append(n_u)
-
-                        resp_atual = obj_r.get('responsavel', name)
-                        idx_resp_init = lista_usuarios_rev.index(resp_atual) if resp_atual in lista_usuarios_rev else 0
-
-                        novo_responsavel_devolucao = st.selectbox("Devolver para o Colaborador Responsável:", lista_usuarios_rev, index=idx_resp_init)
-
-                        col_rev1, col_rev2 = st.columns(2)
-                        with col_rev1:
-                            if st.button("✅ Aprovar e Devolver (Produzindo Peça / Andamento)", type="primary"):
-                                try:
-                                    supabase.table("meus_processos").update({
-                                        "status": "Produzindo Peça",
-                                        "responsavel": novo_responsavel_devolucao,
-                                        "solicitou_revisao": False,
-                                        "observacoes_revisao": obs_admin
-                                    }).eq("id", obj_r['id']).execute()
-                                    registrar_auditoria(username, "Revisar e Devolver", "Meus Processos", f"Proc ID {obj_r['id']} devolvido para {novo_responsavel_devolucao}.")
-                                    st.cache_data.clear()
-                                    confirmar_operacao(f"✅ Processo revisado e devolvido para **{novo_responsavel_devolucao}**!")
-                                    time.sleep(1)
-                                    st.rerun()
-                                except Exception as e:
-                                    st.error(f"Erro ao devolver processo: {e}")
-
-                        with col_rev2:
-                            if st.button("🔄 Devolver com Ajustes Necessários"):
-                                try:
-                                    supabase.table("meus_processos").update({
-                                        "status": "Aguardando Documentação",
-                                        "responsavel": novo_responsavel_devolucao,
-                                        "solicitou_revisao": False,
-                                        "observacoes_revisao": obs_admin
-                                    }).eq("id", obj_r['id']).execute()
-                                    registrar_auditoria(username, "Devolver com Ajustes", "Meus Processos", f"Proc ID {obj_r['id']} devolvido para ajustes a {novo_responsavel_devolucao}.")
-                                    st.cache_data.clear()
-                                    st.warning(f"⚠️ Processo devolvido para ajustes de **{novo_responsavel_devolucao}**.")
-                                    time.sleep(1)
-                                    st.rerun()
-                                except Exception as e:
-                                    st.error(f"Erro ao processar devolução: {e}")
-
+                        for atrib in atribuicoes:
+                            proc_id = atrib['processo_id']
+                            dados = supabase.table('meus_processos').select('*').eq('id', proc_id).execute().data or []
+                            if not dados:
+                                continue
+                            proc = dados[0]
+                            with st.expander(f"{proc.get('cliente')} — {proc.get('numero_processo')} (ID {proc_id})", expanded=True):
+                                st.write(f"**Responsável:** {proc.get('responsavel')}")
+                                revisao_mostrar_documentos(proc_id)
+                                with st.form(f'form_revisar_{proc_id}'):
+                                    obs = st.text_area('Observações da revisão', key=f'obs_revisao_{proc_id}')
+                                    arquivo_corrigido = st.file_uploader('Arquivo revisado (opcional)',
+                                        type=['pdf','doc','docx'], key=f'arquivo_revisado_{proc_id}')
+                                    acao = st.radio('Decisão', ['Devolver para Correção', 'Aprovar Peça'],
+                                        key=f'acao_revisao_{proc_id}')
+                                    usuarios_destino = revisao_usuarios_ativos()
+                                    nomes_destino = list(usuarios_destino)
+                                    nome_atual = proc.get('responsavel', '')
+                                    indice_destino = nomes_destino.index(nome_atual) if nome_atual in nomes_destino else 0
+                                    destinatario = st.selectbox('Devolver para qual usuário?', nomes_destino,
+                                        index=indice_destino, key=f'destino_rev_{proc_id}',
+                                        disabled=(acao != 'Devolver para Correção'))
+                                    confirmar = st.form_submit_button('Confirmar decisão', type='primary')
+                                if confirmar:
+                                    if acao == 'Devolver para Correção' and not obs.strip() and arquivo_corrigido is None:
+                                        st.error('Inclua observações e/ou um arquivo revisado para devolver.')
+                                    else:
+                                        try:
+                                            if arquivo_corrigido:
+                                                revisao_upload(arquivo_corrigido, proc_id, 'revisado')
+                                            novo_status = 'Devolvida para Correção' if acao == 'Devolver para Correção' else 'Peça Aprovada'
+                                            alteracoes = {
+                                                'status': novo_status, 'solicitou_revisao': False,
+                                                'observacoes_revisao': obs
+                                            }
+                                            if acao == 'Devolver para Correção':
+                                                # O novo destinatário passa a visualizar o processo em Meus Processos.
+                                                alteracoes['responsavel'] = destinatario
+                                            supabase.table('meus_processos').update(alteracoes).eq('id', proc_id).execute()
+                                            dados_atribuicao = {'situacao': novo_status}
+                                            if acao == 'Devolver para Correção':
+                                                dados_atribuicao['responsavel_username'] = usuarios_destino[destinatario]
+                                            supabase.table('revisao_atribuicoes').update(dados_atribuicao).eq('processo_id', proc_id).execute()
+                                            destino_registro = destinatario if acao == 'Devolver para Correção' else proc.get('responsavel','')
+                                            revisao_evento(proc_id, acao, destino_registro, obs)
+                                            registrar_auditoria(username, acao, 'Meus Processos',
+                                                f'Processo ID {proc_id}; destinatário: {destino_registro}; revisor: {username}')
+                                            st.cache_data.clear()
+                                            confirmar_operacao(f'{acao} registrada com sucesso.')
+                                            st.rerun()
+                                        except Exception as e:
+                                            st.error(f'Falha ao concluir revisão: {e}')
+                                with st.expander('Histórico'):
+                                    revisao_mostrar_historico(proc_id)
                 except Exception as e:
-                    st.error(f"Erro ao carregar central de revisões: {e}")
+                    st.error(f'Não foi possível abrir a caixa de revisões. Confira a configuração SQL: {e}')
 
         # --- MÓDULO EQUIPE ---
         elif menu_principal == "Equipe Dejure":

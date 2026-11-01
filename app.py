@@ -4026,34 +4026,62 @@ elif authentication_status == True:
         # --- MÓDULO PENDÊNCIAS ---
         elif menu_principal == "Pendências":
             if sub == "Cadastrar Pendência":
-                st.header("📋 Nova Pendência")
+                st.header("📋 Nova Pendência Documental")
+                st.caption("Selecione cada documento separadamente. Cada item será cadastrado como uma pendência individual, permitindo acompanhar sua entrega.")
+                catalogo_documentos = {
+                    "Identificação e dados pessoais": ["RG", "CPF", "CNH", "Certidão de nascimento", "Certidão de casamento", "Certidão de união estável", "Certidão de óbito", "Comprovante de residência", "Comprovante de estado civil", "Título de eleitor", "Carteira de trabalho (CTPS)", "Comprovante de renda", "Declaração de hipossuficiência", "Comprovante de inscrição no CadÚnico"],
+                    "Representação e documentos jurídicos": ["Procuração", "Substabelecimento", "Contrato de honorários", "Declaração de autenticidade", "Autorização de representação", "Documentos do representante legal", "Termo de curatela", "Termo de tutela", "Termo de guarda", "Certidão de interdição", "Documentos de herdeiros e sucessores"],
+                    "Documentos trabalhistas": ["Contrato de trabalho", "CTPS (páginas relevantes)", "Contracheques / holerites", "Termo de rescisão (TRCT)", "Extrato do FGTS", "Guias de seguro-desemprego", "Aviso-prévio", "Cartões de ponto", "Escalas de trabalho", "Comprovantes de pagamento", "Acordo ou convenção coletiva", "Comunicações com empregador", "CAT (comunicação de acidente de trabalho)", "PPP (perfil profissiográfico previdenciário)", "LTCAT", "ASO / exames ocupacionais"],
+                    "Documentos previdenciários / INSS": ["CNIS", "Extrato de benefício", "Carta de concessão", "Memória de cálculo do benefício", "Processo administrativo do INSS", "Comprovante de requerimento administrativo", "Comunicação de decisão / indeferimento", "Carteira de trabalho", "Carnês / guias GPS", "Documentos de atividade rural", "Autodeclaração rural", "Documentos de segurado especial", "PPP", "LTCAT", "Certidão de tempo de contribuição (CTC)", "Certidão de recolhimento prisional"],
+                    "Saúde, perícias e assistência social": ["Laudo médico", "Atestado médico", "Relatório médico", "Exames laboratoriais", "Exames de imagem", "Receitas médicas", "Prontuário médico", "Relatório psicológico", "Relatório psiquiátrico", "Relatório de fisioterapia", "Comprovantes de tratamento", "Comprovantes de medicamentos", "Relatório social", "Avaliação biopsicossocial", "Documentos de deficiência", "Comprovantes de gastos com saúde"],
+                    "Família e sucessões": ["Certidão de nascimento dos filhos", "Certidão de casamento atualizada", "Certidão de divórcio", "Pacto antenupcial", "Comprovantes de despesas dos dependentes", "Comprovantes de pagamento de pensão", "Comprovantes de renda dos responsáveis", "Documentos de bens do casal", "Escritura de imóvel", "Documentos de veículos", "Testamento", "Certidão de óbito do falecido", "Relação de herdeiros", "Relação de bens do espólio", "Certidões negativas do falecido"],
+                    "Cível, consumidor e contratos": ["Contrato assinado", "Aditivos contratuais", "Notas fiscais", "Recibos", "Boletos", "Comprovantes de pagamento", "Extratos bancários", "Comprovantes de transferência / PIX", "Faturas de cartão", "Histórico de cobrança", "Comprovantes de negativação", "Protocolos de atendimento", "Reclamação administrativa", "Notificações extrajudiciais", "Conversas / mensagens", "E-mails", "Fotografias", "Vídeos", "Orçamentos", "Laudo técnico"],
+                    "Imóveis, patrimônio e trânsito": ["Matrícula atualizada do imóvel", "Escritura pública", "Contrato de compra e venda", "IPTU", "Comprovantes de posse", "Planta / memorial descritivo", "Certidão de ônus reais", "Documentos de condomínio", "CRLV", "CRV / ATPV-e", "Boletim de ocorrência", "Auto de infração", "Notificação de multa", "Fotos do acidente", "Orçamento de reparo", "Apólice de seguro"],
+                    "Empresas e tributário": ["Contrato social", "Alterações contratuais", "Cartão CNPJ", "Documentos dos sócios", "Inscrição estadual / municipal", "Alvará de funcionamento", "Balanços / demonstrações contábeis", "Declarações fiscais", "Guias e comprovantes de tributos", "Certidões negativas de débitos", "Notas fiscais eletrônicas", "Livros contábeis", "Procuração empresarial"],
+                    "Processuais e provas": ["Petição inicial", "Contestação", "Réplica", "Documentos da parte contrária", "Intimação", "Citação", "Decisão judicial", "Sentença", "Acórdão", "Certidão de trânsito em julgado", "Cópia integral de processo", "Número do processo", "Comprovante de custas", "Comprovante de depósito judicial", "Rol de testemunhas", "Declaração de testemunha", "Quesitos periciais", "Parecer técnico", "Documentos para recurso", "Comprovante de cumprimento de decisão"]
+                }
                 with st.form("fc_pen", clear_on_submit=True):
-                    cli, proc = st.text_input("Cliente"), st.text_input("Processo")
-                    d1, d2, d3 = st.checkbox("Procuração / RG / CPF"), st.checkbox("Comprovante Residência"), st.checkbox("Laudos / Exames")
-                    d4 = st.text_input("Outro")
-                    
+                    cli = st.text_input("Cliente *")
+                    proc = st.text_input("Processo (número ou identificação)")
+                    st.markdown("#### Documentos solicitados")
+                    selecionados = []
+                    for grupo, documentos in catalogo_documentos.items():
+                        with st.expander(grupo):
+                            colunas = st.columns(2)
+                            for indice, documento in enumerate(documentos):
+                                with colunas[indice % 2]:
+                                    if st.checkbox(documento, key=f"pen_doc_{grupo}_{indice}"):
+                                        selecionados.append(documento)
+                    outros = st.text_area("Outros documentos (um por linha)", help="Informe documentos específicos não encontrados na lista.")
+                    selecionados.extend(linha.strip() for linha in outros.splitlines() if linha.strip())
+                    # Evita documentos repetidos entre categorias e campos adicionais.
+                    selecionados = list(dict.fromkeys(selecionados))
                     col_bpen1, col_bpen2 = st.columns(2)
                     with col_bpen1:
-                        salvar_pen = st.form_submit_button("Salvar", type="primary", use_container_width=True)
+                        salvar_pen = st.form_submit_button("Cadastrar documentos", type="primary", use_container_width=True)
                     with col_bpen2:
                         voltar_pen = st.form_submit_button("⬅️ Voltar", use_container_width=True)
-
                     if salvar_pen:
-                        docs = [d for d, b in zip(["Procuração/Docs", "Comp. Residência", "Laudos/Exames"], [d1, d2, d3]) if b]
-                        if d4.strip(): docs.append(d4.strip())
-                        if cli and docs:
-                            supabase.table("pendencias").insert({"cliente": cli, "processo": proc, "documento_devido": " | ".join(docs), "data_solicitacao": date.today().strftime("%Y-%m-%d"), "status": "Pendente"}).execute()
-                            registrar_auditoria(username, "Cadastrar Pendência", "Pendências", f"Cliente: {cli}")
-                            st.cache_data.clear()
-                            st.session_state['cad_pen_sucesso'] = True
-                            st.rerun()
-                        else: st.warning("Preencha o cliente e selecione ao menos um documento.")
+                        if not cli.strip() or not selecionados:
+                            st.warning("Informe o cliente e selecione ao menos um documento.")
+                        else:
+                            try:
+                                registros = [{"cliente": cli.strip(), "processo": proc.strip(),
+                                             "documento_devido": doc,
+                                             "data_solicitacao": date.today().strftime("%Y-%m-%d"),
+                                             "status": "Pendente"} for doc in selecionados]
+                                supabase.table("pendencias").insert(registros).execute()
+                                registrar_auditoria(username, "Cadastrar Pendências", "Pendências", f"Cliente: {cli.strip()} | Documentos: {len(registros)}")
+                                st.cache_data.clear()
+                                st.session_state['cad_pen_sucesso'] = True
+                                st.rerun()
+                            except Exception as erro:
+                                st.error(f"Não foi possível cadastrar os documentos: {erro}")
                     if voltar_pen:
                         st.session_state['submenu_atual'] = "Consultar Pendências"
                         st.rerun()
-
                 if st.session_state.get('cad_pen_sucesso'):
-                    confirmar_operacao("🎉 Pendência cadastrada com sucesso!")
+                    confirmar_operacao("Documentos cadastrados como pendências individuais!")
                     col1, col2 = st.columns(2)
                     with col1:
                         if st.button("➕ Cadastrar Nova Pendência", key="btn_novo_pen", type="primary", use_container_width=True):
@@ -4085,9 +4113,12 @@ elif authentication_status == True:
                     else:
                         exibir_tabela(df_pen, use_container_width=True, hide_index=True)
 
-                    pid = st.number_input("ID da Pendência entregue:", min_value=1, step=1)
-                    if st.button("Marcar como Entregue"):
-                        supabase.table("pendencias").update({"status": "Entregue"}).eq("id", pid).execute()
+                    pendencias_abertas = [p for p in res if str(p.get('status', '')).casefold() != 'entregue']
+                    if pendencias_abertas:
+                        opcoes_entrega = {f"#{p['id']} | {p.get('cliente', '')} | {p.get('documento_devido', '')}": p['id'] for p in pendencias_abertas}
+                        escolha_entrega = st.selectbox("Selecione o documento entregue", list(opcoes_entrega), key="pen_entrega_documento")
+                        if st.button("Marcar documento como entregue"):
+                            supabase.table("pendencias").update({"status": "Entregue"}).eq("id", opcoes_entrega[escolha_entrega]).execute()
                         registrar_auditoria(username, "Marcar Entregue", "Pendências", f"Pendência ID: {pid}")
                         st.cache_data.clear(); confirmar_operacao("Atualizado!"); st.rerun()
                 else: st.info("Sem pendências.")

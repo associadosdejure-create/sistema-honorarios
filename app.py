@@ -508,34 +508,35 @@ elif authentication_status == True:
                 st.markdown("<h1 style='text-align: center; margin: 0;'>👤</h1>", unsafe_allow_html=True)
 
         st.write(f"Logado como: **{name}**")
-        p_txt = {"admin": "👑 Sócio", "advogado": "⚖️ Advogado(a)", "bacharel": "📜 Bacharel(a)"}.get(user_role, "🎓 Estagiário")
+        p_txt = {"admin": "Sócio", "advogado": "Advogado(a)", "bacharel": "Bacharel(a)"}.get(user_role, "Estagiário")
         st.caption(f"Perfil: {p_txt}")
         
-        if st.button("🚪 Sair", use_container_width=True):
+        if st.button("Sair", use_container_width=True):
             registrar_auditoria(username, "Logout", "Acesso", f"Usuário {name} ({username}) efetuou logout do sistema.")
             st.session_state.update({'authentication_status': None, 'login_registrado': False})
             st.rerun()
 
         st.markdown("---")
         
-        st.subheader("🧭 Módulos do Sistema")
+        st.subheader("Módulos do Sistema")
+        # Os rótulos exibidos são sóbrios; os identificadores internos não mudam.
         modulos = {
-            "🏠 Página Inicial": "🏠 Página Inicial",
-            "👥 Clientes": "Clientes",
-            "📍 Prospectados Pendentes": "Prospectados Pendentes",
-            "📂 Meus Processos": "Meus Processos",
-            "💰 Pagamentos": "Pagamentos",
-            "🔬 Perícias": "Perícias",
-            "📂 Expedientes": "Expedientes",
-            "⚖️ Expedientes TRF": "Expedientes TRF",
-            "📋 Pendências": "Pendências",
-            "🧑‍⚖️ Equipe Dejure": "Equipe Dejure",
-            "🔒 Segurança": "Segurança"
+            "Página Inicial": "🏠 Página Inicial",
+            "Clientes": "Clientes",
+            "Prospectados Pendentes": "Prospectados Pendentes",
+            "Meus Processos": "Meus Processos",
+            "Pagamentos": "Pagamentos",
+            "Perícias": "Perícias",
+            "Expedientes": "Expedientes",
+            "Expedientes TRF": "Expedientes TRF",
+            "Pendências": "Pendências",
+            "Equipe Dejure": "Equipe Dejure",
+            "Segurança": "Segurança"
         }
-        
+
         if user_role == 'admin':
-            modulos["📥 Distribuição de Processos"] = "Distribuição de Processos"
-            modulos["🛡️ Auditoria"] = "Auditoria"
+            modulos["Distribuição de Processos"] = "Distribuição de Processos"
+            modulos["Auditoria"] = "Auditoria"
 
         for label, pag in modulos.items():
             if st.button(label, use_container_width=True):
@@ -561,7 +562,7 @@ elif authentication_status == True:
         st.markdown(f"⏳ **Sessão expira em:**\n### `{min_res:02d}:{seg_res:02d}`")
         st.markdown("---")
         if os.path.exists("logo.png"): st.image("logo.png", use_container_width=True)
-        else: st.write("⚖️ **Dejure Advocacia**")
+        else: st.write("**DEJURE ADVOCACIA**")
 
     menu_escolha = st.session_state['pagina_atual']
 
@@ -849,7 +850,7 @@ elif authentication_status == True:
 
     else:
         menu_principal = menu_escolha
-        st.title(f"Módulo: {menu_principal} ⚖️")
+        st.title(f"{menu_principal}")
 
         if menu_principal == "Clientes":
             acoes = ["Consultar Clientes", "Cadastrar Cliente", "Importar Excel", "Editar Cliente", "Exportar Base (Backup)"]

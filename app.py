@@ -271,68 +271,71 @@ def formatar_moeda_br(val):
         return "R$ 0,00"
 
 def carregar_usuarios_db():
-    senha_padrao_hash = gerar_hash('mudar123')
+    # O hash inicial fica exclusivamente no Streamlit Secrets, nunca no GitHub.
+    # Após trocar a senha na tela, o hash persistido no Supabase tem prioridade.
+    hash_inicial = str(st.secrets.get("MASTER_PASSWORD_HASH", "")).strip()
+    if not hash_inicial.startswith(("$2a$", "$2b$", "$2y$")):
+        st.error("Configuração de segurança incompleta: MASTER_PASSWORD_HASH ausente ou inválido nos Secrets.")
+        st.stop()
+
     cred_dict = {
         "usernames": {
             "master": {
-                "name": "Administrador Master",
-                "password": senha_padrao_hash,
-                "role": "admin",
-                "trocar_senha": False,
-                "foto_url": None,
-                "telefone": "",
-                "oab": "",
-                "data_nascimento": None,
-                "destaque_mes": False
+                "name": "Administrador Master", "password": hash_inicial,
+                "role": "admin", "trocar_senha": False,
+                "foto_url": None, "telefone": "", "oab": "",
+                "data_nascimento": None, "destaque_mes": False
             }
         }
     }
-    
+
     try:
         res = supabase.table("usuarios_sistema").select("*").execute()
-        if res.data:
-            for u in res.data:
-                uname = str(u.get("username", "")).strip().lower()
-                if not uname: continue
+        for u in (res.data or []):
+            uname = str(u.get("username", "")).strip().lower()
+            if not uname:
+                continue
+            if uname == "master":
+                senha_master_db = str(u.get("senha_hash") or u.get("password") or "").strip()
+                # Compatibilidade com a implementação anterior de troca de senha.
+                senha_foi_alterada = str(u.get("nome_completo") or "").endswith(" [SENHA_ALTERADA]")
+                if senha_foi_alterada:
+                    if not senha_master_db.startswith(("$2a$", "$2b$", "$2y$")):
+                        raise ValueError("Hash do master no banco está inválido")
+                    cred_dict["usernames"]["master"]["password"] = senha_master_db
+                continue
 
-                # Compatibilidade com registros antigos: somente uma senha alterada
-                # nesta tela (identificada pelo marcador) substitui a senha inicial.
-                if uname == "master":
-                    senha_master_db = str(u.get("senha_hash") or u.get("password") or "").strip()
-                    senha_foi_alterada = str(u.get("nome_completo") or "").endswith(" [SENHA_ALTERADA]")
-                    if senha_foi_alterada and senha_master_db.startswith("$2"):
-                        cred_dict["usernames"]["master"]["password"] = senha_master_db
-                    continue
-                
-                senha_db = str(u.get("senha_hash", u.get("password", ""))).strip()
-                if senha_db and not senha_db.startswith("$2"):
-                    senha_db = gerar_hash(senha_db)
-
-                cred_dict["usernames"][uname] = {
-                    "name": str(u.get("nome_completo", u.get("name", "Usuário"))),
-                    "password": senha_db,
-                    "role": str(u.get("role", "estagiario")),
-                    "trocar_senha": u.get("trocar_senha", True) if "trocar_senha" in u else True,
-                    "foto_url": u.get("foto_url", None),
-                    "telefone": u.get("telefone", ""),
-                    "oab": u.get("oab", ""),
-                    "data_nascimento": u.get("data_nascimento", None),
-                    "observacoes_pessoais": u.get("observacoes_pessoais", ""),
-                    "destaque_mes": u.get("destaque_mes", False)
-                }
-    except Exception as erro:
-        st.error("Não foi possível consultar as credenciais no Supabase. Tente novamente mais tarde.")
+            senha_db = str(u.get("senha_hash") or u.get("password") or "").strip()
+            if senha_db and not senha_db.startswith("$2"):
+                senha_db = gerar_hash(senha_db)
+            cred_dict["usernames"][uname] = {
+                "name": str(u.get("nome_completo", u.get("name", "Usuário"))),
+                "password": senha_db,
+                "role": str(u.get("role", "estagiario")),
+                "trocar_senha": u.get("trocar_senha", True),
+                "foto_url": u.get("foto_url"), "telefone": u.get("telefone", ""),
+                "oab": u.get("oab", ""), "data_nascimento": u.get("data_nascimento"),
+                "observacoes_pessoais": u.get("observacoes_pessoais", ""),
+                "destaque_mes": u.get("destaque_mes", False)
+            }
+    except Exception:
+        # Falha fechada: jamais retornar ao hash inicial por erro de consulta.
+        st.error("Falha ao verificar as credenciais no Supabase. Login temporariamente indisponível.")
         st.stop()
-        
     return cred_dict
 
+
 credentials = carregar_usuarios_db()
+cookie_secret = str(st.secrets.get("AUTH_COOKIE_KEY", "")).strip()
+if len(cookie_secret) < 32:
+    st.error("Configuração de segurança incompleta: AUTH_COOKIE_KEY deve ter pelo menos 32 caracteres.")
+    st.stop()
 
 authenticator = stauth.Authenticate(
-    credentials, 
-    cookie_name='sistema_dejure_cookie_v14', 
-    cookie_key='chave_seguranca_dejure_2026_v14', 
-    cookie_expiry_days=30
+    credentials,
+    cookie_name="sistema_dejure_cookie_seguro_v1",
+    cookie_key=cookie_secret,
+    cookie_expiry_days=1
 )
 
 authentication_status = st.session_state.get('authentication_status')

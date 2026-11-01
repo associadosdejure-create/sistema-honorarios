@@ -2060,32 +2060,58 @@ elif authentication_status == True:
                 if not usuarios_equipe:
                     st.info("Nenhum membro da equipe encontrado.")
                 else:
-                    if user_role == 'admin':
-                        with st.expander("⭐ Definir Destaque do Mês (Apenas Administrador)"):
-                            opcoes_destaque = {"Nenhum Destaque / Remover": ""}
-                            for u in usuarios_equipe:
-                                opcoes_destaque[u['name']] = u['username']
-                            
-                            sel_destaque = st.selectbox("Selecione o Colaborador:", list(opcoes_destaque.keys()))
-                            
-                            if st.button("Salvar Destaque", type="primary"):
-                                try:
-                                    supabase.table("usuarios_sistema").update({"destaque_mes": False}).neq("username", "master").execute()
-                                    user_selecionado = opcoes_destaque[sel_destaque]
-                                    if user_selecionado:
-                                        supabase.table("usuarios_sistema").update({"destaque_mes": True}).eq("username", user_selecionado).execute()
-                                        registrar_auditoria(username, "Destaque do Mês", "Equipe", f"Destaque definido para: {sel_destaque}")
-                                    
-                                    st.cache_data.clear()
-                                    confirmar_operacao("Destaque atualizado com sucesso! Recarregando...")
-                                    time.sleep(1)
-                                    st.rerun()
-                                except Exception as e:
-                                    st.error(f"Erro ao salvar: {e}")
-                    
+                    # Placar calculado a partir dos eventos de protocolo, sem alterar
+                    # os registros existentes nem depender da data de atualização.
+                    st.subheader("Placar mensal de processos protocolados")
+                    hoje_placar = date.today()
+                    meses_placar = [(hoje_placar.replace(day=1) - relativedelta(months=i)) for i in range(12)]
+                    opcoes_meses = {m.strftime("%m/%Y"): m for m in meses_placar}
+                    mes_escolhido = st.selectbox("Mês de referência", list(opcoes_meses), key="mes_placar_dejure")
+                    inicio_mes = opcoes_meses[mes_escolhido]
+                    fim_mes = inicio_mes + relativedelta(months=1)
+                    ranking_placar = []
+                    destaque_automatico = None
+                    try:
+                        # Consulta privilegiada somente no servidor, após login.
+                        consulta = (cliente_storage_servidor().table('dejure_protocolos')
+                            .select('processo_id,responsavel_nome,protocolado_em')
+                            .gte('protocolado_em', inicio_mes.isoformat())
+                            .lt('protocolado_em', fim_mes.isoformat())
+                            .limit(10000).execute())
+                        eventos = consulta.data or []
+                        if len(eventos) == 10000:
+                            st.warning('O limite de 10.000 eventos foi atingido. O placar pode estar incompleto.')
+                        contagem = {}
+                        for ev in eventos:
+                            responsavel = (ev.get('responsavel_nome') or '').strip()
+                            if responsavel:
+                                contagem[responsavel] = contagem.get(responsavel, 0) + 1
+                        ranking_placar = sorted(contagem.items(), key=lambda item: (-item[1], item[0].casefold()))
+                        c_total, c_ativos, c_lider = st.columns(3)
+                        c_total.metric('Protocolos no mês', sum(contagem.values()))
+                        c_ativos.metric('Colaboradores com protocolos', len(contagem))
+                        c_lider.metric('Maior pontuação', ranking_placar[0][1] if ranking_placar else 0)
+                        if ranking_placar:
+                            maior_pontuacao = ranking_placar[0][1]
+                            lideres = [p for p, total in ranking_placar if total == maior_pontuacao]
+                            if len(lideres) == 1:
+                                destaque_automatico = next((u for u in usuarios_equipe if u['name'] == lideres[0]), None)
+                                st.success(f"Destaque de {mes_escolhido}: {lideres[0]} — {maior_pontuacao} protocolo(s)")
+                            else:
+                                st.info('Empate na liderança: ' + ', '.join(lideres) + f' — {maior_pontuacao} protocolo(s) cada')
+                            df_placar = pd.DataFrame([{'Posição': i + 1, 'Colaborador': pessoa, 'Protocolos': total}
+                                for i, (pessoa, total) in enumerate(ranking_placar)])
+                            exibir_tabela(df_placar, hide_index=True, use_container_width=True)
+                            st.bar_chart(pd.DataFrame(ranking_placar, columns=['Colaborador','Protocolos']).set_index('Colaborador'))
+                        else:
+                            st.info('Nenhum protocolo registrado neste mês.')
+                        st.caption('Contabiliza o primeiro registro de mudança para Protocolado por processo. Não contabiliza cadastros antigos retroativamente.')
+                    except Exception:
+                        st.error('Placar indisponível. Execute o SQL de protocolos no Supabase e confira os Secrets do Streamlit.')
+
                     st.markdown("---")
                     
-                    destaque = next((u for u in usuarios_equipe if u.get("destaque_mes")), None)
+                    destaque = destaque_automatico
                     outros_brutos = [u for u in usuarios_equipe if not u.get("destaque_mes")]
 
                     ordem_cargos = {"admin": 1, "advogado": 2, "bacharel": 3, "estagiario": 4}
@@ -2098,7 +2124,7 @@ elif authentication_status == True:
                         col_d1, col_d2, col_d3 = st.columns([1, 2, 1])
                         with col_d2:
                             with st.container(border=True):
-                                st.markdown("<h3 style='text-align: center; color: #0A0A0A; background-color: #D4AF37; margin-top: 0; padding: 10px; border-radius: 5px;'>🏆 DESTAQUE DO MÊS 🏆</h3>", unsafe_allow_html=True)
+                                st.markdown("<h3 style='text-align: center; color: #0A0A0A; background-color: #D4AF37; margin-top: 0; padding: 10px; border-radius: 5px;'>🏆 DESTAQUE DO MÊS SELECIONADO 🏆</h3>", unsafe_allow_html=True)
                                 
                                 foto = destaque.get("foto_url")
                                 if foto:

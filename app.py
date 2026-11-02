@@ -1692,15 +1692,24 @@ elif authentication_status == True:
         with abas[1]:
             st.subheader('Cadastrar despesas')
             st.caption('Despesas fixas são repetidas mensalmente até o ADM encerrar. Parceladas geram vencimentos mensais independentes.')
+            # Seletores fora do formulário: Streamlit atualiza os campos
+            # imediatamente ao escolher Parcelada, sem precisar clicar em Salvar.
+            tipo = st.selectbox('Tipo de despesa', ['Fixa', 'Variável', 'Outras'], key='dj_despesa_tipo')
+            forma = st.selectbox(
+                'Forma de lançamento', ['Única', 'Parcelada', 'Mensal recorrente'],
+                key='dj_despesa_forma',
+                help='Parcelada: informe o total e a quantidade. Mensal recorrente: repete até o ADM encerrar.'
+            )
             with st.form('form_despesa_dejure', clear_on_submit=True):
-                tipo = st.selectbox('Tipo de despesa', ['Fixa', 'Variável', 'Outras'])
                 descricao = st.text_input('Descrição', max_chars=180)
                 valor = st.number_input('Valor (R$)', min_value=0.01, step=10.0, format='%.2f')
-                forma = st.selectbox('Forma de lançamento', ['Mensal recorrente', 'Parcelada', 'Única'] if tipo == 'Fixa' else ['Única', 'Parcelada', 'Mensal recorrente'], help='Parcelada está disponível para todas as categorias, inclusive Fixa. Mensal recorrente repete até o ADM encerrar.')
                 competencia = st.date_input('Primeiro mês de competência', hoje_fin.replace(day=1))
                 vencimento = st.date_input('Primeiro vencimento', hoje_fin)
-                quantidade = st.number_input('Número de parcelas (se parcelada)', min_value=2, max_value=120, value=2, step=1) if forma == 'Parcelada' else 1
-                st.caption('Na despesa parcelada, o valor informado acima é o TOTAL da compra; o sistema divide entre as parcelas.') if forma == 'Parcelada' else None
+                if forma == 'Parcelada':
+                    quantidade = st.number_input('Quantidade de parcelas', min_value=2, max_value=120, value=2, step=1)
+                    st.caption('O valor informado é o TOTAL da compra; o sistema divide entre as parcelas.')
+                else:
+                    quantidade = 1
                 situacao = st.selectbox('Situação inicial', ['Pendente', 'Paga']) if forma == 'Única' else 'Pendente'
                 observacoes = st.text_area('Observações (opcional)')
                 salvar = st.form_submit_button('Cadastrar despesa', type='primary')

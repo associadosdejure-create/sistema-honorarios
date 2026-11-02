@@ -302,6 +302,49 @@ def registrar_auditoria(usuario, acao, modulo, detalhes=""):
     except Exception:
         pass
 
+
+
+def dejure_logs_repasses_ativos(cliente):
+    """Reconstroi o ultimo estado de cada parcela a partir de eventos imutaveis de auditoria."""
+    registros = []
+    inicio = 0
+    while True:
+        lote = (cliente.table('logs_auditoria').select('*').eq('modulo', 'Repasses')
+                .order('id').range(inicio, inicio + 999).execute().data or [])
+        registros.extend(lote)
+        if len(lote) < 1000:
+            break
+        inicio += 1000
+    estado = {}
+    sem_id = []
+    for log in registros:
+        try:
+            dados = json.loads(log.get('detalhes') or '{}')
+            pid = dados.get('parcela_id')
+            if pid is None:
+                if log.get('acao') == 'Baixa e Rateio':
+                    sem_id.append(log)
+                continue
+            chave = str(pid)
+            if log.get('acao') == 'Cancelamento de Baixa':
+                estado.pop(chave, None)
+            elif log.get('acao') in ('Baixa e Rateio', 'Correção de Baixa'):
+                estado[chave] = log
+        except (ValueError, TypeError, AttributeError):
+            continue
+    return sem_id + list(estado.values())
+
+
+def dejure_registrar_evento_repasse(cliente, usuario, acao, dados):
+    """Nao engole erros: eventos financeiros precisam de confirmacao do banco."""
+    retorno = cliente.table('logs_auditoria').insert({
+        'usuario': usuario, 'acao': acao, 'modulo': 'Repasses',
+        'detalhes': json.dumps(dados, ensure_ascii=False)
+    }).execute()
+    if not retorno.data:
+        raise RuntimeError('O banco nao confirmou o registro financeiro.')
+    return retorno
+
 def limpar_flags_cadastro():
     for k in ['cad_cli_sucesso', 'cad_hon_sucesso', 'cad_per_sucesso', 'cad_exp_sucesso', 'cad_trf_sucesso', 'cad_pen_sucesso', 'cad_pros_pend_sucesso', 'cad_user_sucesso', 'ultimo_cliente_cadastrado_id', 'ultimo_cliente_cadastrado_nome', 'ultimo_cliente_cadastrado_doc', 'ultimo_cliente_cadastrado_tel', 'ultimo_cliente_cadastrado_obs']:
         if k in st.session_state:
@@ -647,6 +690,7 @@ elif authentication_status == True:
             modulos["Distribuição de Processos"] = "Distribuição de Processos"
             modulos["Auditoria"] = "Auditoria"
             modulos["Balanço Financeiro"] = "Balanço Financeiro"
+            modulos["Gerenciar Baixas"] = "Gerenciar Baixas"
             if username == "master":
                 modulos["Gerenciar Protocolos"] = "Gerenciar Protocolos"
 
@@ -666,7 +710,8 @@ elif authentication_status == True:
                     "Segurança": "Meu Perfil",
                     "Distribuição de Processos": "Fila de Distribuição",
                     "Auditoria": "Ver Logs",
-                    "Balanço Financeiro": "Painel Financeiro"
+                    "Balanço Financeiro": "Painel Financeiro",
+                    "Gerenciar Baixas": "Gerenciar Baixas"
                 }.get(pag, "")
                 limpar_flags_cadastro()
                 st.rerun()
@@ -1090,6 +1135,117 @@ elif authentication_status == True:
         except Exception as e: 
             st.error(f"Erro ao carregar central de alertas: {e}")
 
+    elif menu_escolha == "Gerenciar Baixas":
+        if user_role != 'admin':
+            st.error('Acesso exclusivo aos administradores.')
+            st.stop()
+        st.title('Gerenciar Baixas de Parcelas')
+        st.caption('Consulte, corrija ou cancele baixas. Cada alteração é preservada na auditoria. Parcelas históricas não geram repasses.')
+        try:
+            cliente_fin = cliente_storage_servidor()
+            eventos_ativos = dejure_logs_repasses_ativos(cliente_fin)
+            todas_parcelas = {}
+            inicio_par = 0
+            while True:
+                lote_par = cliente_fin.table('parcelas').select('*').range(inicio_par, inicio_par + 999).execute().data or []
+                todas_parcelas.update({str(p['id']): p for p in lote_par})
+                if len(lote_par) < 1000:
+                    break
+                inicio_par += 1000
+        except Exception as exc:
+            st.error(f'Falha ao consultar baixas: {exc}')
+            st.stop()
+        opcoes = {}
+        for log in eventos_ativos:
+            try:
+                info = json.loads(log.get('detalhes') or '{}')
+                pid = info.get('parcela_id')
+                if pid is None or str(pid) not in todas_parcelas:
+                    continue
+                parcela = todas_parcelas[str(pid)]
+                if str(parcela.get('status', '')).lower() != 'pago':
+                    continue
+                rotulo = f"Parcela #{pid} | {info.get('contrato', 'Contrato')} | {formatar_moeda_br(float(info.get('valor_bruto') or 0))} | {info.get('data_baixa', '')}"
+                opcoes[rotulo] = (log, info, parcela)
+            except (ValueError, TypeError, AttributeError):
+                continue
+        if not opcoes:
+            st.info('Nenhuma baixa com repasse ativo para gerenciar. Recebimentos históricos permanecem fora desta lista.')
+        else:
+            escolha_baixa = st.selectbox('Selecione a baixa', list(opcoes))
+            log_baixa, info_baixa, parcela_baixa = opcoes[escolha_baixa]
+            pid_baixa = parcela_baixa['id']
+            st.write(f"**Contrato:** {info_baixa.get('contrato', '-')}  |  **Parcela:** {pid_baixa}")
+            st.write(f"**Valor bruto:** {formatar_moeda_br(float(info_baixa.get('valor_bruto') or 0))}")
+            st.write(f"**Leônidas:** {formatar_moeda_br(float(info_baixa.get('leonidas') or 0))}  |  **Nelson:** {formatar_moeda_br(float(info_baixa.get('nelson') or 0))}")
+            st.write(f"**Colaborador:** {info_baixa.get('colaborador_parcela') or 'Nenhum'}")
+            aba_corrigir, aba_cancelar = st.tabs(['Editar baixa', 'Cancelar baixa'])
+            with aba_corrigir:
+                if str(info_baixa.get('regra', '')).startswith('Entrada'):
+                    st.warning('Baixas de entrada possuem descontos específicos. Para evitar rateios incorretos, a correção automática está disponível somente para parcelas comuns.')
+                else:
+                    with st.form('form_editar_baixa_master'):
+                        data_anterior = str(info_baixa.get('data_baixa') or date.today().isoformat())[:10]
+                        try:
+                            data_padrao = date.fromisoformat(data_anterior)
+                        except ValueError:
+                            data_padrao = date.today()
+                        nova_data = st.date_input('Data efetiva do recebimento', data_padrao)
+                        colab_atual = str(info_baixa.get('colaborador_parcela') or '')
+                        novo_colab = st.text_input('Nome do colaborador (deixe vazio se não houver)', value=colab_atual)
+                        valor_atual = float(info_baixa.get('valor_colaborador_parcela') or 0)
+                        novo_valor = st.number_input('Valor do colaborador (R$)', min_value=0.0, value=valor_atual, step=10.0, format='%.2f')
+                        justificativa_ed = st.text_area('Motivo da correção (obrigatório)')
+                        confirmar_ed = st.form_submit_button('Salvar correção', type='primary')
+                    if confirmar_ed:
+                        bruto_c = round(float(info_baixa.get('valor_bruto') or 0), 2)
+                        if not justificativa_ed.strip():
+                            st.error('Informe o motivo da correção.')
+                        elif novo_valor > bruto_c or (novo_valor > 0 and not novo_colab.strip()) or (novo_colab.strip() and novo_valor <= 0):
+                            st.error('Informe nome e valor válidos; o valor do colaborador não pode superar a parcela.')
+                        else:
+                            novo_reg = dict(info_baixa)
+                            saldo_c = round(bruto_c - novo_valor, 2)
+                            leo_c = round(saldo_c * 0.60, 2)
+                            nel_c = round(saldo_c - leo_c, 2)
+                            novo_reg.update({'data_baixa': nova_data.isoformat(), 'colaborador_parcela': novo_colab.strip() or None,
+                                'valor_colaborador_parcela': round(novo_valor, 2), 'valor_operador': round(novo_valor, 2),
+                                'operador': novo_colab.strip() or 'Não aplicável', 'leonidas': leo_c, 'nelson': nel_c,
+                                'valor_prospectador': 0.0, 'fundo_colab': 0.0, 'rateio_colaboradores': {},
+                                'soma_distribuida': bruto_c, 'prova_real_ok': True,
+                                'regra': 'Parcela: repasse livre a colaborador' if novo_valor else 'Parcela: sócios',
+                                'revisao_log_id': log_baixa['id'], 'motivo_correcao': justificativa_ed.strip()})
+                            try:
+                                dejure_registrar_evento_repasse(cliente_fin, username, 'Correção de Baixa', novo_reg)
+                                st.cache_data.clear()
+                                st.success('Baixa corrigida. Extratos e Balanço consideram apenas a versão atual.')
+                                st.rerun()
+                            except Exception as exc:
+                                st.error(f'Não foi possível salvar a correção: {exc}')
+            with aba_cancelar:
+                st.warning('O cancelamento devolve a parcela a Pendente e retira seu repasse dos relatórios. O histórico da baixa permanece na auditoria.')
+                with st.form('form_cancelar_baixa_master'):
+                    motivo_cancel = st.text_area('Justificativa do cancelamento (obrigatória)')
+                    confirmar_texto = st.text_input('Digite CANCELAR para confirmar')
+                    confirmar_cancel = st.form_submit_button('Cancelar baixa', type='primary')
+                if confirmar_cancel:
+                    if not motivo_cancel.strip() or confirmar_texto.strip() != 'CANCELAR':
+                        st.error('Informe a justificativa e digite CANCELAR.')
+                    else:
+                        try:
+                            # Registrar evento antes da alteração do status, preservando trilha financeira.
+                            evento_cancel = {'parcela_id': pid_baixa, 'log_anterior_id': log_baixa['id'],
+                                'data_baixa': date.today().isoformat(), 'motivo_cancelamento': motivo_cancel.strip(),
+                                'valor_bruto_anterior': info_baixa.get('valor_bruto'),
+                                'leonidas_anterior': info_baixa.get('leonidas'), 'nelson_anterior': info_baixa.get('nelson')}
+                            dejure_registrar_evento_repasse(cliente_fin, username, 'Cancelamento de Baixa', evento_cancel)
+                            cliente_fin.table('parcelas').update({'status': 'Pendente'}).eq('id', pid_baixa).execute()
+                            st.cache_data.clear()
+                            st.success('Baixa cancelada. A parcela voltou a Pendente.')
+                            st.rerun()
+                        except Exception as exc:
+                            st.error(f'Falha ao cancelar: {exc}. Confira o status e a auditoria antes de tentar novamente.')
+
     elif menu_escolha == "Gerenciar Protocolos":
         st.title("Gerenciamento de Protocolos")
         if username != "master" or user_role != "admin" or st.session_state.get("authentication_status") is not True:
@@ -1222,7 +1378,7 @@ elif authentication_status == True:
 
         try:
             despesas = consulta_toda('dejure_despesas')
-            repasses_logs = consulta_toda('logs_auditoria', 'id,detalhes,data_hora', [('modulo', 'Repasses')])
+            repasses_logs = dejure_logs_repasses_ativos(cliente_storage_servidor())
             parcelas = consulta_toda('parcelas')
         except Exception:
             st.error('Não foi possível carregar o balanço. Execute primeiro o arquivo SQL fornecido no Supabase e confira a chave de serviço nos Secrets.')
@@ -3558,7 +3714,7 @@ elif authentication_status == True:
                             
                             try:
                                 supabase.table("parcelas").update({"status": "Pago"}).eq("id", parcela_obj['id']).execute()
-                                registrar_auditoria(username, "Baixa e Rateio", "Repasses", json_repasse)
+                                dejure_registrar_evento_repasse(supabase, username, "Baixa e Rateio", repasse_dict)
                                 st.cache_data.clear()
                                 confirmar_operacao("✅ Parcela baixada e repasse validado com sucesso! Consulte o Extrato de Repasses.")
                                 st.rerun()
@@ -3570,7 +3726,7 @@ elif authentication_status == True:
                 st.caption("Visão financeira completa sobre a divisão de honorários das parcelas baixadas com Prova Real Auditada.")
                 
                 try:
-                    res_rep = supabase.table("logs_auditoria").select("*").eq("modulo", "Repasses").order("data_hora", desc=True).execute()
+                    res_rep = type("Resultado", (), {"data": dejure_logs_repasses_ativos(supabase)})()
                     if not res_rep.data:
                         st.info("Nenhum repasse registrado ainda.")
                     else:
@@ -3671,7 +3827,7 @@ elif authentication_status == True:
                     st.error("A Data Inicial não pode ser posterior à Data Final.")
                 else:
                     try:
-                        res_rep = supabase.table("logs_auditoria").select("*").eq("modulo", "Repasses").order("data_hora", desc=True).execute()
+                        res_rep = type("Resultado", (), {"data": dejure_logs_repasses_ativos(supabase)})()
                         if not res_rep.data:
                             st.info("Nenhum registro de repasse encontrado no banco de dados.")
                         else:

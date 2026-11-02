@@ -1043,13 +1043,13 @@ elif authentication_status == True:
                     if p.get('data_pm'):
                         dt = datetime.strptime(p['data_pm'], "%Y-%m-%d").date()
                         dias_restantes = (dt - hoje).days
-                        if dias_restantes >= -5:
+                        if dias_restantes <= 7:
                             uid = f"per_{p['id']}_pm"
                             alertas_pericias.append((dias_restantes, f"🔬 Perícia Médica | Nome: {p.get('nome', 'N/D')} | Data PM: {dt.strftime('%d/%m/%Y')}", uid, 'pericia'))
                     if p.get('data_ps'):
                         dt = datetime.strptime(p['data_ps'], "%Y-%m-%d").date()
                         dias_restantes = (dt - hoje).days
-                        if dias_restantes >= -5:
+                        if dias_restantes <= 7:
                             uid = f"per_{p['id']}_ps"
                             alertas_pericias.append((dias_restantes, f"🔬 Perícia Social | Nome: {p.get('nome', 'N/D')} | Data PS: {dt.strftime('%d/%m/%Y')}", uid, 'pericia'))
 
@@ -1057,24 +1057,28 @@ elif authentication_status == True:
                 if e.get('status') == 'Pendente' and e.get('data_manifestacao'):
                     dt = datetime.strptime(e['data_manifestacao'], "%Y-%m-%d").date()
                     uid = f"exp_{e.get('id', 0)}"
-                    alertas_expedientes.append(((dt - hoje).days, f"📂 Processo: {e['numero_processo']} | Cliente: {e.get('cliente', 'N/D')} | Prazo: {dt.strftime('%d/%m/%Y')} | Resp: {e['responsavel']}", uid, 'expediente'))
+                    if (dt - hoje).days <= 7:
+                        alertas_expedientes.append(((dt - hoje).days, f"📂 Processo: {e['numero_processo']} | Cliente: {e.get('cliente', 'N/D')} | Prazo: {dt.strftime('%d/%m/%Y')} | Resp: {e['responsavel']}", uid, 'expediente'))
 
             for et in exp_trf:
                 if et.get('status') == 'Pendente' and et.get('data_manifestacao'):
                     dt = datetime.strptime(et['data_manifestacao'], "%Y-%m-%d").date()
                     uid = f"trf_{et.get('id', 0)}"
-                    alertas_expedientes_trf.append(((dt - hoje).days, f"⚖️ Processo: {et['numero_processo']} | Cliente: {et.get('cliente', 'N/D')} | Prazo: {dt.strftime('%d/%m/%Y')} | Resp: {et['responsavel']}", uid, 'expediente_trf'))
+                    if (dt - hoje).days <= 7:
+                        alertas_expedientes_trf.append(((dt - hoje).days, f"⚖️ Processo: {et['numero_processo']} | Cliente: {et.get('cliente', 'N/D')} | Prazo: {dt.strftime('%d/%m/%Y')} | Resp: {et['responsavel']}", uid, 'expediente_trf'))
 
             for pc in parcelas_db:
                 if pc.get('status') == 'Pendente' and pc.get('vencimento'):
                     dt = datetime.strptime(pc['vencimento'], "%Y-%m-%d").date()
                     uid = f"pag_{pc.get('id', 0)}"
-                    alertas_pagamentos.append(((dt - hoje).days, f"💰 Parcela {pc.get('numero_parcela')} | Vencimento: {dt.strftime('%d/%m/%Y')} | Valor: {formatar_moeda_br(pc.get('valor', 0))}", uid, 'pagamento'))
+                    if (dt - hoje).days <= 7:
+                        alertas_pagamentos.append(((dt - hoje).days, f"💰 Parcela {pc.get('numero_parcela')} | Vencimento: {dt.strftime('%d/%m/%Y')} | Valor: {formatar_moeda_br(pc.get('valor', 0))}", uid, 'pagamento'))
 
             total_alertas = len(alertas_pericias) + len(alertas_expedientes) + len(alertas_expedientes_trf) + len(alertas_pagamentos)
 
             if total_alertas > 0:
                 st.subheader("🚨 Central de Alertas de Prazos e Vencimentos")
+                st.caption("Alertas exibidos a partir de 7 dias antes do vencimento. Itens vencidos permanecem visíveis enquanto estiverem pendentes.")
                 
                 tab_per, tab_exp, tab_trf, tab_pag = st.tabs(["🔬 Perícias", "📂 Expedientes", "⚖️ Expedientes TRF", "💰 Pagamentos"])
 
@@ -1131,7 +1135,7 @@ elif authentication_status == True:
                 with tab_pag:
                     renderizar_lista_alerta(alertas_pagamentos, "pagamentos")
             else:
-                st.info("🎉 Nenhum alerta de prazo ou pagamento pendente para hoje!")
+                st.info("🎉 Nenhum prazo pendente vencido ou com vencimento nos próximos 7 dias!")
         except Exception as e: 
             st.error(f"Erro ao carregar central de alertas: {e}")
 

@@ -1030,6 +1030,32 @@ elif authentication_status == True:
             st.error('Placar indisponível. Execute o SQL de protocolos no Supabase e confira os Secrets do Streamlit.')
 
 
+        # RPV: painel permanente, pois estes recebíveis NÃO possuem vencimento.
+        st.markdown("---")
+        st.subheader("🏛️ RPVs / Retroativos — aguardando liberação")
+        try:
+            rpv_inicio = 0
+            rpvs_abertas = []
+            while True:
+                lote_rpv = (cliente_storage_servidor().table('dejure_rpv_recebiveis')
+                            .select('id,cliente,servico,valor,percentual_rpv,valor_rpv_bruto,status,observacoes')
+                            .eq('status', 'Aguardando liberação')
+                            .range(rpv_inicio, rpv_inicio + 999).execute().data or [])
+                rpvs_abertas.extend(lote_rpv)
+                if len(lote_rpv) < 1000:
+                    break
+                rpv_inicio += 1000
+            st.caption("Recebíveis sem data de vencimento. Permanecem visíveis até a liberação da RPV.")
+            st.metric("RPVs aguardando liberação", len(rpvs_abertas))
+            with st.expander(f"Ver RPVs em acompanhamento ({len(rpvs_abertas)})", expanded=bool(rpvs_abertas)):
+                if rpvs_abertas:
+                    for r in sorted(rpvs_abertas, key=lambda x: str(x.get('cliente') or '')):
+                        st.info(f"**Cliente:** {r.get('cliente') or 'Não informado'} | **Serviço:** {r.get('servico') or 'RPV'} | **Honorários sobre RPV:** {r.get('percentual_rpv') or 0}% | **Valor da RPV:** a definir | **Situação:** aguardando liberação")
+                else:
+                    st.success("Nenhuma RPV aguardando liberação.")
+        except Exception:
+            st.caption("Painel RPV indisponível. Execute primeiro o SQL de instalação da tabela dejure_rpv_recebiveis.")
+
         st.markdown("---")
         try:
             hoje = date.today()
@@ -1993,7 +2019,7 @@ elif authentication_status == True:
             if user_role == 'admin': acoes.extend(['Central de Revisões', 'Armazenamento'])
         elif menu_principal == "Pagamentos":
             acoes = ["Ver Parcelas", "Cadastrar Contrato", "Editar Contrato"]
-            if user_role == 'admin': acoes = ["Ver Parcelas", "Cadastrar Contrato", "Cadastrar Parcelamento em Andamento", "Baixar Parcela", "Extrato de Repasses", "Relatório por Período", "Editar Contrato", "Excluir Contrato"]
+            if user_role == 'admin': acoes = ["Ver Parcelas", "Cadastrar Contrato", "Cadastrar Parcelamento em Andamento", "RPV / Retroativos", "Baixar Parcela", "Extrato de Repasses", "Relatório por Período", "Editar Contrato", "Excluir Contrato"]
         elif menu_principal == "Perícias":
             acoes = ["Ver Perícias", "Cadastrar Perícia", "Importar Excel", "Editar Perícia"]
             if user_role == 'admin': acoes.append("Excluir Perícia")
@@ -3431,6 +3457,90 @@ elif authentication_status == True:
                                 st.session_state['cad_hon_sucesso'] = True
                                 confirmar_operacao('Contrato e parcelas gerados com sucesso!')
                                 st.rerun()
+
+            elif sub == "RPV / Retroativos" and user_role == 'admin':
+                st.header("🏛️ Gerenciar honorários vinculados a RPV / retroativos")
+                st.info("Cadastre o percentual dos honorários sobre a RPV, mesmo sem conhecer seu valor. Honorários fixos (por exemplo, R$ 9.000,00) devem ser cadastrados separadamente em Contratos/Parcelamentos. Quando a RPV for liberada, informe seu valor bruto para calcular os honorários e gerar a parcela pendente.")
+                try:
+                    cli_rpv = cliente_storage_servidor()
+                    clientes_rpv = sorted({str(c.get('nome')).strip() for c in carregar_dados('clientes_cadastrados') if c.get('nome')})
+                    with st.form('rpv_novo_registro'):
+                        cliente_rpv = st.selectbox('Cliente', ['Selecione um cliente'] + clientes_rpv)
+                        servico_rpv = st.text_input('Serviço / referência', value='Aposentadoria — RPV retroativa')
+                        percentual_rpv = st.number_input('Percentual dos honorários sobre a RPV (%)', min_value=0.01, max_value=100.0, value=30.0, step=0.5, format='%.2f')
+                        st.caption('O valor da RPV não precisa ser conhecido agora. Exemplo: contrato fixo de R$ 9.000,00 + 30% da RPV.')
+                        numero_rpv = st.text_input('Número da RPV / processo (opcional)')
+                        obs_rpv = st.text_area('Observações (opcional)')
+                        salvar_rpv = st.form_submit_button('Cadastrar RPV sem vencimento', type='primary')
+                    if salvar_rpv:
+                        if cliente_rpv == 'Selecione um cliente' or not servico_rpv.strip():
+                            st.error('Selecione um cliente e informe o serviço.')
+                        else:
+                            cli_rpv.table('dejure_rpv_recebiveis').insert({
+                                'cliente': cliente_rpv, 'servico': servico_rpv.strip(),
+                                'valor': None, 'percentual_rpv': float(percentual_rpv), 'numero_rpv': numero_rpv.strip(),
+                                'observacoes': obs_rpv.strip(), 'status': 'Aguardando liberação',
+                                'criado_por': username
+                            }).execute()
+                            registrar_auditoria(username, 'Cadastrar RPV', 'Pagamentos', f'Cliente: {cliente_rpv}; percentual sobre RPV: {percentual_rpv}%; valor desconhecido; sem vencimento')
+                            st.cache_data.clear()
+                            st.success('RPV cadastrada e incluída na Página Inicial.')
+                            st.rerun()
+                    registros_rpv = []
+                    inicio_rpv = 0
+                    while True:
+                        lote = cli_rpv.table('dejure_rpv_recebiveis').select('*').order('id', desc=True).range(inicio_rpv, inicio_rpv + 999).execute().data or []
+                        registros_rpv.extend(lote)
+                        if len(lote) < 1000: break
+                        inicio_rpv += 1000
+                    st.subheader('RPVs cadastradas')
+                    if registros_rpv:
+                        st.dataframe(pd.DataFrame(registros_rpv)[[c for c in ['id','cliente','servico','numero_rpv','percentual_rpv','valor_rpv_bruto','valor','status','data_liberacao','parcela_id'] if c in registros_rpv[0]]], use_container_width=True, hide_index=True)
+                        aguardando_rpv = [r for r in registros_rpv if r.get('status') == 'Aguardando liberação']
+                        if aguardando_rpv:
+                            opcoes_rpv = {f"#{r['id']} — {r['cliente']} — {r.get('percentual_rpv') or 0}% da RPV":r for r in aguardando_rpv}
+                            escolhido_rpv = st.selectbox('Selecionar RPV para informar liberação', list(opcoes_rpv), key='rpv_escolher')
+                            registro_rpv = opcoes_rpv[escolhido_rpv]
+                            data_liberacao_rpv = st.date_input('Data da liberação', value=date.today(), key='rpv_data_liberacao')
+                            valor_bruto_liberado = st.number_input('Valor bruto efetivamente liberado da RPV (R$)', min_value=0.0, value=0.0, step=100.0, format='%.2f', key='rpv_bruto_liberado')
+                            from decimal import Decimal, ROUND_HALF_UP
+                            honorarios_calculados = (Decimal(str(valor_bruto_liberado)) * Decimal(str(registro_rpv.get('percentual_rpv') or 0)) / Decimal('100')).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+                            st.info(f'Honorários a receber pela RPV: {formatar_moeda_br(float(honorarios_calculados))}')
+                            confirmar_rpv = st.checkbox('Confirmo que a RPV foi liberada e desejo gerar uma parcela PENDENTE para baixa normal.', key='rpv_confirmar')
+                            if st.button('Registrar liberação e gerar parcela', type='primary', disabled=(not confirmar_rpv or honorarios_calculados <= 0)):
+                                # Evita duplicação se uma tentativa anterior criou a parcela e falhou depois.
+                                referencia = f"RPV-{registro_rpv['id']}"
+                                ja_criada = cli_rpv.table('parcelas').select('id').eq('numero_parcela', referencia).limit(1).execute().data or []
+                                if ja_criada:
+                                    st.error('Já existe uma parcela gerada para esta RPV. Procure a administração para conciliar o registro antes de tentar novamente.')
+                                else:
+                                    contrato = cli_rpv.table('honorarios').insert({
+                                        'cliente': registro_rpv['cliente'], 'servico': registro_rpv['servico'],
+                                        'valor_total': float(honorarios_calculados)
+                                    }).execute().data
+                                    if not contrato:
+                                        raise RuntimeError('Não foi possível criar o contrato de honorários.')
+                                    parcela = cli_rpv.table('parcelas').insert({
+                                        'honorario_id': contrato[0]['id'], 'numero_parcela': referencia,
+                                        'valor': float(honorarios_calculados),
+                                        'vencimento': data_liberacao_rpv.isoformat(), 'status': 'Pendente'
+                                    }).execute().data
+                                    if not parcela:
+                                        raise RuntimeError('Contrato criado, mas a parcela não foi gerada. Verifique os registros antes de repetir.')
+                                    cli_rpv.table('dejure_rpv_recebiveis').update({
+                                        'status':'Liberada — aguardando baixa',
+                                        'data_liberacao':data_liberacao_rpv.isoformat(),
+                                        'valor_rpv_bruto':float(valor_bruto_liberado), 'valor':float(honorarios_calculados),
+                                        'honorario_id':contrato[0]['id'], 'parcela_id':parcela[0]['id']
+                                    }).eq('id', registro_rpv['id']).eq('status','Aguardando liberação').execute()
+                                    registrar_auditoria(username, 'Liberação de RPV', 'Pagamentos', f"RPV ID {registro_rpv['id']}; parcela ID {parcela[0]['id']}; cliente {registro_rpv['cliente']}")
+                                    st.cache_data.clear()
+                                    st.success('RPV liberada. Parcela criada como Pendente. Use Pagamentos → Baixar Parcela quando o valor for efetivamente recebido.')
+                                    st.rerun()
+                    else:
+                        st.info('Nenhuma RPV cadastrada.')
+                except Exception as erro_rpv:
+                    st.error(f'Não foi possível operar o controle de RPV: {erro_rpv}. Confira se o SQL de instalação foi executado.')
 
             elif sub == "Cadastrar Parcelamento em Andamento" and user_role == 'admin':
                 st.header("📚 Cadastrar Parcelamento em Andamento")

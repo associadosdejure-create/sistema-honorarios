@@ -1696,7 +1696,7 @@ elif authentication_status == True:
                 tipo = st.selectbox('Tipo de despesa', ['Fixa', 'Variável', 'Outras'])
                 descricao = st.text_input('Descrição', max_chars=180)
                 valor = st.number_input('Valor (R$)', min_value=0.01, step=10.0, format='%.2f')
-                forma = st.selectbox('Forma de lançamento', ['Única', 'Parcelada'] if tipo != 'Fixa' else ['Mensal recorrente'])
+                forma = st.selectbox('Forma de lançamento', ['Mensal recorrente', 'Parcelada', 'Única'] if tipo == 'Fixa' else ['Única', 'Parcelada', 'Mensal recorrente'], help='Parcelada está disponível para todas as categorias, inclusive Fixa. Mensal recorrente repete até o ADM encerrar.')
                 competencia = st.date_input('Primeiro mês de competência', hoje_fin.replace(day=1))
                 vencimento = st.date_input('Primeiro vencimento', hoje_fin)
                 quantidade = st.number_input('Número de parcelas (se parcelada)', min_value=2, max_value=120, value=2, step=1) if forma == 'Parcelada' else 1

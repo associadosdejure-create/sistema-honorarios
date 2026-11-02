@@ -1778,7 +1778,12 @@ elif authentication_status == True:
                 linhas_d = [{
                     'ID': d['id'], 'Tipo': d.get('tipo'), 'Descrição': d.get('descricao'),
                     'Valor': moeda_c(centavos(d.get('valor'))), 'Competência': str(d.get('competencia') or '')[:7],
-                    'Vencimento': formatar_data_br(d.get('vencimento')), 'Situação': d.get('situacao'),
+                    'Vencimento': formatar_data_br(d.get('vencimento')),
+                    'Situação': ('🟢 Paga' if str(d.get('situacao') or '').strip().casefold() == 'paga'
+                                 else '🔴 Vence no mês' if (data_segura(d.get('vencimento')) is not None and
+                                       data_segura(d.get('vencimento')).year == hoje_fin.year and
+                                       data_segura(d.get('vencimento')).month == hoje_fin.month)
+                                 else '🟡 Pendente'),
                     'Parcela': d.get('numero_parcela_despesa') or '—'
                 } for d in despesas_filtradas]
                 st.dataframe(pd.DataFrame(linhas_d), hide_index=True, use_container_width=True)
@@ -1948,6 +1953,12 @@ elif authentication_status == True:
                     parte_n = total_c // 2
                     parte_l = total_c - parte_n
                     pago = str(d.get('situacao') or '').strip().casefold() == 'paga'
+                    vencimento_item = data_segura(d.get('vencimento'))
+                    # Pago prevalece; vermelho indica parcela ainda não paga
+                    # com vencimento dentro da competência em prestação de contas.
+                    status_visual = ('🟢 Paga' if pago else
+                                     '🔴 Vence no mês' if vencimento_item and inicio <= vencimento_item < fim else
+                                     '🟡 Pendente')
                     linhas_conferencia.append({
                         'ID': d.get('id'),
                         'Descrição': d.get('descricao') or '',
@@ -1955,13 +1966,25 @@ elif authentication_status == True:
                         'Competência': str(d.get('competencia') or '')[:7],
                         'Vencimento': formatar_data_br(d.get('vencimento')),
                         'Parcela': d.get('numero_parcela_despesa') or '—',
-                        'Situação': 'Paga' if pago else 'Pendente',
+                        'Situação': status_visual,
                         'Valor total': moeda_c(total_c),
                         'Leônidas': moeda_c(parte_l),
                         'Nelson': moeda_c(parte_n),
                         'Afeta saldo realizado': 'Sim' if pago else 'Não',
                     })
-                st.dataframe(pd.DataFrame(linhas_conferencia), hide_index=True, use_container_width=True)
+                def cor_status_prestacao(valor):
+                    texto = str(valor)
+                    if texto.startswith('🟢'):
+                        return 'background-color: #123d2b; color: #9ff3c1; font-weight: bold;'
+                    if texto.startswith('🔴'):
+                        return 'background-color: #552025; color: #ffb1b1; font-weight: bold;'
+                    if texto.startswith('🟡'):
+                        return 'background-color: #493d16; color: #ffe18a; font-weight: bold;'
+                    return ''
+                tabela_conferencia = pd.DataFrame(linhas_conferencia)
+                st.dataframe(tabela_conferencia.style.map(cor_status_prestacao, subset=['Situação']),
+                             hide_index=True, use_container_width=True)
+                st.caption('🟢 Paga: pagamento registrado. 🔴 Vence no mês: não paga, com vencimento na competência selecionada. 🟡 Pendente: não paga, com vencimento fora dessa competência.')
                 st.caption(
                     f'Total de despesas pagas: {moeda_c(despesas_pagas)} '
                     f'(Leônidas: {moeda_c(metade_leo)}; Nelson: {moeda_c(metade_nel)}). '

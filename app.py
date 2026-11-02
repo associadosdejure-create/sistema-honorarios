@@ -1754,16 +1754,39 @@ elif authentication_status == True:
         with abas[2]:
             st.subheader('Lançamentos de despesas')
             if despesas:
+                # Primeiro selecione a despesa (programação), depois apenas uma de suas parcelas.
+                # Despesas avulsas são identificadas pelo ID do próprio lançamento.
+                grupos_d = {}
+                for d in despesas:
+                    pid = d.get('programacao_id')
+                    chave = ('programacao', str(pid)) if pid is not None else ('avulsa', str(d['id']))
+                    grupos_d.setdefault(chave, []).append(d)
+                opcoes_grupos = {}
+                for chave, itens in grupos_d.items():
+                    primeiro = itens[0]
+                    descricao_grupo = next((str(p.get('descricao') or '') for p in programacoes
+                                             if chave[0] == 'programacao' and str(p.get('id')) == chave[1]),
+                                            str(primeiro.get('descricao') or 'Sem descrição'))
+                    rotulo = f"{descricao_grupo} | {'Parcelada / Recorrente' if chave[0] == 'programacao' else 'Única'} | Ref. {chave[1]}"
+                    opcoes_grupos[rotulo] = chave
+                escolha_grupo = st.selectbox('1. Selecione a despesa que deseja gerenciar',
+                                            sorted(opcoes_grupos, key=str.casefold), key='bal_grupo_despesa')
+                chave_escolhida = opcoes_grupos[escolha_grupo]
+                despesas_filtradas = sorted(grupos_d[chave_escolhida],
+                                           key=lambda d: (str(d.get('competencia') or ''), str(d.get('vencimento') or ''), str(d['id'])))
+                st.caption(f'{len(despesas_filtradas)} lançamento(s) desta despesa. Nenhuma outra despesa está incluída nesta lista.')
                 linhas_d = [{
                     'ID': d['id'], 'Tipo': d.get('tipo'), 'Descrição': d.get('descricao'),
                     'Valor': moeda_c(centavos(d.get('valor'))), 'Competência': str(d.get('competencia') or '')[:7],
                     'Vencimento': formatar_data_br(d.get('vencimento')), 'Situação': d.get('situacao'),
                     'Parcela': d.get('numero_parcela_despesa') or '—'
-                } for d in sorted(despesas, key=lambda d: str(d.get('vencimento') or ''), reverse=True)]
+                } for d in despesas_filtradas]
                 st.dataframe(pd.DataFrame(linhas_d), hide_index=True, use_container_width=True)
-                opcoes_d = {f"#{d['id']} | {d.get('descricao')} | {str(d.get('competencia') or '')[:7]} | {moeda_c(centavos(d.get('valor')))}": d for d in despesas}
-                escolha_d = st.selectbox('Selecionar lançamento para atualizar', list(opcoes_d), key='bal_despesa_edicao')
+                opcoes_d = {f"#{d['id']} | Parcela {d.get('numero_parcela_despesa') or 'única'} | {str(d.get('competencia') or '')[:7]} | {moeda_c(centavos(d.get('valor')))}": d for d in despesas_filtradas}
+                escolha_d = st.selectbox('2. Selecione a parcela / lançamento para editar',
+                                         list(opcoes_d), key='bal_despesa_edicao')
                 alvo = opcoes_d[escolha_d]
+                st.info('As alterações abaixo afetam somente o lançamento selecionado, não as demais parcelas.')
                 with st.form('bal_editar_despesa'):
                     novo_tipo = st.selectbox('Categoria', ['Fixa', 'Variável', 'Outras'], index=['Fixa','Variável','Outras'].index(alvo.get('tipo')) if alvo.get('tipo') in ['Fixa','Variável','Outras'] else 2)
                     nova_desc = st.text_input('Descrição', value=str(alvo.get('descricao') or ''))
@@ -1873,17 +1896,19 @@ elif authentication_status == True:
             return proximo.replace(day=1), proximo.replace(day=5)
 
         with abas[0]:
-            c_a, c_b = st.columns(2)
-            mes_ref = c_a.date_input('Mês do balanço', value=hoje_fin.replace(day=1), key='bal_mes_ref')
-            modo = c_b.selectbox('Período', ['Mês selecionado', 'Acumulado até o mês'], key='bal_modo')
+            # A prestação de contas dos dias 1 a 5 refere-se ao mês anterior.
+            # O painel NUNCA soma competências anteriores à escolhida.
+            competencia_padrao = hoje_fin.replace(day=1) - relativedelta(months=1)
+            mes_ref = st.date_input('Mês de competência da prestação de contas',
+                                    value=competencia_padrao, key='bal_mes_ref')
             inicio = mes_ref.replace(day=1)
             fim = inicio + relativedelta(months=1)
             prest_inicio, prest_fim = janela_prestacao(inicio)
-            st.info(f'Competência: {inicio:%m/%Y} | Prestação de contas dos sócios: '
-                    f'{prest_inicio:%d/%m/%Y} a {prest_fim:%d/%m/%Y}. '
-                    'A data da prestação não transfere receitas ou despesas para o mês seguinte.')
+            st.info(f'Prestação de contas: {prest_inicio:%d/%m/%Y} a {prest_fim:%d/%m/%Y} '
+                    f'| Movimentações consideradas: somente {inicio:%m/%Y}. '
+                    'Receitas e despesas de outras competências não entram neste demonstrativo.')
             def no_periodo(dt):
-                return (inicio <= dt < fim) if modo == 'Mês selecionado' else dt < fim
+                return inicio <= dt < fim
             rep = [r for r in repasses if no_periodo(r['data'])]
             desp = [d for d in despesas if (data_segura(d.get('competencia')) is not None and no_periodo(data_segura(d.get('competencia'))))]
             # Competência é a referência contábil; apenas despesas pagas afetam o saldo realizado.
@@ -1914,6 +1939,36 @@ elif authentication_status == True:
                 p3.metric('Saldo', moeda_c(receita - despesa_s))
             st.dataframe(df_s, hide_index=True, use_container_width=True)
             st.caption('Saldo realizado = repasses registrados menos metade das despesas marcadas como pagas. Despesas pendentes são mostradas separadamente.')
+            st.subheader(f'Despesas desta prestação de contas — {inicio:%m/%Y}')
+            st.caption(f'Somente despesas da competência {inicio:%m/%Y}. Consulta individual por sócio; despesas pendentes não reduzem o saldo realizado.')
+            if desp:
+                linhas_conferencia = []
+                for d in sorted(desp, key=lambda item: (str(item.get('competencia') or ''), str(item.get('vencimento') or ''), str(item.get('id') or ''))):
+                    total_c = centavos(d.get('valor'))
+                    parte_n = total_c // 2
+                    parte_l = total_c - parte_n
+                    pago = str(d.get('situacao') or '').strip().casefold() == 'paga'
+                    linhas_conferencia.append({
+                        'ID': d.get('id'),
+                        'Descrição': d.get('descricao') or '',
+                        'Categoria': d.get('tipo') or '',
+                        'Competência': str(d.get('competencia') or '')[:7],
+                        'Vencimento': formatar_data_br(d.get('vencimento')),
+                        'Parcela': d.get('numero_parcela_despesa') or '—',
+                        'Situação': 'Paga' if pago else 'Pendente',
+                        'Valor total': moeda_c(total_c),
+                        'Leônidas': moeda_c(parte_l),
+                        'Nelson': moeda_c(parte_n),
+                        'Afeta saldo realizado': 'Sim' if pago else 'Não',
+                    })
+                st.dataframe(pd.DataFrame(linhas_conferencia), hide_index=True, use_container_width=True)
+                st.caption(
+                    f'Total de despesas pagas: {moeda_c(despesas_pagas)} '
+                    f'(Leônidas: {moeda_c(metade_leo)}; Nelson: {moeda_c(metade_nel)}). '
+                    f'Despesas pendentes: {moeda_c(despesas_pendentes)} (não descontadas).'
+                )
+            else:
+                st.info('Não existem despesas lançadas no período selecionado.')
             if desp:
                 resumo_tipo = defaultdict(int)
                 for d in desp:

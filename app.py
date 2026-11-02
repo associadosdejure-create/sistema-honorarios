@@ -1245,17 +1245,42 @@ elif authentication_status == True:
             contrato = contratos_baixas.get(str(parcela.get('honorario_id')), {})
             return str(contrato.get('cliente') or 'Cliente não identificado').strip()
 
-        parcelas_pagas_baixas = {pid: p for pid, p in todas_parcelas.items()
-                                 if str(p.get('status') or '').strip().lower() == 'pago'}
-        clientes_com_baixas = sorted({nome_cliente_baixa(p) for p in parcelas_pagas_baixas.values()}, key=str.casefold)
+        # Todos os contratos aparecem, mesmo quando nenhuma parcela foi paga.
+        # O status não pode ser usado para filtrar os clientes nesta etapa.
+        parcelas_com_contrato = {pid: par for pid, par in todas_parcelas.items()
+                                 if str(par.get('honorario_id')) in contratos_baixas}
+        clientes_com_baixas = sorted({nome_cliente_baixa(p) for p in parcelas_com_contrato.values()}, key=str.casefold)
         if not clientes_com_baixas:
-            st.info('Não há parcelas com status Pago para gerenciar.')
+            st.info('Nenhum contrato com parcelas foi encontrado. Confira se o cadastro foi salvo em Pagamentos.')
             st.stop()
         cliente_escolhido_baixas = st.selectbox('1. Selecione o cliente', clientes_com_baixas,
                                                key='gerenciar_baixas_cliente')
-        parcelas_cliente_baixas = {pid: p for pid, p in parcelas_pagas_baixas.items()
-                                   if nome_cliente_baixa(p) == cliente_escolhido_baixas}
-        st.caption(f'{len(parcelas_cliente_baixas)} parcela(s) marcada(s) como pagas para este cliente.')
+        parcelas_todas_cliente = {pid: p for pid, p in parcelas_com_contrato.items()
+                                  if nome_cliente_baixa(p) == cliente_escolhido_baixas}
+        parcelas_cliente_baixas = {pid: p for pid, p in parcelas_todas_cliente.items()
+                                  if str(p.get('status') or '').strip().casefold() == 'pago'}
+        st.caption(f'{len(parcelas_todas_cliente)} parcela(s) cadastrada(s) para este cliente; '
+                   f'{len(parcelas_cliente_baixas)} marcada(s) como pagas.')
+        st.subheader('Todas as parcelas do cliente')
+        st.caption('Inclui parcelas históricas e parcelas em andamento, pagas ou pendentes. '
+                   'Somente parcelas pagas podem ter baixa editada ou cancelada.')
+        linhas_visao = []
+        for pid, par in sorted(parcelas_todas_cliente.items(),
+                               key=lambda item: (str(item[1].get('vencimento') or ''), str(item[1].get('numero_parcela') or ''))):
+            contrato = contratos_baixas.get(str(par.get('honorario_id')), {})
+            linhas_visao.append({
+                'Cliente': nome_cliente_baixa(par),
+                'Serviço': contrato.get('servico') or '-',
+                'Parcela': str(par.get('numero_parcela') or pid),
+                'Vencimento': formatar_data_br(par.get('vencimento')),
+                'Valor': formatar_moeda_br(float(par.get('valor') or 0)),
+                'Status': str(par.get('status') or 'Não informado'),
+                'ID': pid,
+            })
+        st.dataframe(linhas_visao, use_container_width=True, hide_index=True)
+        if not parcelas_cliente_baixas:
+            st.info('Este cliente não tem parcelas pagas para editar ou cancelar. '
+                    'As parcelas pendentes estão listadas acima e permanecem no controle de cobrança.')
         opcoes = {}
         for log in eventos_ativos:
             try:

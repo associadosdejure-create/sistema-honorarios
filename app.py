@@ -3699,7 +3699,7 @@ elif authentication_status == True:
                 with col_hist_1:
                     qtd_hist = int(st.number_input("Total de parcelas", min_value=1, max_value=120, value=10, step=1, key="hist_qtd"))
                 with col_hist_2:
-                    pagas_hist = int(st.number_input("Parcelas já recebidas", min_value=0, max_value=qtd_hist, value=min(7, qtd_hist), step=1, key="hist_pagas"))
+                    pagas_hist = int(st.number_input("Parcelas já recebidas", min_value=0, max_value=qtd_hist, value=0, step=1, key="hist_pagas"))
                 with col_hist_3:
                     valor_total_hist = campo_moeda_br("Valor total negociado (R$)", "hist_total")
                 st.markdown("#### 💰 Entrada do cliente")
@@ -3709,7 +3709,7 @@ elif authentication_status == True:
                 st.caption("A entrada é um recebimento histórico, não gera repasses e será descontada do total antes de calcular as parcelas.")
                 modo_hist = st.radio("Valores das parcelas", ["Parcelas iguais", "Informar valor de cada parcela"], horizontal=True, key="hist_modo")
                 primeira_data_hist = st.date_input("Vencimento original da primeira parcela", value=date.today(), key="hist_primeiro_venc")
-                st.caption("Os vencimentos seguintes são calculados mensalmente. Informe a data real do recebimento para cada parcela histórica.")
+                st.caption("Os vencimentos seguintes são calculados mensalmente. Marque individualmente apenas as parcelas realmente recebidas; parcelas futuras não são pagas automaticamente.")
                 if valor_total_hist is not None and valor_total_hist > 0:
                     centavos_hist = int((Decimal(str(valor_total_hist)) * 100).quantize(Decimal("1")))
                 else:
@@ -3720,6 +3720,7 @@ elif authentication_status == True:
                 st.write(f"**Entrada histórica:** {formatar_moeda_br(entrada_hist or 0)}  |  **Saldo parcelado:** {formatar_moeda_br(max(0, saldo_parcelado_centavos_hist) / 100)}")
                 if centavos_entrada_hist >= centavos_hist and centavos_hist > 0:
                     st.warning("A entrada precisa ser menor que o valor total negociado, pois há parcelas a cadastrar.")
+                recebida_flags_hist = []
                 valores_hist = []
                 datas_receb_hist = []
                 incluir_balanco_hist = []
@@ -3727,14 +3728,16 @@ elif authentication_status == True:
                 for i_hist in range(qtd_hist):
                     valor_padrao_hist = (base_hist + (sobra_hist if i_hist == qtd_hist - 1 else 0)) / 100
                     venc_hist = primeira_data_hist + relativedelta(months=i_hist)
-                    with st.expander(f"Parcela {i_hist+1}/{qtd_hist} — {'JÁ RECEBIDA' if i_hist < pagas_hist else 'A RECEBER'} — vencimento {venc_hist.strftime('%d/%m/%Y')}", expanded=(i_hist < 2)):
+                    with st.expander(f"Parcela {i_hist+1}/{qtd_hist} — vencimento {venc_hist.strftime('%d/%m/%Y')}", expanded=(i_hist < 2)):
                         if modo_hist == "Informar valor de cada parcela":
                             v_hist = campo_moeda_br(f"Valor da parcela {i_hist+1} (R$)", f"hist_valor_{i_hist}")
                         else:
                             v_hist = valor_padrao_hist
                             st.write(f"Valor: **{formatar_moeda_br(v_hist)}**")
                         valores_hist.append(v_hist)
-                        if i_hist < pagas_hist:
+                        recebida_hist = st.checkbox(f"Parcela {i_hist+1} já foi efetivamente recebida", value=(i_hist < pagas_hist), key=f"hist_recebida_{i_hist}")
+                        recebida_flags_hist.append(recebida_hist)
+                        if recebida_hist:
                             data_rec = st.date_input(f"Data em que a parcela {i_hist+1} foi efetivamente recebida", value=venc_hist if venc_hist <= date.today() else date.today(), key=f"hist_data_rec_{i_hist}")
                             datas_receb_hist.append(data_rec)
                             incluir_balanco_hist.append(st.checkbox(f'Incluir parcela {i_hist+1} no Balanço Financeiro', value=False, key=f'hist_incluir_bal_{i_hist}'))
@@ -3744,8 +3747,11 @@ elif authentication_status == True:
                             datas_receb_hist.append(None)
                             incluir_balanco_hist.append(False)
                             competencia_balanco_hist.append(None)
+                pagas_hist = sum(recebida_flags_hist)
+                if any(recebida_flags_hist[i] and (primeira_data_hist + relativedelta(months=i)) > date.today() for i in range(qtd_hist)):
+                    st.info("Há parcela com vencimento futuro marcada como recebida. Isso é permitido apenas se o pagamento realmente foi antecipado.")
                 soma_hist = sum(Decimal(str(v or 0)) for v in valores_hist)
-                st.markdown(f"**Recebido historicamente (entrada + parcelas):** {formatar_moeda_br(float(entrada_hist or 0) + sum(float(v or 0) for v in valores_hist[:pagas_hist]))}  |  **A receber:** {formatar_moeda_br(sum(float(v or 0) for v in valores_hist[ pagas_hist:]))}")
+                st.markdown(f"**Recebido historicamente (entrada + parcelas):** {formatar_moeda_br(float(entrada_hist or 0) + sum(float(v or 0) for i, v in enumerate(valores_hist) if recebida_flags_hist[i]))}  |  **A receber:** {formatar_moeda_br(sum(float(v or 0) for i, v in enumerate(valores_hist) if not recebida_flags_hist[i]))}")
                 if modo_hist == "Informar valor de cada parcela" and abs(soma_hist - Decimal(str(valor_total_hist or 0)) + Decimal(str(entrada_hist or 0))) > Decimal("0.009"):
                     st.warning("A soma das parcelas deve corresponder ao total negociado menos a entrada.")
                 with st.form("form_confirmar_parcelamento_historico"):
@@ -3774,18 +3780,18 @@ elif authentication_status == True:
                             novo_h_id = contrato_hist.data[0]["id"]
                             linhas_hist = []
                             for i_hist, valor_hist in enumerate(valores_hist):
-                                linhas_hist.append({"honorario_id": novo_h_id, "numero_parcela": f"{i_hist+1}/{qtd_hist}", "valor": float(Decimal(str(valor_hist)).quantize(Decimal("0.01"))), "vencimento": (primeira_data_hist + relativedelta(months=i_hist)).isoformat(), "status": "Pago" if i_hist < pagas_hist else "Pendente"})
+                                linhas_hist.append({"honorario_id": novo_h_id, "numero_parcela": f"{i_hist+1}/{qtd_hist}", "valor": float(Decimal(str(valor_hist)).quantize(Decimal("0.01"))), "vencimento": (primeira_data_hist + relativedelta(months=i_hist)).isoformat(), "status": "Pago" if recebida_flags_hist[i_hist] else "Pendente"})
                             # A tabela parcelas é a mesma do fluxo normal: o Balanço considera somente pendentes na projeção.
                             for idx_linha, linha_hist in enumerate(linhas_hist):
                                 retorno_par = db_hist.table("parcelas").insert(linha_hist).execute()
                                 if not retorno_par.data:
                                     raise RuntimeError('A parcela não foi confirmada no banco.')
-                                if idx_linha < pagas_hist:
+                                if recebida_flags_hist[idx_linha]:
                                     dejure_salvar_historico_balanco(db_hist, username, retorno_par.data[0]['id'],
                                         incluir_balanco_hist[idx_linha], linha_hist['valor'],
                                         datas_receb_hist[idx_linha].isoformat(), 'Cadastro inicial do parcelamento histórico', competencia_balanco_hist[idx_linha])
                             # Registro informativo separado dos repasses: módulo "Pagamentos", nunca "Repasses".
-                            info_hist = {"tipo": "parcelamento_historico_sem_repasses", "honorario_id": novo_h_id, "cliente": cliente_hist.strip(), "total_parcelas": qtd_hist, "parcelas_ja_pagas": pagas_hist, "entrada_historica": {"valor": float(entrada_hist or 0), "data_recebimento": data_entrada_hist.isoformat() if data_entrada_hist else None}, "recebimentos_historicos": [{"parcela": i+1, "data_recebimento": d.isoformat(), "valor": float(valores_hist[i])} for i, d in enumerate(datas_receb_hist) if d is not None]}
+                            info_hist = {"tipo": "parcelamento_historico_sem_repasses", "honorario_id": novo_h_id, "cliente": cliente_hist.strip(), "total_parcelas": qtd_hist, "parcelas_ja_pagas": pagas_hist, "indices_parcelas_pagas": [i+1 for i, flag in enumerate(recebida_flags_hist) if flag], "entrada_historica": {"valor": float(entrada_hist or 0), "data_recebimento": data_entrada_hist.isoformat() if data_entrada_hist else None}, "recebimentos_historicos": [{"parcela": i+1, "data_recebimento": d.isoformat(), "valor": float(valores_hist[i])} for i, d in enumerate(datas_receb_hist) if d is not None]}
                             try:
                                 registrar_auditoria(username, "Importar Parcelamento Histórico (sem repasses)", "Pagamentos", json.dumps(info_hist, ensure_ascii=False))
                             except Exception:

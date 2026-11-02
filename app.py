@@ -2086,18 +2086,39 @@ elif authentication_status == True:
             l3.metric('Despesas pendentes', moeda_c(despesas_pendentes))
             l4.metric('Resultado realizado', moeda_c(total_leo + total_nel - despesas_pagas))
             st.subheader('Painel individual de receitas, despesas e saldo')
+            # Pendências são obrigações previstas para a competência, não despesas quitadas.
+            # A divisão em centavos evita diferenças de arredondamento entre os sócios.
+            pend_nel = despesas_pendentes // 2
+            pend_leo = despesas_pendentes - pend_nel
             df_s = pd.DataFrame([
-                {'Sócio': 'Leônidas', 'Honorários recebidos': moeda_c(total_leo), 'Despesas (50%)': moeda_c(metade_leo), 'Saldo realizado': moeda_c(total_leo - metade_leo)},
-                {'Sócio': 'Nelson', 'Honorários recebidos': moeda_c(total_nel), 'Despesas (50%)': moeda_c(metade_nel), 'Saldo realizado': moeda_c(total_nel - metade_nel)}
+                {'Sócio': 'Leônidas', 'Honorários recebidos': moeda_c(total_leo),
+                 'Despesas pagas (50%)': moeda_c(metade_leo),
+                 'A pagar na prestação (50%)': moeda_c(pend_leo),
+                 'Saldo realizado': moeda_c(total_leo - metade_leo),
+                 'Saldo previsto após pagamento': moeda_c(total_leo - metade_leo - pend_leo)},
+                {'Sócio': 'Nelson', 'Honorários recebidos': moeda_c(total_nel),
+                 'Despesas pagas (50%)': moeda_c(metade_nel),
+                 'A pagar na prestação (50%)': moeda_c(pend_nel),
+                 'Saldo realizado': moeda_c(total_nel - metade_nel),
+                 'Saldo previsto após pagamento': moeda_c(total_nel - metade_nel - pend_nel)}
             ])
-            for nome, receita, despesa_s in [('Leônidas', total_leo, metade_leo), ('Nelson', total_nel, metade_nel)]:
+            for nome, receita, despesa_s, pend_s in [
+                ('Leônidas', total_leo, metade_leo, pend_leo),
+                ('Nelson', total_nel, metade_nel, pend_nel)
+            ]:
                 st.markdown(f'#### {nome}')
-                p1, p2, p3 = st.columns(3)
+                p1, p2, p3, p4 = st.columns(4)
                 p1.metric('Receitas', moeda_c(receita))
                 p2.metric('Despesas pagas', moeda_c(despesa_s))
-                p3.metric('Saldo', moeda_c(receita - despesa_s))
+                p3.metric('A pagar na prestação', moeda_c(pend_s))
+                p4.metric('Saldo realizado', moeda_c(receita - despesa_s))
+                st.caption('Saldo previsto após quitar as despesas pendentes: '
+                           + moeda_c(receita - despesa_s - pend_s)
+                           + '. Valor informativo; nenhuma baixa ou repasse foi realizado.')
             st.dataframe(df_s, hide_index=True, use_container_width=True)
-            st.caption('Saldo realizado = repasses registrados menos metade das despesas marcadas como pagas. Despesas pendentes são mostradas separadamente.')
+            st.caption('Despesas pendentes são divididas entre os sócios e exibidas imediatamente '
+                       'como valores a pagar na prestação de contas. Só despesas marcadas como pagas '
+                       'reduzem o saldo realizado. A previsão não gera pagamento automático.')
             st.subheader(f'Despesas desta prestação de contas — {inicio:%m/%Y}')
             st.caption(f'Somente despesas da competência {inicio:%m/%Y}. Consulta individual por sócio; despesas pendentes não reduzem o saldo realizado.')
             if desp:

@@ -1032,12 +1032,12 @@ elif authentication_status == True:
 
     if menu_escolha == "🏠 Página Inicial":
         if os.path.exists("logo.png"):
-            # Logo da Página Inicial: largura reduzida em 60% (fica com 40%).
-            # Não altera as logos da barra lateral e da tela de login.
-            from PIL import Image as _DejureImage
-            with _DejureImage.open("logo.png") as _dejure_logo:
-                _largura_original = _dejure_logo.width
-            st.image("logo.png", width=max(1, round(_largura_original * 0.40)))
+            # Logo centralizada, com 40% da largura útil da Página Inicial.
+            # O Streamlit preserva automaticamente a proporção da imagem.
+            # Não modifica as logos do login ou da barra lateral.
+            _logo_esquerda, _logo_centro, _logo_direita = st.columns([3, 4, 3], gap="small")
+            with _logo_centro:
+                st.image("logo.png", use_container_width=True)
         else:
             st.markdown("<h2 style='text-align: center; color: #D4AF37;'>⚖️ DEJURE ADVOCACIA</h2>", unsafe_allow_html=True)
 

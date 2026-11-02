@@ -1032,8 +1032,12 @@ elif authentication_status == True:
 
     if menu_escolha == "🏠 Página Inicial":
         if os.path.exists("logo.png"):
-            col1, col2, col3 = st.columns([1, 2, 1])
-            with col2: st.image("logo.png", use_container_width=True)
+            # Logo da Página Inicial: largura reduzida em 60% (fica com 40%).
+            # Não altera as logos da barra lateral e da tela de login.
+            from PIL import Image as _DejureImage
+            with _DejureImage.open("logo.png") as _dejure_logo:
+                _largura_original = _dejure_logo.width
+            st.image("logo.png", width=max(1, round(_largura_original * 0.40)))
         else:
             st.markdown("<h2 style='text-align: center; color: #D4AF37;'>⚖️ DEJURE ADVOCACIA</h2>", unsafe_allow_html=True)
 

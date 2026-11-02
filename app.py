@@ -1977,6 +1977,68 @@ elif authentication_status == True:
                 st.warning(f'{len(ausentes)} despesa(s) recorrente(s) ativa(s) não possuem lançamento '
                            f'na competência {inicio:%m/%Y}. Confira o início da programação '
                            'e os lançamentos em Gerenciar despesas.')
+            # Auditoria de lançamentos: despesas de outras competências ficam visíveis
+            # para conferência, sem alterar os totais da prestação selecionada.
+            with st.expander('🔎 Conferir despesas ausentes e competências cadastradas', expanded=True):
+                st.caption('Esta conferência consulta TODOS os lançamentos de despesas. '
+                           'Somente os registros da competência escolhida entram nos cálculos acima.')
+                st.write(f'Total de lançamentos encontrados no Supabase: **{len(despesas)}**. '
+                         f'Na competência {inicio:%m/%Y}: **{len(desp)}**. '
+                         f'Em outras competências ou sem competência: **{len(despesas) - len(desp)}**.')
+                mapa_prog = {str(p.get('id')): p for p in programacoes}
+                def modalidade_despesa(item):
+                    pid = item.get('programacao_id')
+                    if pid is None:
+                        return 'Única'
+                    prog = mapa_prog.get(str(pid))
+                    if prog is None:
+                        return 'Programada (cadastro não localizado)'
+                    return 'Parcelada' if int(prog.get('quantidade') or 0) > 0 else 'Mensal recorrente'
+                registros_fora = [d for d in despesas if d not in desp]
+                if registros_fora:
+                    linhas_fora = []
+                    for d in sorted(registros_fora, key=lambda x: (str(x.get('competencia') or ''), str(x.get('descricao') or ''))):
+                        linhas_fora.append({
+                            'ID': d.get('id'),
+                            'Descrição': d.get('descricao') or '',
+                            'Modalidade': modalidade_despesa(d),
+                            'Categoria': d.get('tipo') or '',
+                            'Competência cadastrada': str(d.get('competencia') or '')[:10],
+                            'Vencimento': formatar_data_br(d.get('vencimento')),
+                            'Situação': d.get('situacao') or '',
+                            'Valor': moeda_c(centavos(d.get('valor'))),
+                        })
+                    st.dataframe(pd.DataFrame(linhas_fora), hide_index=True, use_container_width=True)
+                    vencem_mes = [d for d in registros_fora if data_segura(d.get('vencimento'))
+                                 and no_periodo(data_segura(d.get('vencimento')))]
+                    if vencem_mes:
+                        st.warning(f'ATENÇÃO: {len(vencem_mes)} despesa(s) têm vencimento em {inicio:%m/%Y}, '
+                                   'mas estão cadastradas em outra competência. Elas não foram somadas ao balanço. '
+                                   'Confira os registros antes de corrigir a competência.')
+                        st.dataframe(pd.DataFrame([{
+                            'ID': d.get('id'), 'Descrição': d.get('descricao') or '',
+                            'Competência atual': str(d.get('competencia') or '')[:10],
+                            'Vencimento': formatar_data_br(d.get('vencimento')),
+                            'Valor': moeda_c(centavos(d.get('valor'))),
+                        } for d in vencem_mes]), hide_index=True, use_container_width=True)
+                    else:
+                        st.info('Nenhuma despesa fora da competência possui vencimento no mês selecionado. '
+                                'Confira a lista completa acima e o início das programações abaixo.')
+                else:
+                    st.success('Todos os lançamentos encontrados pertencem à competência selecionada.')
+                if programacoes:
+                    st.markdown('**Programações de despesas cadastradas**')
+                    st.dataframe(pd.DataFrame([{
+                        'ID': p.get('id'), 'Descrição': p.get('descricao') or '',
+                        'Modalidade': 'Parcelada' if int(p.get('quantidade') or 0) > 0 else 'Mensal recorrente',
+                        'Categoria': p.get('tipo') or '',
+                        'Início': str(p.get('inicio') or '')[:10],
+                        'Parcelas': int(p.get('quantidade') or 0) or 'Recorrente',
+                        'Ativa': 'Sim' if p.get('ativo', True) else 'Não',
+                    } for p in programacoes]), hide_index=True, use_container_width=True)
+                st.caption('Se uma despesa não aparece nem nesta conferência nem em Programações, '
+                           'o lançamento não foi retornado pela consulta ao Supabase. '
+                           'Não são realizadas correções automáticas.')
             # Competência é a referência contábil; apenas despesas pagas afetam o saldo realizado.
             hist_periodo = [h for h in historicos_incluidos if no_periodo(h['data'])]
             total_leo = sum(r['leonidas'] for r in rep) + sum(h['leonidas'] for h in hist_periodo)

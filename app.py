@@ -1202,8 +1202,18 @@ elif authentication_status == True:
                         except ValueError:
                             data_padrao = date.today()
                         nova_data = st.date_input('Data efetiva do recebimento', data_padrao)
-                        colab_atual = str(info_baixa.get('colaborador_parcela') or '')
-                        novo_colab = st.text_input('Nome do colaborador (deixe vazio se não houver)', value=colab_atual)
+                        colab_atual = str(info_baixa.get('colaborador_parcela') or '').strip()
+                        # Lista de usuários cadastrados, sem necessidade de digitar o nome.
+                        usuarios_colab = sorted({str(dados.get('name') or login).strip()
+                            for login, dados in credentials['usernames'].items()
+                            if str(dados.get('name') or login).strip()
+                            and str(dados.get('role') or '').lower() not in ('inativo', 'bloqueado')}, key=str.casefold)
+                        opcoes_colab = ['Nenhum colaborador'] + usuarios_colab
+                        if colab_atual and colab_atual not in opcoes_colab:
+                            opcoes_colab.append(colab_atual)  # Preserva o beneficiário de registros antigos.
+                        selecao_colab = st.selectbox('Colaborador beneficiado', opcoes_colab,
+                            index=opcoes_colab.index(colab_atual) if colab_atual in opcoes_colab else 0)
+                        novo_colab = '' if selecao_colab == 'Nenhum colaborador' else selecao_colab
                         valor_atual = float(info_baixa.get('valor_colaborador_parcela') or 0)
                         novo_valor = st.number_input('Valor do colaborador (R$)', min_value=0.0, value=valor_atual, step=10.0, format='%.2f')
                         justificativa_ed = st.text_area('Motivo da correção (obrigatório)')

@@ -1627,56 +1627,133 @@ elif authentication_status == True:
                 inicio += 1000
             return registros
 
+        def add_meses(data, meses):
+            return data + relativedelta(months=meses)
+
+        def registrar_despesa(dados):
+            return cliente_storage_servidor().table('dejure_despesas').insert(dados).execute()
+
+        def materializar_programacoes(programacoes, despesas_existentes):
+            # Lançamentos persistidos por competência: não há duplicidade, mesmo em acessos simultâneos.
+            existentes = {(str(d.get('programacao_id')), str(d.get('competencia'))[:7])
+                          for d in despesas_existentes if d.get('programacao_id') is not None}
+            limite = add_meses(date.today().replace(day=1), 24)
+            for prog in programacoes:
+                if not prog.get('ativo', True):
+                    continue
+                inicio = data_segura(prog.get('inicio'))
+                if not inicio:
+                    continue
+                inicio = inicio.replace(day=1)
+                quantidade = int(prog.get('quantidade') or 0)
+                # Parceladas: quantidade definida. Fixas: até 24 meses à frente, sem data final.
+                ultimo = add_meses(inicio, quantidade - 1) if quantidade else limite
+                ultimo = min(ultimo, limite)
+                cursor = inicio
+                indice = 0
+                while cursor <= ultimo:
+                    indice += 1
+                    chave = (str(prog['id']), cursor.strftime('%Y-%m'))
+                    if chave not in existentes:
+                        dia = min(int(prog.get('dia_vencimento') or 1), __import__('calendar').monthrange(cursor.year, cursor.month)[1])
+                        venc = cursor.replace(day=dia)
+                        valor_lanc = Decimal(str(prog['valor']))
+                        if quantidade and indice == quantidade:
+                            valor_lanc = Decimal(str(prog.get('valor_ultima') or prog['valor']))
+                        registro = {
+                            'tipo': prog['tipo'], 'descricao': prog['descricao'],
+                            'valor': str(valor_lanc), 'competencia': cursor.isoformat(),
+                            'vencimento': venc.isoformat(), 'situacao': 'Pendente',
+                            'pago_em': None, 'observacoes': prog.get('observacoes') or '',
+                            'criado_por': prog.get('criado_por') or 'Sistema',
+                            'programacao_id': prog['id'], 'numero_parcela_despesa': indice
+                        }
+                        # UNIQUE (programacao_id, competencia) previne duplicações.
+                        cliente_storage_servidor().table('dejure_despesas').upsert(
+                            registro, on_conflict='programacao_id,competencia', ignore_duplicates=True).execute()
+                        existentes.add(chave)
+                    cursor = add_meses(cursor, 1)
+
         try:
+            programacoes = consulta_toda('dejure_despesas_programacoes')
+            despesas = consulta_toda('dejure_despesas')
+            materializar_programacoes(programacoes, despesas)
             despesas = consulta_toda('dejure_despesas')
             repasses_logs = dejure_logs_repasses_ativos(cliente_storage_servidor())
             parcelas = consulta_toda('parcelas')
             historicos_balanco = dejure_historicos_balanco(cliente_storage_servidor())
-        except Exception:
-            st.error('Não foi possível carregar o balanço. Execute primeiro o arquivo SQL fornecido no Supabase e confira a chave de serviço nos Secrets.')
+        except Exception as erro_bal:
+            st.error('Não foi possível carregar o balanço. Execute o SQL de atualização das despesas no Supabase.')
+            st.exception(erro_bal)
             st.stop()
 
-        abas = st.tabs(['Resumo e saldos', 'Cadastrar despesas', 'Gerenciar despesas', 'Projeção de parcelas'])
+        abas = st.tabs(['Painel por sócio', 'Cadastrar despesas', 'Gerenciar despesas', 'Projeção de parcelas', 'Despesas programadas', 'Prestação de contas'])
         hoje_fin = date.today()
         with abas[1]:
-            st.subheader('Nova despesa')
+            st.subheader('Cadastrar despesas')
+            st.caption('Despesas fixas são repetidas mensalmente até o ADM encerrar. Parceladas geram vencimentos mensais independentes.')
             with st.form('form_despesa_dejure', clear_on_submit=True):
-                tipo = st.selectbox('Tipo', ['Fixa', 'Variável', 'Outras'])
+                tipo = st.selectbox('Tipo de despesa', ['Fixa', 'Variável', 'Outras'])
                 descricao = st.text_input('Descrição', max_chars=180)
-                valor = st.number_input('Valor total (R$)', min_value=0.01, step=10.0, format='%.2f')
-                competencia = st.date_input('Competência (mês de referência)', hoje_fin.replace(day=1))
-                vencimento = st.date_input('Vencimento', hoje_fin)
-                situacao = st.selectbox('Situação', ['Pendente', 'Paga'])
+                valor = st.number_input('Valor (R$)', min_value=0.01, step=10.0, format='%.2f')
+                forma = st.selectbox('Forma de lançamento', ['Única', 'Parcelada'] if tipo != 'Fixa' else ['Mensal recorrente'])
+                competencia = st.date_input('Primeiro mês de competência', hoje_fin.replace(day=1))
+                vencimento = st.date_input('Primeiro vencimento', hoje_fin)
+                quantidade = st.number_input('Número de parcelas (se parcelada)', min_value=2, max_value=120, value=2, step=1) if forma == 'Parcelada' else 1
+                st.caption('Na despesa parcelada, o valor informado acima é o TOTAL da compra; o sistema divide entre as parcelas.') if forma == 'Parcelada' else None
+                situacao = st.selectbox('Situação inicial', ['Pendente', 'Paga']) if forma == 'Única' else 'Pendente'
                 observacoes = st.text_area('Observações (opcional)')
                 salvar = st.form_submit_button('Cadastrar despesa', type='primary')
             if salvar:
                 if not descricao.strip():
                     st.error('Informe a descrição da despesa.')
+                elif vencimento.year != competencia.year or vencimento.month != competencia.month:
+                    st.error('O primeiro vencimento deve pertencer ao mês da primeira competência.')
                 else:
                     try:
-                        cliente_storage_servidor().table('dejure_despesas').insert({
-                            'tipo': tipo, 'descricao': descricao.strip(), 'valor': str(Decimal(str(valor)).quantize(Decimal('0.01'))),
-                            'competencia': competencia.replace(day=1).isoformat(), 'vencimento': vencimento.isoformat(),
-                            'situacao': situacao, 'observacoes': observacoes.strip(), 'criado_por': str(username),
-                            'pago_em': hoje_fin.isoformat() if situacao == 'Paga' else None
-                        }).execute()
-                        registrar_auditoria(username, 'Cadastrar despesa', 'Balanço Financeiro', descricao.strip())
-                        st.success('Despesa cadastrada.')
+                        if forma == 'Única':
+                            registrar_despesa({
+                                'tipo': tipo, 'descricao': descricao.strip(),
+                                'valor': str(Decimal(str(valor)).quantize(Decimal('0.01'))),
+                                'competencia': competencia.replace(day=1).isoformat(),
+                                'vencimento': vencimento.isoformat(), 'situacao': situacao,
+                                'observacoes': observacoes.strip(), 'criado_por': str(username),
+                                'pago_em': hoje_fin.isoformat() if situacao == 'Paga' else None
+                            })
+                        else:
+                            total_c = centavos(valor)
+                            qtd = int(quantidade) if forma == 'Parcelada' else 0
+                            por_parcela = total_c // qtd if qtd else total_c
+                            ultima = total_c - por_parcela * (qtd - 1) if qtd else total_c
+                            dados_prog = {
+                                'tipo': tipo, 'descricao': descricao.strip(),
+                                'valor': str(Decimal(por_parcela) / 100),
+                                'valor_ultima': str(Decimal(ultima) / 100),
+                                'inicio': competencia.replace(day=1).isoformat(),
+                                'dia_vencimento': vencimento.day, 'quantidade': qtd,
+                                'ativo': True, 'observacoes': observacoes.strip(), 'criado_por': str(username)
+                            }
+                            criado = cliente_storage_servidor().table('dejure_despesas_programacoes').insert(dados_prog).execute().data or []
+                            if criado:
+                                materializar_programacoes(criado, despesas)
+                        registrar_auditoria(username, 'Cadastrar despesa', 'Balanço Financeiro', f'{descricao.strip()} - {forma}')
+                        st.success('Despesa cadastrada com sucesso.')
                         st.rerun()
                     except Exception as e:
                         st.error(f'Falha ao cadastrar despesa: {e}')
 
         with abas[2]:
-            st.subheader('Despesas cadastradas')
+            st.subheader('Lançamentos de despesas')
             if despesas:
                 linhas_d = [{
                     'ID': d['id'], 'Tipo': d.get('tipo'), 'Descrição': d.get('descricao'),
                     'Valor': moeda_c(centavos(d.get('valor'))), 'Competência': str(d.get('competencia') or '')[:7],
-                    'Vencimento': formatar_data_br(d.get('vencimento')), 'Situação': d.get('situacao')
+                    'Vencimento': formatar_data_br(d.get('vencimento')), 'Situação': d.get('situacao'),
+                    'Parcela': d.get('numero_parcela_despesa') or '—'
                 } for d in sorted(despesas, key=lambda d: str(d.get('vencimento') or ''), reverse=True)]
                 st.dataframe(pd.DataFrame(linhas_d), hide_index=True, use_container_width=True)
-                opcoes_d = {f"#{d['id']} | {d.get('descricao')} | {moeda_c(centavos(d.get('valor')))}": d for d in despesas}
-                escolha_d = st.selectbox('Selecionar despesa para atualizar', list(opcoes_d), key='bal_despesa_edicao')
+                opcoes_d = {f"#{d['id']} | {d.get('descricao')} | {str(d.get('competencia') or '')[:7]} | {moeda_c(centavos(d.get('valor')))}": d for d in despesas}
+                escolha_d = st.selectbox('Selecionar lançamento para atualizar', list(opcoes_d), key='bal_despesa_edicao')
                 alvo = opcoes_d[escolha_d]
                 with st.form('bal_editar_despesa'):
                     novo_tipo = st.selectbox('Categoria', ['Fixa', 'Variável', 'Outras'], index=['Fixa','Variável','Outras'].index(alvo.get('tipo')) if alvo.get('tipo') in ['Fixa','Variável','Outras'] else 2)
@@ -1693,28 +1770,61 @@ elif authentication_status == True:
                     else:
                         try:
                             cliente_storage_servidor().table('dejure_despesas').update({
-                                'tipo': novo_tipo, 'descricao': nova_desc.strip(), 'valor': str(Decimal(str(novo_valor)).quantize(Decimal('0.01'))),
+                                'tipo': novo_tipo, 'descricao': nova_desc.strip(),
+                                'valor': str(Decimal(str(novo_valor)).quantize(Decimal('0.01'))),
                                 'competencia': nova_comp.replace(day=1).isoformat(), 'vencimento': novo_venc.isoformat(),
                                 'situacao': nova_sit, 'observacoes': nova_obs.strip(),
                                 'pago_em': (alvo.get('pago_em') or hoje_fin.isoformat()) if nova_sit == 'Paga' else None
                             }).eq('id', alvo['id']).execute()
                             registrar_auditoria(username, 'Atualizar despesa', 'Balanço Financeiro', f"ID {alvo['id']}")
-                            st.success('Despesa atualizada.')
+                            st.success('Lançamento atualizado.')
                             st.rerun()
                         except Exception as e:
                             st.error(f'Falha ao atualizar: {e}')
-                with st.expander('Excluir despesa (ação irreversível)'):
-                    confirmar = st.checkbox('Confirmo a exclusão da despesa selecionada', key='bal_confirma_exclusao')
-                    if st.button('Excluir despesa selecionada', disabled=not confirmar):
+                with st.expander('Excluir lançamento individual'):
+                    st.warning('Para encerrar despesas fixas, use a aba Despesas programadas. A exclusão de um lançamento não encerra a recorrência.')
+                    confirmar = st.checkbox('Confirmo a exclusão do lançamento selecionado', key='bal_confirma_exclusao')
+                    if st.button('Excluir lançamento', disabled=not confirmar):
                         try:
-                            cliente_storage_servidor().table('dejure_despesas').delete().eq('id', alvo['id']).execute()
-                            registrar_auditoria(username, 'Excluir despesa', 'Balanço Financeiro', f"ID {alvo['id']} - {alvo.get('descricao')}")
-                            st.success('Despesa excluída.')
-                            st.rerun()
+                            if alvo.get('programacao_id'):
+                                st.error('Lançamentos programados não podem ser excluídos individualmente; altere a situação ou encerre a programação.')
+                            else:
+                                cliente_storage_servidor().table('dejure_despesas').delete().eq('id', alvo['id']).execute()
+                                registrar_auditoria(username, 'Excluir despesa', 'Balanço Financeiro', f"ID {alvo['id']} - {alvo.get('descricao')}")
+                                st.success('Lançamento excluído.')
+                                st.rerun()
                         except Exception as e:
                             st.error(f'Falha ao excluir: {e}')
             else:
                 st.info('Nenhuma despesa cadastrada.')
+
+        with abas[4]:
+            st.subheader('Despesas fixas e parceladas programadas')
+            if programacoes:
+                st.dataframe(pd.DataFrame([{
+                    'ID': p['id'], 'Descrição': p['descricao'], 'Tipo': p['tipo'],
+                    'Valor mensal': moeda_c(centavos(p['valor'])),
+                    'Início': str(p['inicio'])[:7],
+                    'Parcelas': p.get('quantidade') or 'Recorrente',
+                    'Situação': 'Ativa' if p.get('ativo', True) else 'Encerrada'
+                } for p in programacoes]), hide_index=True, use_container_width=True)
+                opcoes_prog = {f"#{p['id']} | {p['descricao']}": p for p in programacoes}
+                escolha_prog = st.selectbox('Selecionar programação', list(opcoes_prog))
+                prog = opcoes_prog[escolha_prog]
+                st.caption('Ao encerrar, os lançamentos pendentes do mês atual em diante serão removidos. Os pagos e os meses anteriores ficam preservados.')
+                confirma_prog = st.checkbox('Confirmo o encerramento desta programação')
+                if st.button('Encerrar despesa fixa / programação', disabled=not confirma_prog or not prog.get('ativo', True)):
+                    try:
+                        cliente_storage_servidor().table('dejure_despesas_programacoes').update({'ativo': False}).eq('id', prog['id']).execute()
+                        # Preserve históricos; remova apenas futuras cobranças ainda não pagas.
+                        cliente_storage_servidor().table('dejure_despesas').delete().eq('programacao_id', prog['id']).eq('situacao', 'Pendente').gte('competencia', hoje_fin.replace(day=1).isoformat()).execute()
+                        registrar_auditoria(username, 'Encerrar despesa programada', 'Balanço Financeiro', f"ID {prog['id']} - {prog['descricao']}")
+                        st.success('Programação encerrada; histórico preservado.')
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f'Falha ao encerrar programação: {e}')
+            else:
+                st.info('Nenhuma despesa recorrente ou parcelada cadastrada.')
 
         repasses = []
         vistos = set()
@@ -1747,12 +1857,22 @@ elif authentication_status == True:
                 historicos_incluidos.append({'data': dt, 'leonidas': leo_c,
                     'nelson': valor_c - leo_c, 'parcela_id': p.get('id')})
 
+        # Competência e prestação de contas são datas distintas. Recebimentos de outubro
+        # pertencem ao balanço de outubro, ainda que os sócios fechem em novembro.
+        def janela_prestacao(mes):
+            proximo = mes.replace(day=1) + relativedelta(months=1)
+            return proximo.replace(day=1), proximo.replace(day=5)
+
         with abas[0]:
             c_a, c_b = st.columns(2)
             mes_ref = c_a.date_input('Mês do balanço', value=hoje_fin.replace(day=1), key='bal_mes_ref')
             modo = c_b.selectbox('Período', ['Mês selecionado', 'Acumulado até o mês'], key='bal_modo')
             inicio = mes_ref.replace(day=1)
             fim = inicio + relativedelta(months=1)
+            prest_inicio, prest_fim = janela_prestacao(inicio)
+            st.info(f'Competência: {inicio:%m/%Y} | Prestação de contas dos sócios: '
+                    f'{prest_inicio:%d/%m/%Y} a {prest_fim:%d/%m/%Y}. '
+                    'A data da prestação não transfere receitas ou despesas para o mês seguinte.')
             def no_periodo(dt):
                 return (inicio <= dt < fim) if modo == 'Mês selecionado' else dt < fim
             rep = [r for r in repasses if no_periodo(r['data'])]
@@ -1772,11 +1892,17 @@ elif authentication_status == True:
             l2.metric('Despesas pagas', moeda_c(despesas_pagas))
             l3.metric('Despesas pendentes', moeda_c(despesas_pendentes))
             l4.metric('Resultado realizado', moeda_c(total_leo + total_nel - despesas_pagas))
-            st.subheader('Demonstrativo por sócio')
+            st.subheader('Painel individual de receitas, despesas e saldo')
             df_s = pd.DataFrame([
                 {'Sócio': 'Leônidas', 'Honorários recebidos': moeda_c(total_leo), 'Despesas (50%)': moeda_c(metade_leo), 'Saldo realizado': moeda_c(total_leo - metade_leo)},
                 {'Sócio': 'Nelson', 'Honorários recebidos': moeda_c(total_nel), 'Despesas (50%)': moeda_c(metade_nel), 'Saldo realizado': moeda_c(total_nel - metade_nel)}
             ])
+            for nome, receita, despesa_s in [('Leônidas', total_leo, metade_leo), ('Nelson', total_nel, metade_nel)]:
+                st.markdown(f'#### {nome}')
+                p1, p2, p3 = st.columns(3)
+                p1.metric('Receitas', moeda_c(receita))
+                p2.metric('Despesas pagas', moeda_c(despesa_s))
+                p3.metric('Saldo', moeda_c(receita - despesa_s))
             st.dataframe(df_s, hide_index=True, use_container_width=True)
             st.caption('Saldo realizado = repasses registrados menos metade das despesas marcadas como pagas. Despesas pendentes são mostradas separadamente.')
             if desp:
@@ -1790,6 +1916,42 @@ elif authentication_status == True:
                 st.dataframe(pd.DataFrame([{'Data': r['data'].strftime('%d/%m/%Y'), 'Contrato': r['contrato'], 'Leônidas': moeda_c(r['leonidas']), 'Nelson': moeda_c(r['nelson'])} for r in rep]), hide_index=True, use_container_width=True)
             else:
                 st.info('Nenhum repasse encontrado neste período.')
+
+        with abas[5]:
+            st.subheader('Calendário de prestação de contas')
+            st.caption('Os movimentos são agrupados pelo mês de competência. A prestação de contas '
+                       'ocorre entre os dias 1 e 5 do mês seguinte. Este calendário não confirma '
+                       'automaticamente que os sócios receberam suas partes.')
+            mes_fech = st.date_input('Competência para prestação de contas',
+                                      value=hoje_fin.replace(day=1), key='prest_competencia').replace(day=1)
+            janela_inicio, janela_fim = janela_prestacao(mes_fech)
+            st.info(f'Movimentação de {mes_fech:%m/%Y} — prestar contas entre '
+                    f'{janela_inicio:%d/%m/%Y} e {janela_fim:%d/%m/%Y}.')
+            rep_fech = [r for r in repasses if r['data'].year == mes_fech.year and r['data'].month == mes_fech.month]
+            hist_fech = [h for h in historicos_incluidos if h['data'].year == mes_fech.year and h['data'].month == mes_fech.month]
+            desp_fech = [d for d in despesas if data_segura(d.get('competencia')) is not None
+                         and data_segura(d.get('competencia')).year == mes_fech.year
+                         and data_segura(d.get('competencia')).month == mes_fech.month]
+            receitas_l = sum(x['leonidas'] for x in rep_fech) + sum(x['leonidas'] for x in hist_fech)
+            receitas_n = sum(x['nelson'] for x in rep_fech) + sum(x['nelson'] for x in hist_fech)
+            despesas_quitadas = sum(centavos(d.get('valor')) for d in desp_fech if d.get('situacao') == 'Paga')
+            despesas_a_pagar = sum(centavos(d.get('valor')) for d in desp_fech if d.get('situacao') != 'Paga')
+            desp_n = despesas_quitadas // 2
+            desp_l = despesas_quitadas - desp_n
+            st.dataframe(pd.DataFrame([
+                {'Sócio': 'Leônidas', 'Receitas': moeda_c(receitas_l), 'Despesas pagas': moeda_c(desp_l), 'Saldo': moeda_c(receitas_l - desp_l)},
+                {'Sócio': 'Nelson', 'Receitas': moeda_c(receitas_n), 'Despesas pagas': moeda_c(desp_n), 'Saldo': moeda_c(receitas_n - desp_n)},
+            ]), hide_index=True, use_container_width=True)
+            st.metric('Despesas da competência ainda pendentes', moeda_c(despesas_a_pagar))
+            st.warning('A prestação de contas é uma conferência entre os sócios, não uma baixa automática. '
+                       'Antes de fechar, confira despesas pendentes, recebimentos históricos e repasses. '
+                       'A competência de parcelas históricas pode ser ajustada em Gerenciar Baixas.')
+            if janela_inicio <= hoje_fin <= janela_fim:
+                st.success('Estamos no período habitual de prestação de contas desta competência.')
+            elif hoje_fin > janela_fim:
+                st.caption('O período habitual de prestação de contas desta competência já passou.')
+            else:
+                st.caption('O período habitual de prestação de contas desta competência ainda não começou.')
 
         with abas[3]:
             st.subheader('Projeção de recebimentos por sócio')
@@ -1844,7 +2006,7 @@ elif authentication_status == True:
                          'Nelson (após despesas)': moeda_c(total_nel_liquido)})
             st.dataframe(pd.DataFrame(proj), hide_index=True, use_container_width=True)
             st.info('Valores por sócio são projeções, não repasses realizados. Eventuais pagamentos a colaboradores definidos na baixa futura reduzirão os valores efetivos. Os saldos após despesas consideram somente despesas pendentes cadastradas para cada mês.')
-            st.warning('Despesas fixas não são replicadas automaticamente. Parcelas vencidas antes do mês atual não entram nesta projeção.')
+            st.warning('Parcelas vencidas antes do mês atual não entram nesta projeção. Despesas fixas ativas são projetadas mensalmente.')
 
     elif menu_escolha == "Distribuição de Processos":
         if user_role != 'admin':

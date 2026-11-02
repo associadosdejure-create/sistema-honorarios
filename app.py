@@ -1038,6 +1038,13 @@ elif authentication_status == True:
             alertas_expedientes_trf = []
             alertas_pagamentos = []
 
+            # Relaciona cada parcela ao cliente do contrato de honorários.
+            # Mantém os dados carregados na Visão Geral, sem novas consultas.
+            clientes_por_honorario = {
+                str(h.get('id')): str(h.get('cliente') or 'Não informado').strip()
+                for h in hon if h.get('id') is not None
+            }
+
             for p in per:
                 if p.get('status') == 'Pendente':
                     if p.get('data_pm'):
@@ -1045,13 +1052,13 @@ elif authentication_status == True:
                         dias_restantes = (dt - hoje).days
                         if dias_restantes <= 7:
                             uid = f"per_{p['id']}_pm"
-                            alertas_pericias.append((dias_restantes, f"🔬 Perícia Médica | Nome: {p.get('nome', 'N/D')} | Data PM: {dt.strftime('%d/%m/%Y')}", uid, 'pericia'))
+                            alertas_pericias.append((dias_restantes, f"🔬 Perícia Médica | Cliente: {p.get('nome') or 'Não informado'} | Data PM: {dt.strftime('%d/%m/%Y')}", uid, 'pericia'))
                     if p.get('data_ps'):
                         dt = datetime.strptime(p['data_ps'], "%Y-%m-%d").date()
                         dias_restantes = (dt - hoje).days
                         if dias_restantes <= 7:
                             uid = f"per_{p['id']}_ps"
-                            alertas_pericias.append((dias_restantes, f"🔬 Perícia Social | Nome: {p.get('nome', 'N/D')} | Data PS: {dt.strftime('%d/%m/%Y')}", uid, 'pericia'))
+                            alertas_pericias.append((dias_restantes, f"🔬 Perícia Social | Cliente: {p.get('nome') or 'Não informado'} | Data PS: {dt.strftime('%d/%m/%Y')}", uid, 'pericia'))
 
             for e in exp:
                 if e.get('status') == 'Pendente' and e.get('data_manifestacao'):
@@ -1072,7 +1079,7 @@ elif authentication_status == True:
                     dt = datetime.strptime(pc['vencimento'], "%Y-%m-%d").date()
                     uid = f"pag_{pc.get('id', 0)}"
                     if (dt - hoje).days <= 7:
-                        alertas_pagamentos.append(((dt - hoje).days, f"💰 Parcela {pc.get('numero_parcela')} | Vencimento: {dt.strftime('%d/%m/%Y')} | Valor: {formatar_moeda_br(pc.get('valor', 0))}", uid, 'pagamento'))
+                        alertas_pagamentos.append(((dt - hoje).days, f"💰 Cliente: {clientes_por_honorario.get(str(pc.get('honorario_id')), 'Não informado')} | Parcela {pc.get('numero_parcela')} | Vencimento: {dt.strftime('%d/%m/%Y')} | Valor: {formatar_moeda_br(pc.get('valor', 0))}", uid, 'pagamento'))
 
             total_alertas = len(alertas_pericias) + len(alertas_expedientes) + len(alertas_expedientes_trf) + len(alertas_pagamentos)
 

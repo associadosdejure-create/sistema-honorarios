@@ -1187,7 +1187,7 @@ elif authentication_status == True:
             st.stop()
 
         st.title('Balanço Financeiro DEJURE')
-        st.caption('Honorários: Leônidas 60% / Nelson 40% | Despesas: 50% para cada sócio.')
+        st.caption('Os valores dos sócios são calculados conforme as regras financeiras do escritório.')
         from collections import defaultdict
         from decimal import Decimal, ROUND_HALF_UP
 
@@ -3418,7 +3418,7 @@ elif authentication_status == True:
                                     
                         else:
                             st.subheader("⚙️ Parcela recebida — repasse opcional a colaborador")
-                            st.info("Não há desconto automático de 5% nas parcelas. Sem repasse a colaborador, a parcela inteira é dividida: Leônidas 60% e Nelson 40%.")
+                            st.info("Não há desconto automático de 5% nas parcelas. Sem repasse a colaborador, a parcela inteira é dividida entre os dois sócios.")
                             incluir_colaborador = st.checkbox("Destinar parte desta parcela a um colaborador?", value=False, key=f"repasse_colab_{parcela_obj['id']}")
                             colaborador_parcela = ""
                             valor_colaborador_parcela = 0.0
@@ -3518,8 +3518,8 @@ elif authentication_status == True:
                             det_cols[0].write(f"**Prospectador:**\n{formatar_moeda_br(val_prosp_efetivo)}")
                             det_cols[1].write(f"**{'Operador' if is_entrada else 'Colaborador'} ({resp_name}):**\n{formatar_moeda_br(val_operador)}")
                             det_cols[2].write(f"**Fundo 5% (somente entrada):**\n{formatar_moeda_br(fundo_colab)}")
-                            det_cols[3].write(f"**Leônidas (60%):**\n{formatar_moeda_br(val_leonidas)}")
-                            det_cols[4].write(f"**Nelson (40%):**\n{formatar_moeda_br(val_nelson)}")
+                            det_cols[3].write(f"**Leônidas:**\n{formatar_moeda_br(val_leonidas)}")
+                            det_cols[4].write(f"**Nelson:**\n{formatar_moeda_br(val_nelson)}")
 
                         if is_entrada and fundo_colab > 0:
                             st.markdown("##### 👥 Divisão do fundo de 5% entre colaboradores elegíveis")
@@ -3618,8 +3618,8 @@ elif authentication_status == True:
                                     "Val. Operador": formatar_moeda_br(val_op_exib),
                                     "Fundo Colab. (5%)": formatar_moeda_br(fundo_exib),
                                     "Rateio Colaboradores (Não Operadores)": txt_rateio_colab,
-                                    "Leônidas (60%)": formatar_moeda_br(leo_exib),
-                                    "Nelson (40%)": formatar_moeda_br(nel_exib),
+                                    "Leônidas": formatar_moeda_br(leo_exib),
+                                    "Nelson": formatar_moeda_br(nel_exib),
                                     "Soma Distribuída": formatar_moeda_br(soma_dist),
                                     "Prova Real": "✅ 100% Batido" if is_ok else f"⚠️ Δ {formatar_moeda_br(dif)}"
                                 })
@@ -3735,8 +3735,8 @@ elif authentication_status == True:
                                             "Operador": f"{op} ({formatar_moeda_br(v_op)})",
                                             "Fundo Colab. (5%)": formatar_moeda_br(v_fundo),
                                             "Rateio Individual Colaboradores": txt_colab_det,
-                                            "Leônidas (60%)": formatar_moeda_br(v_leo),
-                                            "Nelson (40%)": formatar_moeda_br(v_nel),
+                                            "Leônidas": formatar_moeda_br(v_leo),
+                                            "Nelson": formatar_moeda_br(v_nel),
                                             "Total Distribuído": formatar_moeda_br(soma_d),
                                             "Prova Real": "✅ 100% Batido" if is_ok else "⚠️ Divergente"
                                         })
@@ -3754,8 +3754,8 @@ elif authentication_status == True:
 
                             with st.expander("👑 Divisão Detalhada dos Sócios e Fundo de Colaboradores no Período", expanded=True):
                                 c_s1, c_s2, c_s3 = st.columns(3)
-                                c_s1.metric("Leônidas (60%)", formatar_moeda_br(sum_leonidas))
-                                c_s2.metric("Nelson (40%)", formatar_moeda_br(sum_nelson))
+                                c_s1.metric("Leônidas", formatar_moeda_br(sum_leonidas))
+                                c_s2.metric("Nelson", formatar_moeda_br(sum_nelson))
                                 total_rel_regs = len(linhas_relatorio)
                                 pct_rel_ok = (count_provas_ok / total_rel_regs * 100) if total_rel_regs > 0 else 100
                                 c_s3.metric("Validação de Prova Real", f"{pct_rel_ok:.0f}% OK ({count_provas_ok}/{total_rel_regs})")

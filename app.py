@@ -1727,6 +1727,8 @@ elif authentication_status == True:
         hoje_fin = date.today()
         with abas[1]:
             st.subheader('Cadastrar despesas')
+            competencia_sugerida = (hoje_fin.replace(day=1) - __import__('datetime').timedelta(days=1)).replace(day=1)
+            st.info(f'Competência sugerida: **{competencia_sugerida:%m/%Y}**. Prestação de contas: **1º a 5 de {hoje_fin:%m/%Y}**. Confirme o mês a que a despesa pertence; ele pode ser diferente do mês do vencimento ou pagamento.')
             st.caption('Despesas fixas são repetidas mensalmente até o ADM encerrar. Parceladas geram vencimentos mensais independentes.')
             # Seletores fora do formulário: Streamlit atualiza os campos
             # imediatamente ao escolher Parcelada, sem precisar clicar em Salvar.
@@ -1739,8 +1741,10 @@ elif authentication_status == True:
             with st.form('form_despesa_dejure', clear_on_submit=True):
                 descricao = st.text_input('Descrição', max_chars=180)
                 valor = st.number_input('Valor (R$)', min_value=0.01, step=10.0, format='%.2f')
-                competencia = st.date_input('Primeiro mês de competência', hoje_fin.replace(day=1))
+                competencia = st.date_input('Primeiro mês de competência (mês a que a despesa pertence)', value=competencia_sugerida, help='Ex.: despesa de outubro paga em novembro: competência 01/10, vencimento 02/11.')
                 vencimento = st.date_input('Primeiro vencimento', hoje_fin)
+                if forma != 'Única':
+                    st.caption('Para despesas parceladas ou recorrentes, as próximas parcelas são geradas mensalmente a partir da competência escolhida. Confira as datas na Projeção de parcelas.')
                 if forma == 'Parcelada':
                     quantidade = st.number_input('Quantidade de parcelas', min_value=2, max_value=120, value=2, step=1)
                     st.caption('O valor informado é o TOTAL da compra; o sistema divide entre as parcelas.')
@@ -1752,8 +1756,6 @@ elif authentication_status == True:
             if salvar:
                 if not descricao.strip():
                     st.error('Informe a descrição da despesa.')
-                elif vencimento.year != competencia.year or vencimento.month != competencia.month:
-                    st.error('O primeiro vencimento deve pertencer ao mês da primeira competência.')
                 else:
                     try:
                         if forma == 'Única':
@@ -1823,12 +1825,12 @@ elif authentication_status == True:
                 escolha_d = st.selectbox('2. Selecione a parcela / lançamento para editar',
                                          list(opcoes_d), key='bal_despesa_edicao')
                 alvo = opcoes_d[escolha_d]
-                st.info('As alterações abaixo afetam somente o lançamento selecionado, não as demais parcelas.')
+                st.info('As alterações abaixo afetam somente o lançamento selecionado, não as demais parcelas. A competência pode ser anterior ao vencimento: exemplo, despesa de outubro paga em novembro.')
                 with st.form('bal_editar_despesa'):
                     novo_tipo = st.selectbox('Categoria', ['Fixa', 'Variável', 'Outras'], index=['Fixa','Variável','Outras'].index(alvo.get('tipo')) if alvo.get('tipo') in ['Fixa','Variável','Outras'] else 2)
                     nova_desc = st.text_input('Descrição', value=str(alvo.get('descricao') or ''))
                     novo_valor = st.number_input('Valor (R$)', min_value=0.01, value=max(0.01, centavos(alvo.get('valor')) / 100), format='%.2f')
-                    nova_comp = st.date_input('Competência', value=data_segura(alvo.get('competencia')) or hoje_fin)
+                    nova_comp = st.date_input('Competência (mês da despesa, independente do vencimento)', value=data_segura(alvo.get('competencia')) or competencia_sugerida)
                     novo_venc = st.date_input('Vencimento', value=data_segura(alvo.get('vencimento')) or hoje_fin)
                     nova_sit = st.selectbox('Situação', ['Pendente','Paga'], index=1 if alvo.get('situacao') == 'Paga' else 0)
                     nova_obs = st.text_area('Observações', value=str(alvo.get('observacoes') or ''))

@@ -647,6 +647,8 @@ elif authentication_status == True:
             modulos["Distribuição de Processos"] = "Distribuição de Processos"
             modulos["Auditoria"] = "Auditoria"
             modulos["Balanço Financeiro"] = "Balanço Financeiro"
+            if username == "master":
+                modulos["Gerenciar Protocolos"] = "Gerenciar Protocolos"
 
         for label, pag in modulos.items():
             if st.button(label, use_container_width=True):
@@ -1087,6 +1089,96 @@ elif authentication_status == True:
                 st.info("🎉 Nenhum alerta de prazo ou pagamento pendente para hoje!")
         except Exception as e: 
             st.error(f"Erro ao carregar central de alertas: {e}")
+
+    elif menu_escolha == "Gerenciar Protocolos":
+        st.title("Gerenciamento de Protocolos")
+        if username != "master" or user_role != "admin" or st.session_state.get("authentication_status") is not True:
+            st.error("Acesso exclusivo do usuário Master.")
+            st.stop()
+        st.caption("Corrija ou exclua registros de protocolo. A exclusão retira o ponto da Visão Geral e do ranking; não exclui o processo nem seus documentos.")
+        try:
+            cliente_prot = cliente_storage_servidor()
+            eventos_prot = []
+            for inicio_prot in range(0, 20000, 1000):
+                lote_prot = (cliente_prot.table("dejure_protocolos").select("*")
+                              .order("protocolado_em", desc=True)
+                              .range(inicio_prot, inicio_prot + 999).execute()).data or []
+                eventos_prot.extend(lote_prot)
+                if len(lote_prot) < 1000:
+                    break
+            if not eventos_prot:
+                st.info("Nenhum protocolo registrado.")
+            else:
+                pesquisa_prot = st.text_input("Pesquisar por processo ou protocolante", key="master_busca_protocolo")
+                filtrados_prot = [e for e in eventos_prot if pesquisa_prot.casefold() in
+                                  (str(e.get("processo_id", "")) + " " + str(e.get("protocolado_por", ""))).casefold()]
+                st.dataframe([{"Processo ID": e.get("processo_id"), "Protocolante": e.get("protocolado_por"),
+                               "Data": e.get("protocolado_em")} for e in filtrados_prot],
+                             use_container_width=True, hide_index=True)
+                if filtrados_prot:
+                    escolhas_prot = {f"Processo {e.get('processo_id')} | {e.get('protocolado_por', 'N/D')} | {e.get('protocolado_em', '')}": e
+                                     for e in filtrados_prot}
+                    chave_prot = st.selectbox("Selecione o protocolo", list(escolhas_prot), key="master_protocolo_selecionado")
+                    evento_prot = escolhas_prot[chave_prot]
+                    id_processo_prot = evento_prot.get("processo_id")
+                    with st.form("master_editar_protocolo"):
+                        nomes_prot = sorted({str(v.get("name") or login) for login, v in credentials["usernames"].items()
+                                             if login != "master" and v.get("role") not in ("inativo", "bloqueado")})
+                        atual_prot = str(evento_prot.get("protocolado_por") or "")
+                        if atual_prot not in nomes_prot:
+                            nomes_prot.insert(0, atual_prot)
+                        nome_novo_prot = st.selectbox("Protocolante", nomes_prot, index=nomes_prot.index(atual_prot))
+                        try:
+                            data_original_prot = date.fromisoformat(str(evento_prot.get("protocolado_em"))[:10])
+                        except (ValueError, TypeError):
+                            data_original_prot = date.today()
+                        data_nova_prot = st.date_input("Data do protocolo", value=data_original_prot)
+                        motivo_prot = st.text_area("Motivo da correção (obrigatório)")
+                        salvar_prot = st.form_submit_button("Salvar correção", type="primary")
+                        if salvar_prot:
+                            if not motivo_prot.strip():
+                                st.error("Informe o motivo da correção.")
+                            else:
+                                try:
+                                    anterior_prot = dict(evento_prot)
+                                    data_antiga = str(evento_prot.get("protocolado_em") or "")
+                                    sufixo_hora = data_antiga[10:] if len(data_antiga) > 10 else "T12:00:00+00:00"
+                                    novos_prot = {"protocolado_por": nome_novo_prot,
+                                                  "protocolado_em": data_nova_prot.isoformat() + sufixo_hora}
+                                    cliente_prot.table("dejure_protocolos").update(novos_prot).eq("processo_id", id_processo_prot).execute()
+                                    registrar_auditoria(username, "Corrigir protocolo", "Gerenciar Protocolos",
+                                        f"Processo {id_processo_prot}; antes={anterior_prot}; depois={novos_prot}; motivo={motivo_prot.strip()}")
+                                    st.cache_data.clear()
+                                    st.success("Protocolo corrigido. O ranking será recalculado na Página Inicial.")
+                                    st.rerun()
+                                except Exception as erro_prot:
+                                    st.error(f"Erro ao corrigir protocolo: {erro_prot}")
+                    st.divider()
+                    st.subheader("Excluir registro de protocolo")
+                    st.warning("Esta ação remove o registro de pontuação. O processo permanece cadastrado.")
+                    motivo_exclusao_prot = st.text_input("Justificativa da exclusão", key="master_motivo_exclusao_prot")
+                    confirmar_exclusao_prot = st.checkbox("Confirmo a exclusão deste protocolo e a retirada do ponto do ranking.",
+                                                         key="master_confirma_exclusao_prot")
+                    if st.button("Excluir protocolo", type="primary", disabled=not confirmar_exclusao_prot,
+                                 key="master_excluir_protocolo"):
+                        if not motivo_exclusao_prot.strip():
+                            st.error("Informe a justificativa da exclusão.")
+                        else:
+                            try:
+                                # Exclui apenas o evento, não o processo nem seus documentos.
+                                cliente_prot.table("dejure_protocolos").delete().eq("processo_id", id_processo_prot).execute()
+                                # Um processo sem protocolo não deve continuar marcado como protocolado.
+                                cliente_prot.table("meus_processos").update({"status": "Peça Aprovada"}).eq(
+                                    "id", id_processo_prot).eq("status", "Protocolado").execute()
+                                registrar_auditoria(username, "Excluir protocolo", "Gerenciar Protocolos",
+                                    f"Processo {id_processo_prot}; registro={evento_prot}; motivo={motivo_exclusao_prot.strip()}")
+                                st.cache_data.clear()
+                                st.success("Registro excluído. O ponto não será mais contabilizado na Visão Geral.")
+                                st.rerun()
+                            except Exception as erro_prot:
+                                st.error(f"Falha ao excluir: {erro_prot}. Confira o registro antes de tentar novamente.")
+        except Exception as erro_prot:
+            st.error(f"Não foi possível consultar os protocolos: {erro_prot}")
 
     elif menu_escolha == "Balanço Financeiro":
         # Proteção no servidor, além de ocultar o item do menu.

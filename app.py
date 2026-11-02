@@ -345,6 +345,40 @@ def dejure_registrar_evento_repasse(cliente, usuario, acao, dados):
         raise RuntimeError('O banco nao confirmou o registro financeiro.')
     return retorno
 
+def dejure_historicos_balanco(cliente):
+    """Ultima escolha por parcela, inclusive desmarcacoes, sem gerar eventos de repasse."""
+    eventos = {}
+    inicio = 0
+    while True:
+        lote = (cliente.table('logs_auditoria').select('*').eq('modulo', 'Balanço Histórico')
+                .order('id').range(inicio, inicio + 999).execute().data or [])
+        for log in lote:
+            try:
+                d = json.loads(log.get('detalhes') or '{}')
+                if d.get('parcela_id') is not None:
+                    eventos[str(d['parcela_id'])] = d
+            except (ValueError, TypeError, AttributeError):
+                continue
+        if len(lote) < 1000:
+            break
+        inicio += 1000
+    return eventos
+
+
+def dejure_salvar_historico_balanco(cliente, usuario, parcela_id, incluir, valor, data_recebimento, motivo, competencia_balanco=None):
+    dados = {'parcela_id': parcela_id, 'incluir_balanco': bool(incluir),
+             'valor': round(float(valor), 2), 'data_recebimento': str(data_recebimento),
+             'competencia_balanco': str(competencia_balanco or str(data_recebimento)[:7]),
+             'motivo': motivo}
+    res = cliente.table('logs_auditoria').insert({
+        'usuario': usuario, 'acao': 'Atualizar inclusão de parcela histórica no balanço',
+        'modulo': 'Balanço Histórico', 'detalhes': json.dumps(dados, ensure_ascii=False)
+    }).execute()
+    if not res.data:
+        raise RuntimeError('Não foi possível confirmar o lançamento contábil.')
+    return res
+
+
 def limpar_flags_cadastro():
     for k in ['cad_cli_sucesso', 'cad_hon_sucesso', 'cad_per_sucesso', 'cad_exp_sucesso', 'cad_trf_sucesso', 'cad_pen_sucesso', 'cad_pros_pend_sucesso', 'cad_user_sucesso', 'ultimo_cliente_cadastrado_id', 'ultimo_cliente_cadastrado_nome', 'ultimo_cliente_cadastrado_doc', 'ultimo_cliente_cadastrado_tel', 'ultimo_cliente_cadastrado_obs']:
         if k in st.session_state:
@@ -1216,6 +1250,7 @@ elif authentication_status == True:
             st.write(f"**Valor bruto:** {formatar_moeda_br(float(info_baixa.get('valor_bruto') or 0))}")
             st.write(f"**Leônidas:** {formatar_moeda_br(float(info_baixa.get('leonidas') or 0))}  |  **Nelson:** {formatar_moeda_br(float(info_baixa.get('nelson') or 0))}")
             st.write(f"**Colaborador:** {info_baixa.get('colaborador_parcela') or 'Nenhum'}")
+            st.caption('As opções abaixo referem-se a baixas normais. Parcelas históricas são administradas na seção específica ao final desta tela.')
             aba_corrigir, aba_cancelar = st.tabs(['Editar baixa', 'Cancelar baixa'])
             with aba_corrigir:
                 if str(info_baixa.get('regra', '')).startswith('Entrada'):
@@ -1292,6 +1327,76 @@ elif authentication_status == True:
                             st.rerun()
                         except Exception as exc:
                             st.error(f'Falha ao cancelar: {exc}. Confira o status e a auditoria antes de tentar novamente.')
+
+        st.divider()
+        st.subheader('Parcelas históricas — inclusão no Balanço')
+        st.caption('Selecione uma parcela recebida anteriormente e marque ou desmarque sua inclusão contábil. Não gera novo repasse nem altera o status Pago.')
+        try:
+            historicos_estado = dejure_historicos_balanco(cliente_fin)
+            logs_importacao = []
+            pag_inicio = 0
+            while True:
+                lote = (cliente_fin.table('logs_auditoria').select('detalhes').eq('modulo', 'Pagamentos')
+                        .eq('acao', 'Importar Parcelamento Histórico (sem repasses)')
+                        .range(pag_inicio, pag_inicio + 999).execute().data or [])
+                logs_importacao.extend(lote)
+                if len(lote) < 1000:
+                    break
+                pag_inicio += 1000
+            ids_honorarios = set()
+            for log in logs_importacao:
+                try:
+                    inf = json.loads(log.get('detalhes') or '{}')
+                    if inf.get('tipo') == 'parcelamento_historico_sem_repasses':
+                        ids_honorarios.add(str(inf.get('honorario_id')))
+                except (ValueError, TypeError, AttributeError):
+                    continue
+            # O cadastro registra os IDs das parcelas, evitando confusão com baixas normais.
+            ids_historicos = {str(pid) for pid, d in historicos_estado.items() if d.get('data_recebimento')}
+            for pid, par in todas_parcelas.items():
+                if str(par.get('honorario_id')) in ids_honorarios and str(par.get('status', '')).lower() == 'pago':
+                    ids_historicos.add(pid)
+            lista_hist = {pid: todas_parcelas[pid] for pid in ids_historicos if pid in todas_parcelas and str(todas_parcelas[pid].get('status', '')).lower() == 'pago'}
+            if lista_hist:
+                labels_hist = {f"Parcela #{pid} | Contrato #{par.get('honorario_id')} | {par.get('numero_parcela')} | {formatar_moeda_br(float(par.get('valor') or 0))}": pid for pid, par in sorted(lista_hist.items(), key=lambda kv: str(kv[0]))}
+                escolha_hist = st.selectbox('Parcela histórica', list(labels_hist), key='baixa_historico_selecao')
+                id_hist = labels_hist[escolha_hist]
+                par_hist = lista_hist[id_hist]
+                estado_hist = historicos_estado.get(id_hist, {})
+                with st.form('form_editar_inclusao_historica'):
+                    marcar_hist = st.checkbox('Incluir esta parcela histórica no Balanço Financeiro', value=bool(estado_hist.get('incluir_balanco', False)))
+                    try:
+                        data_hist_padrao = date.fromisoformat(str(estado_hist.get('data_recebimento') or '')[:10])
+                    except ValueError:
+                        data_hist_padrao = date.today()
+                    data_hist_ed = st.date_input('Data real do recebimento pelo escritório', value=data_hist_padrao)
+                    comp_hist_atual = str(estado_hist.get('competencia_balanco') or data_hist_padrao.strftime('%Y-%m'))
+                    try:
+                        comp_hist_data = date.fromisoformat(comp_hist_atual[:7] + '-01')
+                    except ValueError:
+                        comp_hist_data = data_hist_padrao.replace(day=1)
+                    competencia_hist_ed = st.date_input('Mês de competência no balanço (escolha qualquer dia do mês)', value=comp_hist_data, key='competencia_edicao_hist')
+                    st.caption('O mês escolhido define a prestação de contas, independentemente da data do pagamento do cliente.')
+                    motivo_hist_ed = st.text_input('Justificativa da alteração (obrigatória)')
+                    salvar_hist_ed = st.form_submit_button('Salvar escolha', type='primary')
+                if salvar_hist_ed:
+                    if not motivo_hist_ed.strip():
+                        st.error('Informe a justificativa.')
+                    elif data_hist_ed > date.today():
+                        st.error('A data do recebimento não pode ser futura.')
+                    else:
+                        try:
+                            dejure_salvar_historico_balanco(cliente_fin, username, par_hist['id'], marcar_hist,
+                                par_hist.get('valor') or 0, data_hist_ed.isoformat(), motivo_hist_ed.strip(), competencia_hist_ed.strftime('%Y-%m'))
+                            st.cache_data.clear()
+                            st.success('Escolha atualizada no Balanço, sem gerar repasse.')
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f'Erro ao salvar: {e}')
+            else:
+                st.info('Nenhuma parcela histórica paga encontrada.')
+        except Exception as e:
+            st.error(f'Não foi possível consultar parcelas históricas: {e}')
 
     elif menu_escolha == "Gerenciar Protocolos":
         st.title("Gerenciamento de Protocolos")
@@ -1427,6 +1532,7 @@ elif authentication_status == True:
             despesas = consulta_toda('dejure_despesas')
             repasses_logs = dejure_logs_repasses_ativos(cliente_storage_servidor())
             parcelas = consulta_toda('parcelas')
+            historicos_balanco = dejure_historicos_balanco(cliente_storage_servidor())
         except Exception:
             st.error('Não foi possível carregar o balanço. Execute primeiro o arquivo SQL fornecido no Supabase e confira a chave de serviço nos Secrets.')
             st.stop()
@@ -1529,6 +1635,19 @@ elif authentication_status == True:
             except (ValueError, TypeError, AttributeError):
                 continue
 
+        # Recebimentos históricos são lançamentos contábeis opcionais, NÃO repasses.
+        historicos_incluidos = []
+        for p in parcelas:
+            h = historicos_balanco.get(str(p.get('id')), {})
+            if not h.get('incluir_balanco') or str(p.get('status', '')).lower() != 'pago':
+                continue
+            dt = data_segura(str(h.get('competencia_balanco') or str(h.get('data_recebimento') or '')[:7])[:7] + '-01')
+            if dt:
+                valor_c = centavos(p.get('valor'))
+                leo_c = (valor_c * 60 + 50) // 100
+                historicos_incluidos.append({'data': dt, 'leonidas': leo_c,
+                    'nelson': valor_c - leo_c, 'parcela_id': p.get('id')})
+
         with abas[0]:
             c_a, c_b = st.columns(2)
             mes_ref = c_a.date_input('Mês do balanço', value=hoje_fin.replace(day=1), key='bal_mes_ref')
@@ -1540,14 +1659,16 @@ elif authentication_status == True:
             rep = [r for r in repasses if no_periodo(r['data'])]
             desp = [d for d in despesas if (data_segura(d.get('competencia')) is not None and no_periodo(data_segura(d.get('competencia'))))]
             # Competência é a referência contábil; apenas despesas pagas afetam o saldo realizado.
-            total_leo = sum(r['leonidas'] for r in rep)
-            total_nel = sum(r['nelson'] for r in rep)
+            hist_periodo = [h for h in historicos_incluidos if no_periodo(h['data'])]
+            total_leo = sum(r['leonidas'] for r in rep) + sum(h['leonidas'] for h in hist_periodo)
+            total_nel = sum(r['nelson'] for r in rep) + sum(h['nelson'] for h in hist_periodo)
             despesas_pagas = sum(centavos(d.get('valor')) for d in desp if d.get('situacao') == 'Paga')
             despesas_pendentes = sum(centavos(d.get('valor')) for d in desp if d.get('situacao') != 'Paga')
             # Centavos ímpares são atribuídos a Leônidas para manter a soma exata.
             metade_nel = despesas_pagas // 2
             metade_leo = despesas_pagas - metade_nel
             l1,l2,l3,l4 = st.columns(4)
+            st.caption('Recebimentos históricos incluídos neste período: ' + moeda_c(sum(h['leonidas'] + h['nelson'] for h in hist_periodo)) + '. São registros contábeis, não novos repasses aos sócios.')
             l1.metric('Honorários dos sócios', moeda_c(total_leo + total_nel))
             l2.metric('Despesas pagas', moeda_c(despesas_pagas))
             l3.metric('Despesas pendentes', moeda_c(despesas_pendentes))
@@ -3601,6 +3722,8 @@ elif authentication_status == True:
                     st.warning("A entrada precisa ser menor que o valor total negociado, pois há parcelas a cadastrar.")
                 valores_hist = []
                 datas_receb_hist = []
+                incluir_balanco_hist = []
+                competencia_balanco_hist = []
                 for i_hist in range(qtd_hist):
                     valor_padrao_hist = (base_hist + (sobra_hist if i_hist == qtd_hist - 1 else 0)) / 100
                     venc_hist = primeira_data_hist + relativedelta(months=i_hist)
@@ -3614,8 +3737,13 @@ elif authentication_status == True:
                         if i_hist < pagas_hist:
                             data_rec = st.date_input(f"Data em que a parcela {i_hist+1} foi efetivamente recebida", value=venc_hist if venc_hist <= date.today() else date.today(), key=f"hist_data_rec_{i_hist}")
                             datas_receb_hist.append(data_rec)
+                            incluir_balanco_hist.append(st.checkbox(f'Incluir parcela {i_hist+1} no Balanço Financeiro', value=False, key=f'hist_incluir_bal_{i_hist}'))
+                            mes_hist = st.date_input(f'Mês em que a parcela {i_hist+1} deve constar no Balanço', value=data_rec.replace(day=1), key=f'hist_competencia_{i_hist}') if incluir_balanco_hist[-1] else data_rec.replace(day=1)
+                            competencia_balanco_hist.append(mes_hist.strftime('%Y-%m'))
                         else:
                             datas_receb_hist.append(None)
+                            incluir_balanco_hist.append(False)
+                            competencia_balanco_hist.append(None)
                 soma_hist = sum(Decimal(str(v or 0)) for v in valores_hist)
                 st.markdown(f"**Recebido historicamente (entrada + parcelas):** {formatar_moeda_br(float(entrada_hist or 0) + sum(float(v or 0) for v in valores_hist[:pagas_hist]))}  |  **A receber:** {formatar_moeda_br(sum(float(v or 0) for v in valores_hist[ pagas_hist:]))}")
                 if modo_hist == "Informar valor de cada parcela" and abs(soma_hist - Decimal(str(valor_total_hist or 0)) + Decimal(str(entrada_hist or 0))) > Decimal("0.009"):
@@ -3648,8 +3776,14 @@ elif authentication_status == True:
                             for i_hist, valor_hist in enumerate(valores_hist):
                                 linhas_hist.append({"honorario_id": novo_h_id, "numero_parcela": f"{i_hist+1}/{qtd_hist}", "valor": float(Decimal(str(valor_hist)).quantize(Decimal("0.01"))), "vencimento": (primeira_data_hist + relativedelta(months=i_hist)).isoformat(), "status": "Pago" if i_hist < pagas_hist else "Pendente"})
                             # A tabela parcelas é a mesma do fluxo normal: o Balanço considera somente pendentes na projeção.
-                            for linha_hist in linhas_hist:
-                                db_hist.table("parcelas").insert(linha_hist).execute()
+                            for idx_linha, linha_hist in enumerate(linhas_hist):
+                                retorno_par = db_hist.table("parcelas").insert(linha_hist).execute()
+                                if not retorno_par.data:
+                                    raise RuntimeError('A parcela não foi confirmada no banco.')
+                                if idx_linha < pagas_hist:
+                                    dejure_salvar_historico_balanco(db_hist, username, retorno_par.data[0]['id'],
+                                        incluir_balanco_hist[idx_linha], linha_hist['valor'],
+                                        datas_receb_hist[idx_linha].isoformat(), 'Cadastro inicial do parcelamento histórico', competencia_balanco_hist[idx_linha])
                             # Registro informativo separado dos repasses: módulo "Pagamentos", nunca "Repasses".
                             info_hist = {"tipo": "parcelamento_historico_sem_repasses", "honorario_id": novo_h_id, "cliente": cliente_hist.strip(), "total_parcelas": qtd_hist, "parcelas_ja_pagas": pagas_hist, "entrada_historica": {"valor": float(entrada_hist or 0), "data_recebimento": data_entrada_hist.isoformat() if data_entrada_hist else None}, "recebimentos_historicos": [{"parcela": i+1, "data_recebimento": d.isoformat(), "valor": float(valores_hist[i])} for i, d in enumerate(datas_receb_hist) if d is not None]}
                             try:
@@ -3657,7 +3791,7 @@ elif authentication_status == True:
                             except Exception:
                                 st.warning("Contrato salvo, mas não foi possível registrar os detalhes das datas no log de auditoria.")
                             st.cache_data.clear()
-                            confirmar_operacao(f"Contrato cadastrado com entrada histórica de {formatar_moeda_br(entrada_hist or 0)}: {pagas_hist} parcela(s) paga(s), {qtd_hist-pagas_hist} pendente(s). Nenhum repasse foi gerado.")
+                            confirmar_operacao(f"Contrato cadastrado: {pagas_hist} parcela(s) histórica(s), {sum(incluir_balanco_hist)} incluída(s) no balanço, {qtd_hist-pagas_hist} pendente(s). Nenhum novo repasse foi gerado.")
                         except Exception as erro_hist:
                             # Evita contratos parciais se houver falha de conexão durante a gravação.
                             if novo_h_id is not None:

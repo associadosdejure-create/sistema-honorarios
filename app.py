@@ -3396,7 +3396,7 @@ elif authentication_status == True:
 
                         if is_entrada:
                             st.subheader("⚙️ Regra de Entrada (Com / Sem Prospecção)")
-                            st.info("Ordem: 1º Prospectador (se houver) ➔ 2º Operador ➔ 3º Fundo 5% Colaboradores (dividido entre não-operadores) ➔ 4º Sócios (60/40).")
+                            st.info("Entrada: descontar prospectador e operador; aplicar fundo de 5% sobre o saldo somente se o valor bruto negociado do contrato for igual ou superior a R$ 1.000,00; dividir o restante entre os sócios (60/40).")
                             
                             col_r1, col_r2 = st.columns(2)
                             with col_r1:
@@ -3417,26 +3417,21 @@ elif authentication_status == True:
                                     break
                                     
                         else:
-                            st.subheader("⚙️ Regra de Parcelamento de Saldo (5% do Saldo Total Negociado)")
-                            st.info("📌 **Fundo de Colaboradores:** Calculado em 5% sobre o **Saldo Total Negociado** após dedução do Prospectador Externo (se houver).")
-                            
-                            col_ps1, col_ps2 = st.columns(2)
-                            with col_ps1:
-                                prosp_name = st.selectbox("👤 Prospectador Externo (Se Houver):", opcoes_prosp_baixa, index=idx_prosp_init)
-                            with col_ps2:
-                                resp_name = st.selectbox("⚖️ Operador (Trabalhou no Processo):", nomes_opcoes)
-
+                            st.subheader("⚙️ Parcela recebida — repasse opcional a colaborador")
+                            st.info("Não há desconto automático de 5% nas parcelas. Sem repasse a colaborador, a parcela inteira é dividida: Leônidas 60% e Nelson 40%.")
+                            incluir_colaborador = st.checkbox("Destinar parte desta parcela a um colaborador?", value=False, key=f"repasse_colab_{parcela_obj['id']}")
+                            colaborador_parcela = ""
+                            valor_colaborador_parcela = 0.0
+                            if incluir_colaborador:
+                                if nomes_opcoes:
+                                    colaborador_parcela = st.selectbox("Colaborador que receberá o valor", nomes_opcoes, key=f"colab_parcela_{parcela_obj['id']}")
+                                    valor_colaborador_parcela = campo_moeda_br("Valor destinado ao colaborador (R$)", f"valor_colab_parcela_{parcela_obj['id']}") or 0.0
+                                else:
+                                    st.error("Não há colaboradores cadastrados para selecionar.")
+                            prosp_name = "Nenhum / Sem Prospectador"
+                            resp_name = colaborador_parcela or "Não aplicável"
+                            resp_role = "Não aplicável"
                             val_prosp_input = 0.0
-                            if prosp_name not in ["Nenhum / Sem Prospectador", resp_name]:
-                                val_prosp_input = min(campo_moeda_br("💵 Valor de Captação do Prospectador (R$):", "pag_cap_saldo") or 0.0, val_total_contrato)
-
-                            val_op_input = min(campo_moeda_br("💵 Valor do Operador avaliado para esta parcela (R$):", "pag_val_operador") or 0.0, valor_bruto)
-
-                            resp_role = "estagiario"
-                            for u in lista_usuarios:
-                                if u['nome'] == resp_name:
-                                    resp_role = u['papel']
-                                    break
 
                         colaboradores_fundo = [u['nome'] for u in lista_usuarios if u['papel'] in ['advogado', 'bacharel', 'estagiario'] and u['nome'] != resp_name]
 
@@ -3457,7 +3452,7 @@ elif authentication_status == True:
                                 val_prospectador = val_operador
                                 saldo -= val_operador
                                 
-                                if saldo > 1000.0:
+                                if val_total_contrato >= 1000.0 and saldo > 0:
                                     fundo_colab = round(saldo * 0.05, 2)
                                     saldo -= fundo_colab
                                     
@@ -3476,37 +3471,34 @@ elif authentication_status == True:
                                 val_operador = round(saldo * taxa_op, 2)
                                 saldo -= val_operador
                                 
-                                if saldo > 1000.0:
+                                if val_total_contrato >= 1000.0 and saldo > 0:
                                     fundo_colab = round(saldo * 0.05, 2)
                                     saldo -= fundo_colab
                                     
                                 val_leonidas = round(saldo * 0.60, 2)
                                 val_nelson = round(saldo * 0.40, 2)
                         else:
-                            regra_aplicada = "Parcelamento de Saldo (5% Saldo Total)"
-                            
-                            val_prosp_total = round(val_prosp_input, 2) if prosp_name != "Nenhum / Sem Prospectador" else 0.0
-                            saldo_negociado_liquido = max(0.0, val_total_contrato - val_prosp_total)
-                            
-                            fundo_colab_total = round(saldo_negociado_liquido * 0.05, 2)
-                            proporcao_parcela = (valor_bruto / val_total_contrato) if val_total_contrato > 0 else 1.0
-                            fundo_colab = round(fundo_colab_total * proporcao_parcela, 2)
-                            
-                            val_operador = round(val_op_input, 2)
-                            
-                            saldo_remanescente_parcela = max(0.0, valor_bruto - val_operador - fundo_colab)
-                            val_leonidas = round(saldo_remanescente_parcela * 0.60, 2)
-                            val_nelson = round(saldo_remanescente_parcela * 0.40, 2)
+                            regra_aplicada = "Parcela: repasse livre a colaborador" if incluir_colaborador else "Parcela: sócios 60/40"
+                            val_operador = round(valor_colaborador_parcela, 2) if incluir_colaborador else 0.0
+                            saldo_remanescente_parcela = round(valor_bruto - val_operador, 2)
+                            if saldo_remanescente_parcela >= 0:
+                                val_leonidas = round(saldo_remanescente_parcela * 0.60, 2)
+                                val_nelson = round(saldo_remanescente_parcela - val_leonidas, 2)
+                            else:
+                                val_leonidas = 0.0
+                                val_nelson = 0.0
+                            fundo_colab = 0.0
 
                         qtd_colab = len(colaboradores_fundo)
                         cota_individual_fundo = round(fundo_colab / qtd_colab, 2) if qtd_colab > 0 else 0.0
-                        detalhes_rateio_colab = {c: cota_individual_fundo for c in colaboradores_fundo}
+                        detalhes_rateio_colab = {c: cota_individual_fundo for c in colaboradores_fundo} if is_entrada and fundo_colab > 0 else {}
 
                         val_prosp_efetivo = 0.0 if "Acúmulo" in regra_aplicada else (val_prospectador if is_entrada and prosp_name != "Nenhum / Sem Prospectador" else 0.0)
                         soma_distribuida = round(val_prosp_efetivo + val_operador + fundo_colab + val_leonidas + val_nelson, 2)
                         diferenca = round(valor_bruto - soma_distribuida, 2)
 
-                        if diferenca != 0:
+                        valor_colab_invalido = (not is_entrada and incluir_colaborador and (not colaborador_parcela or val_operador <= 0 or val_operador > valor_bruto))
+                        if diferenca != 0 and not valor_colab_invalido:
                             val_leonidas = round(val_leonidas + diferenca, 2)
                             soma_distribuida = round(val_prosp_efetivo + val_operador + fundo_colab + val_leonidas + val_nelson, 2)
                             diferenca = round(valor_bruto - soma_distribuida, 2)
@@ -3524,20 +3516,23 @@ elif authentication_status == True:
                         with st.expander("🔍 Detalhamento dos Valores da Prova Real", expanded=True):
                             det_cols = st.columns(5)
                             det_cols[0].write(f"**Prospectador:**\n{formatar_moeda_br(val_prosp_efetivo)}")
-                            det_cols[1].write(f"**Operador ({resp_name}):**\n{formatar_moeda_br(val_operador)}")
-                            det_cols[2].write(f"**Fundo Colab. Total (5%):**\n{formatar_moeda_br(fundo_colab)}")
+                            det_cols[1].write(f"**{'Operador' if is_entrada else 'Colaborador'} ({resp_name}):**\n{formatar_moeda_br(val_operador)}")
+                            det_cols[2].write(f"**Fundo 5% (somente entrada):**\n{formatar_moeda_br(fundo_colab)}")
                             det_cols[3].write(f"**Leônidas (60%):**\n{formatar_moeda_br(val_leonidas)}")
                             det_cols[4].write(f"**Nelson (40%):**\n{formatar_moeda_br(val_nelson)}")
 
-                        st.markdown("##### 👥 Divisão Igualitária dos 5% entre Colaboradores que Não Trabalharam no Processo")
-                        if colaboradores_fundo:
+                        if is_entrada and fundo_colab > 0:
+                            st.markdown("##### 👥 Divisão do fundo de 5% entre colaboradores elegíveis")
+                        if is_entrada and fundo_colab > 0 and colaboradores_fundo:
                             cols_colab = st.columns(min(len(colaboradores_fundo), 4))
                             for idx, c_nome in enumerate(colaboradores_fundo):
                                 cols_colab[idx % 4].info(f"**{c_nome}**\nRecebe: {formatar_moeda_br(cota_individual_fundo)}")
-                        else:
-                            st.warning("⚠️ Nenhum outro colaborador ativo (advogado/bacharel/estagiário) cadastrado para receber a fatia do fundo.")
+                        elif is_entrada and fundo_colab > 0:
+                            st.warning("⚠️ Nenhum colaborador elegível cadastrado para o fundo.")
 
-                        if st.button("Confirmar Baixa e Gerar Repasse", type="primary"):
+                        if valor_colab_invalido:
+                            st.error("Informe um colaborador e um valor maior que zero e não superior ao valor da parcela.")
+                        if st.button("Confirmar Baixa e Gerar Repasse", type="primary", disabled=(valor_colab_invalido or diferenca != 0)):
                             repasse_dict = {
                                 "parcela_id": parcela_obj['id'],
                                 "contrato": sel_contrato_str,
@@ -3548,6 +3543,8 @@ elif authentication_status == True:
                                 "operador": resp_name,
                                 "papel_operador": resp_role,
                                 "valor_operador": round(val_operador, 2),
+                                "colaborador_parcela": colaborador_parcela if not is_entrada else None,
+                                "valor_colaborador_parcela": round(val_operador, 2) if not is_entrada else 0.0,
                                 "fundo_colab": round(fundo_colab, 2),
                                 "rateio_colaboradores": detalhes_rateio_colab,
                                 "cota_por_colaborador": cota_individual_fundo,

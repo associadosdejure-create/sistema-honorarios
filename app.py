@@ -3463,7 +3463,31 @@ elif authentication_status == True:
                 st.info("Cadastre o percentual dos honorários sobre a RPV, mesmo sem conhecer seu valor. Honorários fixos (por exemplo, R$ 9.000,00) devem ser cadastrados separadamente em Contratos/Parcelamentos. Quando a RPV for liberada, informe seu valor bruto para calcular os honorários e gerar a parcela pendente.")
                 try:
                     cli_rpv = cliente_storage_servidor()
-                    clientes_rpv = sorted({str(c.get('nome')).strip() for c in carregar_dados('clientes_cadastrados') if c.get('nome')})
+                    # A lista nao depende do status das parcelas: contratos quitados continuam disponiveis.
+                    # Unimos clientes cadastrados, titulares de contratos de honorarios e RPVs anteriores.
+                    nomes_clientes_rpv = set()
+                    for tabela_origem, coluna_nome in (
+                        ('clientes_cadastrados', 'nome'),
+                        ('honorarios', 'cliente'),
+                    ):
+                        for item in carregar_dados(tabela_origem):
+                            nome_item = str(item.get(coluna_nome) or '').strip()
+                            if nome_item:
+                                nomes_clientes_rpv.add(nome_item)
+                    inicio_nomes_rpv = 0
+                    while True:
+                        lote_nomes_rpv = (cli_rpv.table('dejure_rpv_recebiveis')
+                                          .select('cliente').range(inicio_nomes_rpv, inicio_nomes_rpv + 999)
+                                          .execute().data or [])
+                        for item in lote_nomes_rpv:
+                            nome_item = str(item.get('cliente') or '').strip()
+                            if nome_item:
+                                nomes_clientes_rpv.add(nome_item)
+                        if len(lote_nomes_rpv) < 1000:
+                            break
+                        inicio_nomes_rpv += 1000
+                    clientes_rpv = sorted(nomes_clientes_rpv, key=lambda nome: nome.casefold())
+                    st.caption('Selecione um cliente que ja possui cadastro ou contrato de honorarios. Mesmo com todas as parcelas pagas, ele continua disponivel para cadastrar a RPV.')
                     with st.form('rpv_novo_registro'):
                         cliente_rpv = st.selectbox('Cliente', ['Selecione um cliente'] + clientes_rpv)
                         servico_rpv = st.text_input('Serviço / referência', value='Aposentadoria — RPV retroativa')

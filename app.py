@@ -1947,7 +1947,36 @@ elif authentication_status == True:
             def no_periodo(dt):
                 return inicio <= dt < fim
             rep = [r for r in repasses if no_periodo(r['data'])]
-            desp = [d for d in despesas if (data_segura(d.get('competencia')) is not None and no_periodo(data_segura(d.get('competencia'))))]
+            # Inclui TODAS as modalidades de lançamento (única, parcelada e recorrente).
+            # A competência registrada prevalece; o vencimento é usado somente
+            # para registros legados que não possuem competência válida.
+            def competencia_despesa(d):
+                return data_segura(d.get('competencia')) or data_segura(d.get('vencimento'))
+
+            desp = [d for d in despesas if competencia_despesa(d) and no_periodo(competencia_despesa(d))]
+            # Conferência transparente para localizar divergências sem alterar
+            # automaticamente lançamentos nem duplicar despesas.
+            avulsas_mes = [d for d in desp if d.get('programacao_id') is None]
+            programadas_mes = [d for d in desp if d.get('programacao_id') is not None]
+            ids_prog_parceladas = {str(p.get('id')) for p in programacoes if int(p.get('quantidade') or 0) > 0}
+            parcelas_mes = [d for d in programadas_mes if str(d.get('programacao_id')) in ids_prog_parceladas]
+            recorrentes_mes = [d for d in programadas_mes if str(d.get('programacao_id')) not in ids_prog_parceladas]
+            st.caption(f'Lançamentos identificados nesta competência: {len(avulsas_mes)} despesa(s) única(s), '
+                       f'{len(parcelas_mes)} parcela(s) e {len(recorrentes_mes)} despesa(s) recorrente(s).')
+            inconsistentes = [d for d in despesas if not data_segura(d.get('competencia'))]
+            if inconsistentes:
+                st.warning(f'{len(inconsistentes)} despesa(s) sem competência válida no cadastro. '
+                           'Quando possível, o painel utiliza o vencimento para exibição; '
+                           'confira os registros em Gerenciar despesas.')
+            programacoes_ativas_mes = [p for p in programacoes
+                if int(p.get('quantidade') or 0) == 0 and p.get('ativo', True)
+                and (data_segura(p.get('inicio')) or date.max).replace(day=1) <= inicio]
+            ids_recorrentes_mes = {str(d.get('programacao_id')) for d in recorrentes_mes}
+            ausentes = [p for p in programacoes_ativas_mes if str(p.get('id')) not in ids_recorrentes_mes]
+            if ausentes:
+                st.warning(f'{len(ausentes)} despesa(s) recorrente(s) ativa(s) não possuem lançamento '
+                           f'na competência {inicio:%m/%Y}. Confira o início da programação '
+                           'e os lançamentos em Gerenciar despesas.')
             # Competência é a referência contábil; apenas despesas pagas afetam o saldo realizado.
             hist_periodo = [h for h in historicos_incluidos if no_periodo(h['data'])]
             total_leo = sum(r['leonidas'] for r in rep) + sum(h['leonidas'] for h in hist_periodo)
@@ -2516,7 +2545,7 @@ elif authentication_status == True:
             acoes = ["Consultar Prospectados Pendentes", "Cadastrar Prospectado Pendente", "Editar Prospectado Pendente"]
             if user_role == 'admin': acoes.append("Excluir Prospectado Pendente")
         elif menu_principal == "Meus Processos":
-            acoes = ["Consultar Meus Processos", "Cadastrar Processo"]
+            acoes = ["A PROTOCOLAR", "PROTOCOLADOS", "Consultar Meus Processos", "Cadastrar Processo"]
             if user_role == 'admin': acoes.extend(['Central de Revisões', 'Armazenamento'])
         elif menu_principal == "Pagamentos":
             acoes = ["Ver Parcelas", "Cadastrar Contrato", "Editar Contrato"]
@@ -2546,9 +2575,9 @@ elif authentication_status == True:
             if acoes: st.session_state['submenu_atual'] = acoes[0]
 
         if acoes:
-            cols = st.columns(len(acoes))
+            cols = st.columns(3 if menu_principal == "Meus Processos" else len(acoes))
             for idx, acao in enumerate(acoes):
-                with cols[idx]:
+                with cols[idx % len(cols)]:
                     if st.button(acao, use_container_width=True, type="primary" if st.session_state['submenu_atual'] == acao else "secondary"):
                         st.session_state['submenu_atual'] = acao
                         limpar_flags_cadastro()
@@ -3266,8 +3295,12 @@ elif authentication_status == True:
                     c_proc = st.text_input("Número do Processo / Identificação *")
                     c_cli = st.text_input("Nome do Cliente *")
                     c_desc = st.text_area("Descrição / Objeto da Peça")
-                    c_resp = st.text_input("Responsável Inicial", value=name)
-                    
+                    if user_role == 'admin':
+                        c_resp = st.text_input("Responsável Inicial", value=name)
+                    else:
+                        c_resp = name
+                        st.caption(f"Responsável: {name}")
+
                     if st.form_submit_button("Salvar Processo", type="primary"):
                         if not c_proc.strip() or not c_cli.strip():
                             st.error("Preencha o Número do Processo e o Cliente.")
@@ -3289,8 +3322,15 @@ elif authentication_status == True:
                             except Exception as e:
                                 st.error(f"Erro ao cadastrar processo: {e}")
 
-            elif sub == "Consultar Meus Processos":
-                st.header("📋 Gerenciamento de Processos")
+            elif sub in ("Consultar Meus Processos", "A PROTOCOLAR", "PROTOCOLADOS"):
+                if sub == "A PROTOCOLAR":
+                    st.header("📋 A PROTOCOLAR — Processos aguardando protocolo")
+                    st.caption("Cadastre novos processos em 'Cadastrar Processo'. Após confirmar o protocolo, o processo será exibido em 'PROTOCOLADOS'.")
+                elif sub == "PROTOCOLADOS":
+                    st.header("✅ PROTOCOLADOS — Acompanhamento de processos")
+                    st.caption("Processos já protocolados, disponíveis para acompanhamento e atualização.")
+                else:
+                    st.header("📋 Gerenciamento de Processos")
                 
                 try:
                     if user_role == 'admin':
@@ -3301,8 +3341,23 @@ elif authentication_status == True:
                 except Exception:
                     res_mp = []
                 
+                # A classificação utiliza o status já existente no Supabase.
+                # O registro de protocolo continua sendo feito exclusivamente pela
+                # rotina de confirmação, que também cuida da pontuação.
+                if sub == "A PROTOCOLAR":
+                    res_mp = [p for p in res_mp if str(p.get("status") or "").strip().casefold()
+                              not in ("protocolado", "acompanhando movimentações", "acompanhando movimentacoes")]
+                elif sub == "PROTOCOLADOS":
+                    res_mp = [p for p in res_mp if str(p.get("status") or "").strip().casefold()
+                              in ("protocolado", "acompanhando movimentações", "acompanhando movimentacoes")]
+
                 if not res_mp:
-                    st.info("Nenhum processo cadastrado ou distribuído no momento.")
+                    if sub == "A PROTOCOLAR":
+                        st.info("Você não possui processos aguardando protocolo.")
+                    elif sub == "PROTOCOLADOS":
+                        st.info("Nenhum processo protocolado encontrado.")
+                    else:
+                        st.info("Nenhum processo cadastrado ou distribuído no momento.")
                 else:
                     df_mp = pd.DataFrame(res_mp)
                     if 'data_atualizacao' in df_mp.columns:

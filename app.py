@@ -1852,6 +1852,35 @@ elif authentication_status == True:
                             st.rerun()
                         except Exception as e:
                             st.error(f'Falha ao atualizar: {e}')
+                with st.expander('🗑️ Excluir despesa completa (todas as parcelas)', expanded=False):
+                    st.error('Atenção: esta operação é definitiva. Exclui todos os lançamentos da despesa selecionada, inclusive parcelas pagas, e a programação correspondente. Pode alterar prestações de contas históricas. Não exclui outras despesas.')
+                    qtd_exclusao = len(despesas_filtradas)
+                    total_exclusao = sum(centavos(d.get('valor')) for d in despesas_filtradas)
+                    qtd_pagas_exclusao = sum(str(d.get('situacao') or '').strip().lower() == 'paga' for d in despesas_filtradas)
+                    st.write(f'**Despesa:** {escolha_grupo}')
+                    st.write(f'**Lançamentos:** {qtd_exclusao} | **Pagos:** {qtd_pagas_exclusao} | **Valor total dos lançamentos:** {moeda_c(total_exclusao)}')
+                    if qtd_pagas_exclusao:
+                        st.warning('Existem parcelas pagas. A exclusão retirará esses valores do balanço, mas NÃO desfará repasses ou registros de auditoria já efetuados. Confira a prestação de contas antes de continuar.')
+                    confirmacao_texto = st.text_input('Para confirmar, digite EXCLUIR DESPESA', key='bal_excluir_despesa_texto')
+                    confirmar_grupo = st.checkbox('Estou ciente de que todas as parcelas desta despesa serão excluídas permanentemente', key='bal_excluir_despesa_confirmar')
+                    if st.button('Excluir despesa inteira', type='primary', disabled=not (confirmar_grupo and confirmacao_texto.strip().upper() == 'EXCLUIR DESPESA'), key='bal_excluir_despesa_toda'):
+                        try:
+                            banco_exclusao = cliente_storage_servidor()
+                            if chave_escolhida[0] == 'programacao':
+                                id_prog_exclusao = chave_escolhida[1]
+                                # Desative primeiro para impedir que o materializador recrie parcelas.
+                                banco_exclusao.table('dejure_despesas_programacoes').update({'ativo': False}).eq('id', id_prog_exclusao).execute()
+                                banco_exclusao.table('dejure_despesas').delete().eq('programacao_id', id_prog_exclusao).execute()
+                                # Apague a programação após seus lançamentos (evita violação de chave estrangeira).
+                                banco_exclusao.table('dejure_despesas_programacoes').delete().eq('id', id_prog_exclusao).execute()
+                            else:
+                                banco_exclusao.table('dejure_despesas').delete().eq('id', chave_escolhida[1]).execute()
+                            registrar_auditoria(username, 'Excluir despesa completa', 'Balanço Financeiro',
+                                f"{escolha_grupo} | {qtd_exclusao} lançamentos | {qtd_pagas_exclusao} pagos | {moeda_c(total_exclusao)}")
+                            st.success('Despesa e todos os seus lançamentos excluídos com sucesso.')
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f'Falha na exclusão completa: {e}. Confira os registros no Supabase antes de tentar novamente.')
                 with st.expander('Excluir lançamento individual'):
                     st.warning('Para encerrar despesas fixas, use a aba Despesas programadas. A exclusão de um lançamento não encerra a recorrência.')
                     confirmar = st.checkbox('Confirmo a exclusão do lançamento selecionado', key='bal_confirma_exclusao')

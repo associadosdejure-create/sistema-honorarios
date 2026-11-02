@@ -1226,24 +1226,54 @@ elif authentication_status == True:
         except Exception as exc:
             st.error(f'Falha ao consultar baixas: {exc}')
             st.stop()
+        # Clientes vinculados aos contratos, inclusive contratos integralmente quitados.
+        try:
+            contratos_baixas = {}
+            inicio_h = 0
+            while True:
+                lote_h = cliente_fin.table('honorarios').select('id,cliente,servico').range(inicio_h, inicio_h + 999).execute().data or []
+                for h in lote_h:
+                    contratos_baixas[str(h['id'])] = h
+                if len(lote_h) < 1000:
+                    break
+                inicio_h += 1000
+        except Exception as exc:
+            st.error(f'Não foi possível carregar os nomes dos clientes: {exc}')
+            st.stop()
+
+        def nome_cliente_baixa(parcela):
+            contrato = contratos_baixas.get(str(parcela.get('honorario_id')), {})
+            return str(contrato.get('cliente') or 'Cliente não identificado').strip()
+
+        parcelas_pagas_baixas = {pid: p for pid, p in todas_parcelas.items()
+                                 if str(p.get('status') or '').strip().lower() == 'pago'}
+        clientes_com_baixas = sorted({nome_cliente_baixa(p) for p in parcelas_pagas_baixas.values()}, key=str.casefold)
+        if not clientes_com_baixas:
+            st.info('Não há parcelas com status Pago para gerenciar.')
+            st.stop()
+        cliente_escolhido_baixas = st.selectbox('1. Selecione o cliente', clientes_com_baixas,
+                                               key='gerenciar_baixas_cliente')
+        parcelas_cliente_baixas = {pid: p for pid, p in parcelas_pagas_baixas.items()
+                                   if nome_cliente_baixa(p) == cliente_escolhido_baixas}
+        st.caption(f'{len(parcelas_cliente_baixas)} parcela(s) marcada(s) como pagas para este cliente.')
         opcoes = {}
         for log in eventos_ativos:
             try:
                 info = json.loads(log.get('detalhes') or '{}')
                 pid = info.get('parcela_id')
-                if pid is None or str(pid) not in todas_parcelas:
+                if pid is None or str(pid) not in parcelas_cliente_baixas:
                     continue
-                parcela = todas_parcelas[str(pid)]
+                parcela = parcelas_cliente_baixas[str(pid)]
                 if str(parcela.get('status', '')).lower() != 'pago':
                     continue
-                rotulo = f"Parcela #{pid} | {info.get('contrato', 'Contrato')} | {formatar_moeda_br(float(info.get('valor_bruto') or 0))} | {info.get('data_baixa', '')}"
+                rotulo = f"{nome_cliente_baixa(parcela)} | Parcela {parcela.get('numero_parcela', pid)} | R$ {float(parcela.get('valor') or 0):,.2f} | Baixa {info.get('data_baixa', '')}"
                 opcoes[rotulo] = (log, info, parcela)
             except (ValueError, TypeError, AttributeError):
                 continue
         if not opcoes:
-            st.info('Nenhuma baixa com repasse ativo para gerenciar. Recebimentos históricos permanecem fora desta lista.')
+            st.info('Este cliente não possui baixas com repasses ativos. Veja abaixo as parcelas pagas sem repasse registrado.')
         else:
-            escolha_baixa = st.selectbox('Selecione a baixa', list(opcoes))
+            escolha_baixa = st.selectbox('2. Selecione a parcela para editar ou cancelar a baixa', list(opcoes))
             log_baixa, info_baixa, parcela_baixa = opcoes[escolha_baixa]
             pid_baixa = parcela_baixa['id']
             st.write(f"**Contrato:** {info_baixa.get('contrato', '-')}  |  **Parcela:** {pid_baixa}")
@@ -1329,6 +1359,50 @@ elif authentication_status == True:
                             st.error(f'Falha ao cancelar: {exc}. Confira o status e a auditoria antes de tentar novamente.')
 
         st.divider()
+        st.subheader('Regularizar parcela paga sem baixa financeira')
+        st.caption('Para parcelas importadas como pagas ou marcadas indevidamente como pagas, sem repasse financeiro ativo. A correção não gera nem cancela repasses.')
+        ids_com_repasse = {str(par['id']) for _, _, par in opcoes.values()}
+        sem_repasse_cliente = {pid: par for pid, par in parcelas_cliente_baixas.items()
+                              if pid not in ids_com_repasse}
+        if sem_repasse_cliente:
+            rotulos_sem = {
+                f"{nome_cliente_baixa(par)} | Parcela {par.get('numero_parcela', pid)} | "
+                f"{formatar_moeda_br(float(par.get('valor') or 0))} | Vencimento {formatar_data_br(par.get('vencimento'))}": pid
+                for pid, par in sem_repasse_cliente.items()
+            }
+            selecao_sem = st.selectbox('Parcela paga sem repasse', list(rotulos_sem), key='regularizar_sem_repasse')
+            pid_sem = rotulos_sem[selecao_sem]
+            with st.form('form_regularizar_status_sem_repasse'):
+                st.warning('Use apenas se confirmar que a parcela NÃO foi recebida. Parcelas históricas efetivamente pagas devem permanecer como Pagas.')
+                motivo_sem = st.text_area('Justificativa da correção (obrigatória)', key='motivo_sem_repasse')
+                confirma_sem = st.checkbox('Confirmo que esta parcela ainda não foi recebida', key='confirma_sem_repasse')
+                salvar_sem = st.form_submit_button('Corrigir status para Pendente', type='primary')
+            if salvar_sem:
+                if not confirma_sem or not motivo_sem.strip():
+                    st.error('Confirme que não houve recebimento e informe a justificativa.')
+                else:
+                    try:
+                        # Verificação final evita reverter parcela com repasse ativo em outra tela.
+                        repasses_atuais = dejure_logs_repasses_ativos(cliente_fin)
+                        possui_repasse = any(str(json.loads(l.get('detalhes') or '{}').get('parcela_id')) == str(pid_sem)
+                                              for l in repasses_atuais)
+                        if possui_repasse:
+                            st.error('Esta parcela possui repasse ativo. Utilize a opção Cancelar baixa acima.')
+                        else:
+                            cliente_fin.table('parcelas').update({'status': 'Pendente'}).eq('id', pid_sem).execute()
+                            registrar_auditoria(username, 'Regularizar status de parcela', 'Pagamentos',
+                                                json.dumps({'parcela_id': pid_sem, 'cliente': cliente_escolhido_baixas,
+                                                            'status_anterior': 'Pago', 'status_novo': 'Pendente',
+                                                            'motivo': motivo_sem.strip()}, ensure_ascii=False))
+                            st.cache_data.clear()
+                            st.success('Parcela corrigida para Pendente, sem alterar repasses.')
+                            st.rerun()
+                    except Exception as exc:
+                        st.error(f'Falha ao corrigir parcela: {exc}')
+        else:
+            st.info('Nenhuma parcela paga sem repasse para este cliente.')
+
+        st.divider()
         st.subheader('Parcelas históricas — inclusão no Balanço')
         st.caption('Selecione uma parcela recebida anteriormente e marque ou desmarque sua inclusão contábil. Não gera novo repasse nem altera o status Pago.')
         try:
@@ -1356,9 +1430,9 @@ elif authentication_status == True:
             for pid, par in todas_parcelas.items():
                 if str(par.get('honorario_id')) in ids_honorarios and str(par.get('status', '')).lower() == 'pago':
                     ids_historicos.add(pid)
-            lista_hist = {pid: todas_parcelas[pid] for pid in ids_historicos if pid in todas_parcelas and str(todas_parcelas[pid].get('status', '')).lower() == 'pago'}
+            lista_hist = {pid: todas_parcelas[pid] for pid in ids_historicos if pid in parcelas_cliente_baixas and str(todas_parcelas[pid].get('status', '')).lower() == 'pago'}
             if lista_hist:
-                labels_hist = {f"Parcela #{pid} | Contrato #{par.get('honorario_id')} | {par.get('numero_parcela')} | {formatar_moeda_br(float(par.get('valor') or 0))}": pid for pid, par in sorted(lista_hist.items(), key=lambda kv: str(kv[0]))}
+                labels_hist = {f"{nome_cliente_baixa(par)} | Parcela {par.get('numero_parcela')} | {formatar_moeda_br(float(par.get('valor') or 0))}": pid for pid, par in sorted(lista_hist.items(), key=lambda kv: str(kv[0]))}
                 escolha_hist = st.selectbox('Parcela histórica', list(labels_hist), key='baixa_historico_selecao')
                 id_hist = labels_hist[escolha_hist]
                 par_hist = lista_hist[id_hist]

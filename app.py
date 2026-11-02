@@ -1032,10 +1032,10 @@ elif authentication_status == True:
 
     if menu_escolha == "🏠 Página Inicial":
         if os.path.exists("logo.png"):
-            # Logo centralizada, com 40% da largura útil da Página Inicial.
-            # O Streamlit preserva automaticamente a proporção da imagem.
+            # Logo centralizada: 60% menor que a versão anterior (24% da largura útil).
+            # Redução adicional de 40%, preservando a proporção original.
             # Não modifica as logos do login ou da barra lateral.
-            _logo_esquerda, _logo_centro, _logo_direita = st.columns([3, 4, 3], gap="small")
+            _logo_esquerda, _logo_centro, _logo_direita = st.columns([38, 24, 38], gap="small")
             with _logo_centro:
                 st.image("logo.png", use_container_width=True)
         else:

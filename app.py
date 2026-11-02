@@ -441,6 +441,33 @@ def formatar_moeda_br(val):
     except:
         return "R$ 0,00"
 
+# --- STATUS VISUAL UNIFICADO: A RECEBER / A PAGAR ---
+def dejure_status_parcela_visual(status, vencimento, mes_referencia, natureza='receber'):
+    """Somente apresentação: nunca altera o status financeiro no banco."""
+    quitado = str(status or '').strip().casefold() in ('pago', 'paga', 'quitado', 'quitada', 'recebido', 'recebida')
+    if quitado:
+        return '🟢 Recebida' if natureza == 'receber' else '🟢 Paga'
+    try:
+        data_v = date.fromisoformat(str(vencimento)[:10])
+        mesmo_mes = data_v.year == mes_referencia.year and data_v.month == mes_referencia.month
+    except (ValueError, TypeError):
+        mesmo_mes = False
+    if mesmo_mes:
+        return '🔴 A receber no mês' if natureza == 'receber' else '🔴 A pagar no mês'
+    return '🟡 A receber' if natureza == 'receber' else '🟡 A pagar'
+
+
+def dejure_cor_status_visual(valor):
+    txt = str(valor)
+    if txt.startswith('🟢'):
+        return 'background-color: #123d2b; color: #9ff3c1; font-weight: bold;'
+    if txt.startswith('🔴'):
+        return 'background-color: #552025; color: #ffb1b1; font-weight: bold;'
+    if txt.startswith('🟡'):
+        return 'background-color: #493d16; color: #ffe18a; font-weight: bold;'
+    return ''
+
+
 def carregar_usuarios_db():
     # O hash inicial fica exclusivamente no Streamlit Secrets, nunca no GitHub.
     # Após trocar a senha na tela, o hash persistido no Supabase tem prioridade.
@@ -1261,6 +1288,8 @@ elif authentication_status == True:
                                   if str(p.get('status') or '').strip().casefold() == 'pago'}
         st.caption(f'{len(parcelas_todas_cliente)} parcela(s) cadastrada(s) para este cliente; '
                    f'{len(parcelas_cliente_baixas)} marcada(s) como pagas.')
+        referencia_baixas = st.date_input('Mês de referência para destacar parcelas a receber',
+                                          value=date.today().replace(day=1), key='referencia_baixas_status')
         st.subheader('Todas as parcelas do cliente')
         st.caption('Inclui parcelas históricas e parcelas em andamento, pagas ou pendentes. '
                    'Somente parcelas pagas podem ter baixa editada ou cancelada.')
@@ -1274,10 +1303,13 @@ elif authentication_status == True:
                 'Parcela': str(par.get('numero_parcela') or pid),
                 'Vencimento': formatar_data_br(par.get('vencimento')),
                 'Valor': formatar_moeda_br(float(par.get('valor') or 0)),
-                'Status': str(par.get('status') or 'Não informado'),
+                'Situação': dejure_status_parcela_visual(par.get('status'), par.get('vencimento'), referencia_baixas, 'receber'),
                 'ID': pid,
             })
-        st.dataframe(linhas_visao, use_container_width=True, hide_index=True)
+        if linhas_visao:
+            st.dataframe(pd.DataFrame(linhas_visao).style.map(dejure_cor_status_visual, subset=['Situação']),
+                         use_container_width=True, hide_index=True)
+        st.caption('🟢 Recebida: baixa registrada. 🔴 A receber no mês: vencimento na referência selecionada. 🟡 A receber: pendente fora desse mês.')
         if not parcelas_cliente_baixas:
             st.info('Este cliente não tem parcelas pagas para editar ou cancelar. '
                     'As parcelas pendentes estão listadas acima e permanecem no controle de cobrança.')
@@ -1779,14 +1811,10 @@ elif authentication_status == True:
                     'ID': d['id'], 'Tipo': d.get('tipo'), 'Descrição': d.get('descricao'),
                     'Valor': moeda_c(centavos(d.get('valor'))), 'Competência': str(d.get('competencia') or '')[:7],
                     'Vencimento': formatar_data_br(d.get('vencimento')),
-                    'Situação': ('🟢 Paga' if str(d.get('situacao') or '').strip().casefold() == 'paga'
-                                 else '🔴 Vence no mês' if (data_segura(d.get('vencimento')) is not None and
-                                       data_segura(d.get('vencimento')).year == hoje_fin.year and
-                                       data_segura(d.get('vencimento')).month == hoje_fin.month)
-                                 else '🟡 Pendente'),
+                    'Situação': dejure_status_parcela_visual(d.get('situacao'), d.get('vencimento'), hoje_fin, 'pagar'),
                     'Parcela': d.get('numero_parcela_despesa') or '—'
                 } for d in despesas_filtradas]
-                st.dataframe(pd.DataFrame(linhas_d), hide_index=True, use_container_width=True)
+                st.dataframe(pd.DataFrame(linhas_d).style.map(dejure_cor_status_visual, subset=['Situação']), hide_index=True, use_container_width=True)
                 opcoes_d = {f"#{d['id']} | Parcela {d.get('numero_parcela_despesa') or 'única'} | {str(d.get('competencia') or '')[:7]} | {moeda_c(centavos(d.get('valor')))}": d for d in despesas_filtradas}
                 escolha_d = st.selectbox('2. Selecione a parcela / lançamento para editar',
                                          list(opcoes_d), key='bal_despesa_edicao')
@@ -1957,8 +1985,8 @@ elif authentication_status == True:
                     # Pago prevalece; vermelho indica parcela ainda não paga
                     # com vencimento dentro da competência em prestação de contas.
                     status_visual = ('🟢 Paga' if pago else
-                                     '🔴 Vence no mês' if vencimento_item and inicio <= vencimento_item < fim else
-                                     '🟡 Pendente')
+                                     '🔴 A pagar no mês' if vencimento_item and inicio <= vencimento_item < fim else
+                                     '🟡 A pagar')
                     linhas_conferencia.append({
                         'ID': d.get('id'),
                         'Descrição': d.get('descricao') or '',
@@ -1984,7 +2012,7 @@ elif authentication_status == True:
                 tabela_conferencia = pd.DataFrame(linhas_conferencia)
                 st.dataframe(tabela_conferencia.style.map(cor_status_prestacao, subset=['Situação']),
                              hide_index=True, use_container_width=True)
-                st.caption('🟢 Paga: pagamento registrado. 🔴 Vence no mês: não paga, com vencimento na competência selecionada. 🟡 Pendente: não paga, com vencimento fora dessa competência.')
+                st.caption('🟢 Paga: despesa quitada. 🔴 A pagar no mês: não paga, com vencimento na competência selecionada. 🟡 A pagar: não paga, fora dessa competência.')
                 st.caption(
                     f'Total de despesas pagas: {moeda_c(despesas_pagas)} '
                     f'(Leônidas: {moeda_c(metade_leo)}; Nelson: {moeda_c(metade_nel)}). '
@@ -4169,7 +4197,12 @@ elif authentication_status == True:
                             df_p['vencimento'] = df_p['vencimento'].apply(formatar_data_br)
                         if 'valor' in df_p.columns:
                             df_p['valor'] = df_p['valor'].apply(formatar_moeda_br)
-                        exibir_tabela(df_p.style.map(colorir_status, subset=['status']), use_container_width=True, hide_index=True)
+                        referencia_parcelas = st.date_input('Mês de referência para parcelas a receber',
+                                                             value=date.today().replace(day=1), key='referencia_parcelas_receber')
+                        df_p['Situação visual'] = [dejure_status_parcela_visual(p.get('status'), p.get('vencimento'), referencia_parcelas, 'receber') for p in res_p.data]
+                        exibir_tabela(df_p.style.map(dejure_cor_status_visual, subset=['Situação visual']),
+                                     use_container_width=True, hide_index=True)
+                        st.caption('🟢 Recebida: parcela paga pelo cliente. 🔴 A receber no mês: parcela ainda não recebida com vencimento no mês selecionado. 🟡 A receber: demais parcelas pendentes.')
                     else: st.info("Sem parcelas.")
                 else: st.info("Sem contratos.")
 
@@ -4201,7 +4234,7 @@ elif authentication_status == True:
                     if not res_p.data:
                         st.success("✅ Este contrato não possui parcelas pendentes.")
                     else:
-                        parcelas_pendentes = {f"Parcela: {p['numero_parcela']} — {formatar_moeda_br(p['valor'])} (Venc: {formatar_data_br(p['vencimento'])})": p for p in res_p.data}
+                        parcelas_pendentes = {f"{dejure_status_parcela_visual(p.get('status'), p.get('vencimento'), date.today(), 'receber')} | Parcela: {p['numero_parcela']} — {formatar_moeda_br(p['valor'])} (Venc: {formatar_data_br(p['vencimento'])})": p for p in res_p.data}
                         sel_parcela_str = st.selectbox("2. Selecione a Parcela a Baixar:", list(parcelas_pendentes.keys()))
                         parcela_obj = parcelas_pendentes[sel_parcela_str]
                         valor_bruto = float(parcela_obj['valor'])

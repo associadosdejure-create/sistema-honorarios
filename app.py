@@ -1525,11 +1525,13 @@ elif authentication_status == True:
                 st.info('Nenhum repasse encontrado neste período.')
 
         with abas[3]:
-            st.subheader('Projeção dos próximos meses')
-            st.caption('Estimativa sobre parcelas pendentes. Os honorários futuros são simulados em 60/40 sobre o valor bruto da parcela; não descontam prospectador, operador ou fundo de colaboradores. Não representam repasse garantido.')
+            st.subheader('Projeção de recebimentos por sócio')
+            st.caption('Estimativa das parcelas pendentes, por mês e no período total. A projeção utiliza a regra interna de divisão dos sócios, sem aplicar desconto automático de colaboradores às parcelas futuras.')
             meses = st.slider('Meses à frente', min_value=1, max_value=24, value=12)
             base = hoje_fin.replace(day=1)
             proj = []
+            total_bruto = total_despesas = total_leo_bruto = total_nel_bruto = 0
+            total_leo_liquido = total_nel_liquido = total_parcelas = 0
             for i in range(meses):
                 mi = base + relativedelta(months=i)
                 mf = mi + relativedelta(months=1)
@@ -1540,11 +1542,42 @@ elif authentication_status == True:
                 estim_nel = bruto - estim_leo
                 custo_nel = despesas_mes // 2
                 custo_leo = despesas_mes - custo_nel
-                proj.append({'Mês': mi.strftime('%m/%Y'), 'Parcelas': len(parcelas_mes), 'A receber (bruto)': moeda_c(bruto),
-                             'Despesas pendentes': moeda_c(despesas_mes), 'Leônidas estimado': moeda_c(estim_leo - custo_leo),
-                             'Nelson estimado': moeda_c(estim_nel - custo_nel)})
+                liquido_leo = estim_leo - custo_leo
+                liquido_nel = estim_nel - custo_nel
+                total_parcelas += len(parcelas_mes)
+                total_bruto += bruto
+                total_despesas += despesas_mes
+                total_leo_bruto += estim_leo
+                total_nel_bruto += estim_nel
+                total_leo_liquido += liquido_leo
+                total_nel_liquido += liquido_nel
+                proj.append({'Mês': mi.strftime('%m/%Y'), 'Parcelas': len(parcelas_mes),
+                             'A receber (bruto)': moeda_c(bruto),
+                             'Leônidas (parcelas)': moeda_c(estim_leo),
+                             'Nelson (parcelas)': moeda_c(estim_nel),
+                             'Despesas pendentes': moeda_c(despesas_mes),
+                             'Leônidas (após despesas)': moeda_c(liquido_leo),
+                             'Nelson (após despesas)': moeda_c(liquido_nel)})
+            st.markdown('#### Total projetado para o período')
+            col_p1, col_p2, col_p3 = st.columns(3)
+            col_p1.metric('Total de parcelas a receber', moeda_c(total_bruto))
+            col_p2.metric('Leônidas — parcelas', moeda_c(total_leo_bruto))
+            col_p3.metric('Nelson — parcelas', moeda_c(total_nel_bruto))
+            col_d1, col_d2, col_d3 = st.columns(3)
+            col_d1.metric('Despesas pendentes previstas', moeda_c(total_despesas))
+            col_d2.metric('Leônidas — após despesas', moeda_c(total_leo_liquido))
+            col_d3.metric('Nelson — após despesas', moeda_c(total_nel_liquido))
+            st.markdown('#### Projeção mês a mês')
+            proj.append({'Mês': 'TOTAL DO PERÍODO', 'Parcelas': total_parcelas,
+                         'A receber (bruto)': moeda_c(total_bruto),
+                         'Leônidas (parcelas)': moeda_c(total_leo_bruto),
+                         'Nelson (parcelas)': moeda_c(total_nel_bruto),
+                         'Despesas pendentes': moeda_c(total_despesas),
+                         'Leônidas (após despesas)': moeda_c(total_leo_liquido),
+                         'Nelson (após despesas)': moeda_c(total_nel_liquido)})
             st.dataframe(pd.DataFrame(proj), hide_index=True, use_container_width=True)
-            st.warning('Despesas fixas cadastradas não são replicadas automaticamente para meses futuros. Cadastre cada competência para incluí-la na projeção. Parcelas vencidas antes do mês atual não entram nesta tabela.')
+            st.info('Valores por sócio são projeções, não repasses realizados. Eventuais pagamentos a colaboradores definidos na baixa futura reduzirão os valores efetivos. Os saldos após despesas consideram somente despesas pendentes cadastradas para cada mês.')
+            st.warning('Despesas fixas não são replicadas automaticamente. Parcelas vencidas antes do mês atual não entram nesta projeção.')
 
     elif menu_escolha == "Distribuição de Processos":
         if user_role != 'admin':

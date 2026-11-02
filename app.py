@@ -2516,7 +2516,7 @@ elif authentication_status == True:
             acoes = ["Consultar Prospectados Pendentes", "Cadastrar Prospectado Pendente", "Editar Prospectado Pendente"]
             if user_role == 'admin': acoes.append("Excluir Prospectado Pendente")
         elif menu_principal == "Meus Processos":
-            acoes = ["A PROTOCOLAR", "PROTOCOLADOS", "Consultar Meus Processos", "Cadastrar Processo"]
+            acoes = ["Consultar Meus Processos", "Cadastrar Processo"]
             if user_role == 'admin': acoes.extend(['Central de Revisões', 'Armazenamento'])
         elif menu_principal == "Pagamentos":
             acoes = ["Ver Parcelas", "Cadastrar Contrato", "Editar Contrato"]
@@ -2546,9 +2546,9 @@ elif authentication_status == True:
             if acoes: st.session_state['submenu_atual'] = acoes[0]
 
         if acoes:
-            cols = st.columns(3 if menu_principal == "Meus Processos" else len(acoes))
+            cols = st.columns(len(acoes))
             for idx, acao in enumerate(acoes):
-                with cols[idx % len(cols)]:
+                with cols[idx]:
                     if st.button(acao, use_container_width=True, type="primary" if st.session_state['submenu_atual'] == acao else "secondary"):
                         st.session_state['submenu_atual'] = acao
                         limpar_flags_cadastro()
@@ -3266,12 +3266,8 @@ elif authentication_status == True:
                     c_proc = st.text_input("Número do Processo / Identificação *")
                     c_cli = st.text_input("Nome do Cliente *")
                     c_desc = st.text_area("Descrição / Objeto da Peça")
-                    if user_role == 'admin':
-                        c_resp = st.text_input("Responsável Inicial", value=name)
-                    else:
-                        c_resp = name
-                        st.caption(f"Responsável: {name}")
-
+                    c_resp = st.text_input("Responsável Inicial", value=name)
+                    
                     if st.form_submit_button("Salvar Processo", type="primary"):
                         if not c_proc.strip() or not c_cli.strip():
                             st.error("Preencha o Número do Processo e o Cliente.")
@@ -3293,15 +3289,8 @@ elif authentication_status == True:
                             except Exception as e:
                                 st.error(f"Erro ao cadastrar processo: {e}")
 
-            elif sub in ("Consultar Meus Processos", "A PROTOCOLAR", "PROTOCOLADOS"):
-                if sub == "A PROTOCOLAR":
-                    st.header("📋 A PROTOCOLAR — Processos aguardando protocolo")
-                    st.caption("Cadastre novos processos em 'Cadastrar Processo'. Após confirmar o protocolo, o processo será exibido em 'PROTOCOLADOS'.")
-                elif sub == "PROTOCOLADOS":
-                    st.header("✅ PROTOCOLADOS — Acompanhamento de processos")
-                    st.caption("Processos já protocolados, disponíveis para acompanhamento e atualização.")
-                else:
-                    st.header("📋 Gerenciamento de Processos")
+            elif sub == "Consultar Meus Processos":
+                st.header("📋 Gerenciamento de Processos")
                 
                 try:
                     if user_role == 'admin':
@@ -3312,23 +3301,8 @@ elif authentication_status == True:
                 except Exception:
                     res_mp = []
                 
-                # A classificação utiliza o status já existente no Supabase.
-                # O registro de protocolo continua sendo feito exclusivamente pela
-                # rotina de confirmação, que também cuida da pontuação.
-                if sub == "A PROTOCOLAR":
-                    res_mp = [p for p in res_mp if str(p.get("status") or "").strip().casefold()
-                              not in ("protocolado", "acompanhando movimentações", "acompanhando movimentacoes")]
-                elif sub == "PROTOCOLADOS":
-                    res_mp = [p for p in res_mp if str(p.get("status") or "").strip().casefold()
-                              in ("protocolado", "acompanhando movimentações", "acompanhando movimentacoes")]
-
                 if not res_mp:
-                    if sub == "A PROTOCOLAR":
-                        st.info("Você não possui processos aguardando protocolo.")
-                    elif sub == "PROTOCOLADOS":
-                        st.info("Nenhum processo protocolado encontrado.")
-                    else:
-                        st.info("Nenhum processo cadastrado ou distribuído no momento.")
+                    st.info("Nenhum processo cadastrado ou distribuído no momento.")
                 else:
                     df_mp = pd.DataFrame(res_mp)
                     if 'data_atualizacao' in df_mp.columns:

@@ -4231,17 +4231,26 @@ elif authentication_status == True:
                 st.header("📝 Novo Contrato e Parcelamento")
                 cli_db = carregar_dados("clientes_cadastrados")
                 nomes = [c['nome'] for c in cli_db]
+                # À vista cria um único recebimento pendente, com rateio na baixa.
+                tipo_pagamento = st.radio(
+                    "Forma de pagamento do contrato:",
+                    ["Parcelado", "À vista (pagamento integral)"],
+                    key="hon_tipo_pagamento", horizontal=True
+                )
+                pagamento_a_vista = tipo_pagamento == "À vista (pagamento integral)"
                 # Controles dinâmicos fora do formulário: Streamlit atualiza a cada alteração.
                 modo_parcelamento = st.radio(
                     "Forma de parcelamento do saldo:",
                     ["Parcelas iguais (automático)", "Parcelas personalizadas (valores diferentes)"],
                     key="modo_parcelamento_honorarios",
-                    horizontal=True
+                    horizontal=True,
+                    disabled=pagamento_a_vista
                 )
-                personalizado = modo_parcelamento == "Parcelas personalizadas (valores diferentes)"
+                personalizado = (not pagamento_a_vista) and modo_parcelamento == "Parcelas personalizadas (valores diferentes)"
                 npar = int(st.number_input(
                     "Quantidade de parcelas do saldo", min_value=1, max_value=36,
-                    value=3, step=1, key="hon_quantidade_parcelas_dinamica"
+                    value=3, step=1, key="hon_quantidade_parcelas_dinamica",
+                    disabled=pagamento_a_vista
                 ))
 
                 # Dados e valores personalizados também ficam fora do st.form.
@@ -4250,7 +4259,11 @@ elif authentication_status == True:
                 cli = st.text_input("Nome", key="hon_cliente_nome") if cli_op == "Outro" else cli_op
                 serv = st.text_input("Serviço", key="hon_servico")
                 vtot = campo_moeda_br("Valor Total do Contrato (R$)", "hon_valor_total")
-                v_entrada = campo_moeda_br("Valor de Entrada (R$)", "hon_valor_entrada")
+                if pagamento_a_vista:
+                    v_entrada = 0.0
+                    st.info("À vista: será gerado um único pagamento pendente pelo valor integral. O rateio será calculado quando o ADM confirmar o recebimento em 'Baixar Parcela'.")
+                else:
+                    v_entrada = campo_moeda_br("Valor de Entrada (R$)", "hon_valor_entrada")
                 saldo_preview = round(float(vtot or 0) - float(v_entrada or 0), 2)
                 valores_parcelas = []
 
@@ -4274,15 +4287,18 @@ elif authentication_status == True:
                         st.error(f"As parcelas ultrapassam o saldo em {formatar_moeda_br(abs(diferenca_preview))}.")
                     else:
                         st.success("A soma das parcelas corresponde ao saldo restante.")
-                else:
+                elif not pagamento_a_vista:
                     st.caption(f"O saldo será dividido automaticamente em {npar} parcelas.")
 
                 with st.form("fc_hon", clear_on_submit=False):
-                    dt1 = dejure_date_input_br("Vencimento da 1ª Parcela (ou Entrada)", datetime.now())
+                    dt1 = dejure_date_input_br(
+                        "Data prevista do pagamento integral" if pagamento_a_vista else "Vencimento da 1ª Parcela (ou Entrada)",
+                        datetime.now()
+                    )
 
                     col_b_h1, col_b_h2 = st.columns(2)
                     with col_b_h1:
-                        salvar_hon = st.form_submit_button("Gerar Contrato e Parcelas", type="primary", use_container_width=True)
+                        salvar_hon = st.form_submit_button("Cadastrar Contrato à Vista" if pagamento_a_vista else "Gerar Contrato e Parcelas", type="primary", use_container_width=True)
                     with col_b_h2:
                         voltar_hon = st.form_submit_button("⬅️ Voltar", use_container_width=True)
 
@@ -4302,6 +4318,22 @@ elif authentication_status == True:
                             if res.data:
                                 h_id = res.data[0]['id']
                                 saldo_restante = round(float(vtot) - float(v_entrada), 2)
+
+                                if pagamento_a_vista:
+                                    # Mesmo fluxo de parcelas, porém um único título integral.
+                                    # "À vista" usa o rateio completo da entrada na baixa.
+                                    supabase.table("parcelas").insert({
+                                        "honorario_id": h_id,
+                                        "numero_parcela": "À vista",
+                                        "valor": round(float(vtot), 2),
+                                        "vencimento": dt1.strftime("%Y-%m-%d"),
+                                        "status": "Pendente"
+                                    }).execute()
+                                    registrar_auditoria(username, "Cadastrar Contrato à Vista", "Pagamentos",
+                                                        f"Cliente: {cli} - Total: {formatar_moeda_br(vtot)}")
+                                    st.cache_data.clear()
+                                    confirmar_operacao("Contrato à vista cadastrado. O pagamento integral está pendente de baixa.")
+                                    st.rerun()
 
                                 if v_entrada > 0:
                                     supabase.table("parcelas").insert({
@@ -4634,7 +4666,8 @@ elif authentication_status == True:
                                 lista_usuarios.append({"nome": nome_u, "papel": papel_u})
                         
                         nomes_opcoes = [u['nome'] for u in lista_usuarios]
-                        is_entrada = (parcela_obj['numero_parcela'] == "Entrada")
+                        is_entrada = (parcela_obj['numero_parcela'] in ("Entrada", "À vista"))
+                        is_avista = parcela_obj['numero_parcela'] == "À vista"
                         
                         opcoes_prosp_baixa = ["Nenhum / Sem Prospectador", "Prospectador Externo"] + nomes_opcoes
                         if prosp_automatico_cli.startswith("Prospectador Externo:") and prosp_automatico_cli not in opcoes_prosp_baixa:
@@ -4645,8 +4678,8 @@ elif authentication_status == True:
                             idx_prosp_init = opcoes_prosp_baixa.index(prosp_automatico_cli)
 
                         if is_entrada:
-                            st.subheader("⚙️ Regra de Entrada (Com / Sem Prospecção)")
-                            st.info("Entrada: descontar prospectador e operador; aplicar fundo de 5% sobre o saldo somente se o valor bruto negociado do contrato for igual ou superior a R$ 1.000,00; dividir o restante entre os sócios (60/40).")
+                            st.subheader("⚙️ Regra de Pagamento à Vista" if is_avista else "⚙️ Regra de Entrada (Com / Sem Prospecção)")
+                            st.info(("Pagamento integral à vista" if is_avista else "Entrada") + ": descontar prospectador e operador; aplicar fundo de 5% sobre o saldo somente se o valor bruto negociado do contrato for igual ou superior a R$ 1.000,00; dividir o restante entre os sócios (60/40).")
                             
                             col_r1, col_r2 = st.columns(2)
                             with col_r1:
@@ -4696,7 +4729,7 @@ elif authentication_status == True:
                             regra_aplicada = "Entrada"
                             
                             if prosp_name == resp_name:
-                                regra_aplicada = "Entrada (Acúmulo)"
+                                regra_aplicada = "À vista (Acúmulo)" if is_avista else "Entrada (Acúmulo)"
                                 taxa = 0.60 if resp_role in ['admin', 'advogado'] else 0.40
                                 val_operador = round(valor_bruto * taxa, 2)
                                 val_prospectador = val_operador
@@ -4788,6 +4821,7 @@ elif authentication_status == True:
                                 "contrato": sel_contrato_str,
                                 "regra": regra_aplicada,
                                 "valor_bruto": round(valor_bruto, 2),
+                                "tipo_recebimento": "À vista" if is_avista else ("Entrada" if is_entrada else "Parcela"),
                                 "prospectador": prosp_name,
                                 "valor_prospectador": round(val_prospectador, 2),
                                 "operador": resp_name,

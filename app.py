@@ -3333,6 +3333,40 @@ elif authentication_status == True:
                                     st.write(f"**Tel / Cel:** {p.get('telefone') or p.get('celular') or 'N/D'}")
                                 with col_info3:
                                     st.write(f"**Cel. Prospectado:** {p.get('celular_prospectados') or 'N/D'}")
+                                # Envio direto à fila unificada, sem mudar o status do prospectado.
+                                if not p.get('atendido', False):
+                                    try:
+                                        envios_existentes = supabase.table('distribuicao_processos').select('id,status').eq('prospectado_id', p['id']).execute().data or []
+                                    except Exception as erro_consulta_envio:
+                                        envios_existentes = None
+                                        st.error(f"Não foi possível consultar a fila de distribuição: {erro_consulta_envio}")
+                                    if envios_existentes is not None:
+                                        if envios_existentes:
+                                            st.caption("📥 Já enviado à Distribuição de Processos.")
+                                        elif st.button("📤 Enviar para distribuição", key=f"enviar_prospectado_{p['id']}", use_container_width=False):
+                                            try:
+                                                # Nova conferência para evitar duplicidade entre atualizações de tela.
+                                                rechecagem = supabase.table('distribuicao_processos').select('id').eq('prospectado_id', p['id']).execute().data or []
+                                                if rechecagem:
+                                                    st.warning("Este prospectado já consta na distribuição. Nenhum registro duplicado foi criado.")
+                                                else:
+                                                    supabase.table('distribuicao_processos').insert({
+                                                        'cliente_nome': p.get('nome') or 'Sem nome',
+                                                        'cpf_cnpj': None,
+                                                        'telefone': p.get('celular') or p.get('telefone'),
+                                                        'cadastrado_por': name,
+                                                        'status': 'Pendente',
+                                                        'data_envio': date.today().isoformat(),
+                                                        'observacoes': f"Prospectado pendente #{p['id']} — {p.get('prospectador') or 'Sem prospectador'}",
+                                                        'origem_cliente': 'Prospectados Pendentes',
+                                                        'prospectado_id': p['id']
+                                                    }).execute()
+                                                    registrar_auditoria(username, 'Enviar Prospectado para Distribuição', 'Prospectados Pendentes', f"Prospectado ID {p['id']} - {p.get('nome')}")
+                                                    st.cache_data.clear()
+                                                    st.success("Cliente enviado para a fila de distribuição. Continua pendente até o atendimento.")
+                                                    st.rerun()
+                                            except Exception as erro_envio:
+                                                st.error(f"Erro ao enviar prospectado: {erro_envio}")
                                 with col_info4:
                                     status_atual = p.get('atendido', False)
                                     check_atendido = st.checkbox("Atendido", value=status_atual, key=f"chk_atend_{p['id']}")

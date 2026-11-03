@@ -533,12 +533,10 @@ authenticator = stauth.Authenticate(
     credentials,
     cookie_name="sistema_dejure_cookie_seguro_v1",
     cookie_key=cookie_secret,
-    cookie_expiry_days=1
+    cookie_expiry_days=0
 )
 
-authentication_status = st.session_state.get('authentication_status')
-
-if authentication_status != True:
+if st.session_state.get('authentication_status') is not True:
     col_l1, col_l2, col_l3 = st.columns([1, 1, 1])
     with col_l2:
         if os.path.exists("logo.png"): st.image("logo.png", use_container_width=True)
@@ -549,8 +547,21 @@ try:
 except Exception:
     authenticator.login('main')
 
-name = st.session_state.get('name')
-username = st.session_state.get('username')
+# Leia o resultado APÓS authenticator.login(): antes disso o estado pode estar desatualizado.
+authentication_status = st.session_state.get('authentication_status')
+name = st.session_state.get('name') if authentication_status is True else None
+username = st.session_state.get('username') if authentication_status is True else None
+
+# Impede que filtros, seleções e telas do usuário anterior permaneçam ao trocar de conta.
+if authentication_status is True and username:
+    if st.session_state.get('_dejure_usuario_da_interface') != username:
+        for chave in ('pagina_atual', 'submenu_atual', 'ocultar_vencidos',
+                      'ocultar_urgentes', 'ocultar_lembretes', 'login_registrado',
+                      'ultima_atividade'):
+            st.session_state.pop(chave, None)
+        st.session_state['_dejure_usuario_da_interface'] = username
+elif authentication_status is not True:
+    st.session_state.pop('_dejure_usuario_da_interface', None)
 
 if authentication_status == True and not st.session_state.get('login_registrado', False):
     registrar_auditoria(username, "Login", "Acesso", f"Usuário {name} ({username}) efetuou login no sistema.")
@@ -712,7 +723,15 @@ elif authentication_status == True:
         
         if st.button("Sair", use_container_width=True):
             registrar_auditoria(username, "Logout", "Acesso", f"Usuário {name} ({username}) efetuou logout do sistema.")
-            st.session_state.update({'authentication_status': None, 'login_registrado': False})
+            # Revoga o cookie de autenticação deste navegador antes de limpar a sessão.
+            try:
+                authenticator.cookie_manager.delete(authenticator.cookie_name)
+            except Exception:
+                pass
+            for chave in ('authentication_status', 'name', 'username',
+                          'login_registrado', '_dejure_usuario_da_interface',
+                          'pagina_atual', 'submenu_atual', 'ultima_atividade'):
+                st.session_state.pop(chave, None)
             st.rerun()
 
         # Atualização automática do cronômetro sem reiniciar a página inteira.

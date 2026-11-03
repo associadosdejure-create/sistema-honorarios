@@ -3,6 +3,7 @@ import streamlit as st
 import streamlit_authenticator as stauth
 from supabase import create_client
 import pandas as pd
+from pandas.io.formats.style import Styler
 from datetime import datetime, date
 from dateutil.relativedelta import relativedelta
 import time
@@ -160,7 +161,7 @@ def largura_automatica_colunas(tabela):
 
 def exibir_tabela(dados, **kwargs):
     """Exibe valores ausentes em branco e ajusta a largura das colunas."""
-    if isinstance(dados, pd.io.formats.style.Styler):
+    if isinstance(dados, Styler):
         # Preserva os estilos e trabalha com uma cópia dos dados.
         tabela = preparar_tabela_visualizacao(dados.data)
         dados = dados._copy(deepcopy=True)
@@ -544,10 +545,11 @@ if authentication_status != True:
         if os.path.exists("logo.png"): st.image("logo.png", use_container_width=True)
         else: st.markdown("<h1 style='text-align: center; color: #D4AF37;'>⚖️ DEJURE ADVOCACIA</h1>", unsafe_allow_html=True)
 
-try:
-    authenticator.login(location='main')
-except Exception:
-    authenticator.login('main')
+# A biblioteca atual aceita location como argumento nomeado.
+# Não repetir o login após uma exceção: isso pode mascarar falhas de cookies.
+authenticator.login(location='main')
+# Releia o estado depois de processar o formulário de login.
+authentication_status = st.session_state.get('authentication_status')
 
 name = st.session_state.get('name')
 username = st.session_state.get('username')

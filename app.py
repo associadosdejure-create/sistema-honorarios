@@ -2298,7 +2298,41 @@ elif authentication_status == True:
                     exibir_tabela(df_dist, use_container_width=True, hide_index=True)
 
                 st.markdown("---")
-                
+                with st.expander("➕ Incluir prospectado pendente na fila de distribuição", expanded=False):
+                    st.caption("O prospectado continua pendente. O atendimento só será concluído pelo usuário responsável.")
+                    try:
+                        prospectados_fila = supabase.table("prospectados_pendentes").select("*").execute().data or []
+                        candidatos = [p for p in prospectados_fila if not p.get("atendido", False)]
+                        opcoes_prospectados = {f"#{p['id']} — {p.get('nome', 'Sem nome')}": p for p in candidatos}
+                        if not opcoes_prospectados:
+                            st.info("Nenhum prospectado pendente disponível.")
+                        else:
+                            escolhido_pros = st.selectbox("Prospectado a enviar", list(opcoes_prospectados), key="fila_pros_sel")
+                            if st.button("Enviar prospectado para a fila", key="fila_pros_enviar", type="primary"):
+                                pros = opcoes_prospectados[escolhido_pros]
+                                existentes = supabase.table("distribuicao_processos").select("id,status").eq("prospectado_id", pros['id']).execute().data or []
+                                if existentes:
+                                    st.warning("Este prospectado já foi enviado para a distribuição. Nenhum registro duplicado foi criado.")
+                                else:
+                                    supabase.table("distribuicao_processos").insert({
+                                        "cliente_nome": pros.get("nome") or "Sem nome",
+                                        "cpf_cnpj": None,
+                                        "telefone": pros.get("celular") or pros.get("telefone"),
+                                        "cadastrado_por": name,
+                                        "status": "Pendente",
+                                        "data_envio": date.today().isoformat(),
+                                        "observacoes": f"Prospectado pendente #{pros['id']} — {pros.get('prospectador') or 'Sem prospectador'}",
+                                        "origem_cliente": "Prospectados Pendentes",
+                                        "prospectado_id": pros['id']
+                                    }).execute()
+                                    registrar_auditoria(username, "Enviar Prospectado para Distribuição", "Distribuição", f"Prospectado ID {pros['id']}")
+                                    st.cache_data.clear()
+                                    st.success("Prospectado incluído na fila, mantendo a situação Pendente.")
+                                    st.rerun()
+                    except Exception as erro_pros_fila:
+                        st.error(f"Erro ao consultar ou enviar prospectados: {erro_pros_fila}")
+                        st.caption("Confirme se o SQL de integração foi executado no Supabase.")
+
                 tab_dist_cad, tab_dist_exc = st.tabs(["⚖️ Distribuir Processo", "🗑️ Excluir da Fila"])
                 
                 with tab_dist_cad:
@@ -2338,7 +2372,9 @@ elif authentication_status == True:
                                     "descricao": f"Processo distribuído por {name}. Obs: {obs_dist}",
                                     "status": "Aguardando Documentação",
                                     "responsavel": adv_responsavel,
-                                    "solicitou_revisao": False
+                                    "solicitou_revisao": False,
+                                    "origem_cliente": obj_sel_dist.get('origem_cliente') or 'Clientes Cadastrados',
+                                    "prospectado_id": obj_sel_dist.get('prospectado_id')
                                 }).execute()
 
                                 registrar_auditoria(username, "Distribuir Processo", "Distribuição", f"Cliente {obj_sel_dist['cliente_nome']} atribuído a {adv_responsavel}")
@@ -2689,7 +2725,7 @@ elif authentication_status == True:
             if acoes: st.session_state['submenu_atual'] = acoes[0]
 
         if acoes:
-            cols = st.columns(3 if menu_principal == "Meus Processos" else len(acoes))
+            cols = st.columns(3 if menu_principal in ("Meus Processos", "Pagamentos") else len(acoes))
             for idx, acao in enumerate(acoes):
                 with cols[idx % len(cols)]:
                     if st.button(acao, use_container_width=True, type="primary" if st.session_state['submenu_atual'] == acao else "secondary"):
@@ -3489,6 +3525,23 @@ elif authentication_status == True:
                     sel_proc_str = st.selectbox("Selecione o Processo:", list(dict_ps.keys()))
                     obj_proc = dict_ps[sel_proc_str]
 
+                    if obj_proc.get('prospectado_id'):
+                        st.info("📍 Origem: Prospectados Pendentes. O fluxo de status, documentos e revisão é igual ao dos demais processos.")
+                        try:
+                            id_pros_atual = obj_proc['prospectado_id']
+                            dados_pros = supabase.table('prospectados_pendentes').select('id,atendido').eq('id', id_pros_atual).execute().data or []
+                            if dados_pros:
+                                atendido_atual = bool(dados_pros[0].get('atendido'))
+                                with st.expander('Situação do atendimento do prospectado'):
+                                    st.write('Atendido' if atendido_atual else 'Pendente')
+                                    if st.button('Marcar como atendido' if not atendido_atual else 'Retornar a pendente', key=f"pros_atend_{obj_proc['id']}"):
+                                        supabase.table('prospectados_pendentes').update({'atendido': not atendido_atual}).eq('id', id_pros_atual).execute()
+                                        registrar_auditoria(username, 'Atualizar Atendimento Prospectado', 'Meus Processos', f"Prospectado {id_pros_atual}: atendido={not atendido_atual}")
+                                        st.cache_data.clear()
+                                        st.rerun()
+                        except Exception as erro_atend:
+                            st.warning(f"Não foi possível consultar o atendimento do prospectado: {erro_atend}")
+
                     if obj_proc.get('observacoes_revisao'):
                         st.warning(f"💬 **Feedback da Revisão (Admin):** {obj_proc.get('observacoes_revisao')}")
 
@@ -3531,6 +3584,8 @@ elif authentication_status == True:
                                     "status": novo_status,
                                     "descricao": nova_desc
                                 }).eq("id", obj_proc['id']).execute()
+                                if obj_proc.get('prospectado_id'):
+                                    supabase.table('prospectados_pendentes').update({'status_atendimento': novo_status}).eq('id', obj_proc['prospectado_id']).execute()
                                 registrar_auditoria(username, "Atualizar Processo", "Meus Processos", f"ID {obj_proc['id']} alterado para {novo_status}")
                                 st.cache_data.clear()
                                 confirmar_operacao("✅ Processo atualizado com sucesso!")
@@ -3573,6 +3628,8 @@ elif authentication_status == True:
                                             supabase.table('meus_processos').update({
                                                 'status': 'Aguardando Revisão', 'solicitou_revisao': True
                                             }).eq('id', obj_proc['id']).execute()
+                                            if obj_proc.get('prospectado_id'):
+                                                supabase.table('prospectados_pendentes').update({'status_atendimento': 'Aguardando Revisão'}).eq('id', obj_proc['prospectado_id']).execute()
                                             supabase.table('revisao_atribuicoes').upsert({
                                                 'processo_id': obj_proc['id'],
                                                 'admin_username': admins[admin_escolhido],

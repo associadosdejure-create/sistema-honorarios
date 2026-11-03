@@ -118,9 +118,44 @@ if st.session_state.get('_dejure_ultima_confirmacao'):
     st.success(st.session_state.pop('_dejure_ultima_confirmacao'), icon="✅")
 
 # --- APRESENTAÇÃO DE TABELAS: CAMPOS SEM DADOS FICAM EM BRANCO ---
+def dejure_formatar_datas_tabela(tabela):
+    """Padroniza datas ISO em colunas de data na cópia visual da tabela."""
+    import datetime as _datetime
+    import re as _re
+    tabela = tabela.copy()
+    for coluna in tabela.columns:
+        nome = str(coluna).lower().replace(" ", "_")
+        eh_data = (nome.startswith("data") or nome.endswith("_data") or
+                   "vencimento" in nome or "prazo" in nome or
+                   "nascimento" in nome or "competencia" in nome or
+                   nome in ("recebimento", "pagamento"))
+        if not eh_data:
+            continue
+        def converter(valor):
+            if valor is None:
+                return ""
+            if isinstance(valor, (_datetime.datetime, _datetime.date, pd.Timestamp)):
+                return valor.strftime("%d/%m/%Y")
+            if isinstance(valor, str):
+                v = valor.strip()
+                if _re.fullmatch(r"\\d{4}-\\d{2}-\\d{2}", v):
+                    try:
+                        return _datetime.date.fromisoformat(v).strftime("%d/%m/%Y")
+                    except ValueError:
+                        return valor
+                if _re.fullmatch(r"\\d{4}-\\d{2}-\\d{2}T.*", v):
+                    try:
+                        return _datetime.date.fromisoformat(v[:10]).strftime("%d/%m/%Y")
+                    except ValueError:
+                        return valor
+            return valor
+        tabela[coluna] = tabela[coluna].map(converter)
+    return tabela
+
+
 def preparar_tabela_visualizacao(dados):
     """Limpa apenas a visualização, sem alterar os registros do Supabase."""
-    tabela = dados.copy()
+    tabela = dejure_formatar_datas_tabela(dados)
     # Evita exibir os textos None, nan, NaN e <NA> vindos de colunas textuais.
     for coluna in tabela.columns:
         serie = tabela[coluna]
@@ -175,6 +210,16 @@ def exibir_tabela(dados, **kwargs):
     configuracao = largura_automatica_colunas(tabela)
     configuracao.update(kwargs.pop("column_config", {}) or {})
     return st.dataframe(dados, column_config=configuracao, **kwargs)
+
+def dejure_dataframe_br(dados, **kwargs):
+    """Formata datas em tabelas visuais sem modificar os dados de origem."""
+    if isinstance(dados, pd.DataFrame):
+        dados = dejure_formatar_datas_tabela(dados)
+    elif isinstance(dados, pd.io.formats.style.Styler):
+        dados = dados._copy(deepcopy=True)
+        dados.data = dejure_formatar_datas_tabela(dados.data)
+    return st.dataframe(dados, **kwargs)
+
 
 # --- ENTRADAS MONETÁRIAS EM PADRÃO BRASILEIRO ---
 def interpretar_moeda_br(texto):
@@ -408,6 +453,12 @@ def validar_email(email):
         return True
     padrao = r'^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$'
     return bool(re.match(padrao, email.strip()))
+
+def dejure_date_input_br(*args, **kwargs):
+    """Exibe calendário em DD/MM/AAAA; preserva valores date para salvar no banco."""
+    kwargs["format"] = "DD/MM/YYYY"
+    return st.date_input(*args, **kwargs)
+
 
 def formatar_data_br(val):
     if not val: return ""
@@ -1291,7 +1342,7 @@ elif authentication_status == True:
                                   if str(p.get('status') or '').strip().casefold() == 'pago'}
         st.caption(f'{len(parcelas_todas_cliente)} parcela(s) cadastrada(s) para este cliente; '
                    f'{len(parcelas_cliente_baixas)} marcada(s) como pagas.')
-        referencia_baixas = st.date_input('Mês de referência para destacar parcelas a receber',
+        referencia_baixas = dejure_date_input_br('Mês de referência para destacar parcelas a receber',
                                           value=date.today().replace(day=1), key='referencia_baixas_status')
         st.subheader('Todas as parcelas do cliente')
         st.caption('Inclui parcelas históricas e parcelas em andamento, pagas ou pendentes. '
@@ -1310,7 +1361,7 @@ elif authentication_status == True:
                 'ID': pid,
             })
         if linhas_visao:
-            st.dataframe(pd.DataFrame(linhas_visao).style.map(dejure_cor_status_visual, subset=['Situação']),
+            dejure_dataframe_br(pd.DataFrame(linhas_visao).style.map(dejure_cor_status_visual, subset=['Situação']),
                          use_container_width=True, hide_index=True)
         st.caption('🟢 Recebida: baixa registrada. 🔴 A receber no mês: vencimento na referência selecionada. 🟡 A receber: pendente fora desse mês.')
         if not parcelas_cliente_baixas:
@@ -1352,7 +1403,7 @@ elif authentication_status == True:
                             data_padrao = date.fromisoformat(data_anterior)
                         except ValueError:
                             data_padrao = date.today()
-                        nova_data = st.date_input('Data efetiva do recebimento', data_padrao)
+                        nova_data = dejure_date_input_br('Data efetiva do recebimento', data_padrao)
                         colab_atual = str(info_baixa.get('colaborador_parcela') or '').strip()
                         # Lista de usuários cadastrados, sem necessidade de digitar o nome.
                         usuarios_colab = sorted({str(dados.get('name') or login).strip()
@@ -1503,13 +1554,13 @@ elif authentication_status == True:
                         data_hist_padrao = date.fromisoformat(str(estado_hist.get('data_recebimento') or '')[:10])
                     except ValueError:
                         data_hist_padrao = date.today()
-                    data_hist_ed = st.date_input('Data real do recebimento pelo escritório', value=data_hist_padrao)
+                    data_hist_ed = dejure_date_input_br('Data real do recebimento pelo escritório', value=data_hist_padrao)
                     comp_hist_atual = str(estado_hist.get('competencia_balanco') or data_hist_padrao.strftime('%Y-%m'))
                     try:
                         comp_hist_data = date.fromisoformat(comp_hist_atual[:7] + '-01')
                     except ValueError:
                         comp_hist_data = data_hist_padrao.replace(day=1)
-                    competencia_hist_ed = st.date_input('Mês de competência no balanço (escolha qualquer dia do mês)', value=comp_hist_data, key='competencia_edicao_hist')
+                    competencia_hist_ed = dejure_date_input_br('Mês de competência no balanço (escolha qualquer dia do mês)', value=comp_hist_data, key='competencia_edicao_hist')
                     st.caption('O mês escolhido define a prestação de contas, independentemente da data do pagamento do cliente.')
                     motivo_hist_ed = st.text_input('Justificativa da alteração (obrigatória)')
                     salvar_hist_ed = st.form_submit_button('Salvar escolha', type='primary')
@@ -1554,7 +1605,7 @@ elif authentication_status == True:
                 pesquisa_prot = st.text_input("Pesquisar por processo ou protocolante", key="master_busca_protocolo")
                 filtrados_prot = [e for e in eventos_prot if pesquisa_prot.casefold() in
                                   (str(e.get("processo_id", "")) + " " + str(e.get("protocolado_por", ""))).casefold()]
-                st.dataframe([{"Processo ID": e.get("processo_id"), "Protocolante": e.get("protocolado_por"),
+                dejure_dataframe_br([{"Processo ID": e.get("processo_id"), "Protocolante": e.get("protocolado_por"),
                                "Data": e.get("protocolado_em")} for e in filtrados_prot],
                              use_container_width=True, hide_index=True)
                 if filtrados_prot:
@@ -1574,7 +1625,7 @@ elif authentication_status == True:
                             data_original_prot = date.fromisoformat(str(evento_prot.get("protocolado_em"))[:10])
                         except (ValueError, TypeError):
                             data_original_prot = date.today()
-                        data_nova_prot = st.date_input("Data do protocolo", value=data_original_prot)
+                        data_nova_prot = dejure_date_input_br("Data do protocolo", value=data_original_prot)
                         motivo_prot = st.text_area("Motivo da correção (obrigatório)")
                         salvar_prot = st.form_submit_button("Salvar correção", type="primary")
                         if salvar_prot:
@@ -1740,8 +1791,8 @@ elif authentication_status == True:
             with st.form('form_despesa_dejure', clear_on_submit=True):
                 descricao = st.text_input('Descrição', max_chars=180)
                 valor = st.number_input('Valor (R$)', min_value=0.01, step=10.0, format='%.2f')
-                competencia = st.date_input('Primeiro mês de competência (mês a que a despesa pertence)', value=competencia_sugerida, help='Ex.: despesa de outubro paga em novembro: competência 01/10, vencimento 02/11.')
-                vencimento = st.date_input('Primeiro vencimento', hoje_fin)
+                competencia = dejure_date_input_br('Primeiro mês de competência (mês a que a despesa pertence)', value=competencia_sugerida, help='Ex.: despesa de outubro paga em novembro: competência 01/10, vencimento 02/11.')
+                vencimento = dejure_date_input_br('Primeiro vencimento', hoje_fin)
                 if forma != 'Única':
                     st.caption('Para despesas parceladas ou recorrentes, as próximas parcelas são geradas mensalmente a partir da competência escolhida. Confira as datas na Projeção de parcelas.')
                 if forma == 'Parcelada':
@@ -1819,7 +1870,7 @@ elif authentication_status == True:
                     'Situação': dejure_status_parcela_visual(d.get('situacao'), d.get('vencimento'), hoje_fin, 'pagar'),
                     'Parcela': d.get('numero_parcela_despesa') or '—'
                 } for d in despesas_filtradas]
-                st.dataframe(pd.DataFrame(linhas_d).style.map(dejure_cor_status_visual, subset=['Situação']), hide_index=True, use_container_width=True)
+                dejure_dataframe_br(pd.DataFrame(linhas_d).style.map(dejure_cor_status_visual, subset=['Situação']), hide_index=True, use_container_width=True)
                 opcoes_d = {f"#{d['id']} | Parcela {d.get('numero_parcela_despesa') or 'única'} | {str(d.get('competencia') or '')[:7]} | {moeda_c(centavos(d.get('valor')))}": d for d in despesas_filtradas}
                 escolha_d = st.selectbox('2. Selecione a parcela / lançamento para editar',
                                          list(opcoes_d), key='bal_despesa_edicao')
@@ -1829,8 +1880,8 @@ elif authentication_status == True:
                     novo_tipo = st.selectbox('Categoria', ['Fixa', 'Variável', 'Outras'], index=['Fixa','Variável','Outras'].index(alvo.get('tipo')) if alvo.get('tipo') in ['Fixa','Variável','Outras'] else 2)
                     nova_desc = st.text_input('Descrição', value=str(alvo.get('descricao') or ''))
                     novo_valor = st.number_input('Valor (R$)', min_value=0.01, value=max(0.01, centavos(alvo.get('valor')) / 100), format='%.2f')
-                    nova_comp = st.date_input('Competência (mês da despesa, independente do vencimento)', value=data_segura(alvo.get('competencia')) or competencia_sugerida)
-                    novo_venc = st.date_input('Vencimento', value=data_segura(alvo.get('vencimento')) or hoje_fin)
+                    nova_comp = dejure_date_input_br('Competência (mês da despesa, independente do vencimento)', value=data_segura(alvo.get('competencia')) or competencia_sugerida)
+                    novo_venc = dejure_date_input_br('Vencimento', value=data_segura(alvo.get('vencimento')) or hoje_fin)
                     nova_sit = st.selectbox('Situação', ['Pendente','Paga'], index=1 if alvo.get('situacao') == 'Paga' else 0)
                     nova_obs = st.text_area('Observações', value=str(alvo.get('observacoes') or ''))
                     atualizar = st.form_submit_button('Salvar alterações')
@@ -1900,7 +1951,7 @@ elif authentication_status == True:
         with abas[4]:
             st.subheader('Despesas fixas e parceladas programadas')
             if programacoes:
-                st.dataframe(pd.DataFrame([{
+                dejure_dataframe_br(pd.DataFrame([{
                     'ID': p['id'], 'Descrição': p['descricao'], 'Tipo': p['tipo'],
                     'Valor mensal': moeda_c(centavos(p['valor'])),
                     'Início': str(p['inicio'])[:7],
@@ -1966,7 +2017,7 @@ elif authentication_status == True:
             # A prestação de contas dos dias 1 a 5 refere-se ao mês anterior.
             # O painel NUNCA soma competências anteriores à escolhida.
             competencia_padrao = hoje_fin.replace(day=1) - relativedelta(months=1)
-            mes_ref = st.date_input('Mês de competência da prestação de contas',
+            mes_ref = dejure_date_input_br('Mês de competência da prestação de contas',
                                     value=competencia_padrao, key='bal_mes_ref')
             inicio = mes_ref.replace(day=1)
             fim = inicio + relativedelta(months=1)
@@ -2038,14 +2089,14 @@ elif authentication_status == True:
                             'Situação': d.get('situacao') or '',
                             'Valor': moeda_c(centavos(d.get('valor'))),
                         })
-                    st.dataframe(pd.DataFrame(linhas_fora), hide_index=True, use_container_width=True)
+                    dejure_dataframe_br(pd.DataFrame(linhas_fora), hide_index=True, use_container_width=True)
                     vencem_mes = [d for d in registros_fora if data_segura(d.get('vencimento'))
                                  and no_periodo(data_segura(d.get('vencimento')))]
                     if vencem_mes:
                         st.warning(f'ATENÇÃO: {len(vencem_mes)} despesa(s) têm vencimento em {inicio:%m/%Y}, '
                                    'mas estão cadastradas em outra competência. Elas não foram somadas ao balanço. '
                                    'Confira os registros antes de corrigir a competência.')
-                        st.dataframe(pd.DataFrame([{
+                        dejure_dataframe_br(pd.DataFrame([{
                             'ID': d.get('id'), 'Descrição': d.get('descricao') or '',
                             'Competência atual': str(d.get('competencia') or '')[:10],
                             'Vencimento': formatar_data_br(d.get('vencimento')),
@@ -2058,7 +2109,7 @@ elif authentication_status == True:
                     st.success('Todos os lançamentos encontrados pertencem à competência selecionada.')
                 if programacoes:
                     st.markdown('**Programações de despesas cadastradas**')
-                    st.dataframe(pd.DataFrame([{
+                    dejure_dataframe_br(pd.DataFrame([{
                         'ID': p.get('id'), 'Descrição': p.get('descricao') or '',
                         'Modalidade': 'Parcelada' if int(p.get('quantidade') or 0) > 0 else 'Mensal recorrente',
                         'Categoria': p.get('tipo') or '',
@@ -2114,7 +2165,7 @@ elif authentication_status == True:
                 st.caption('Saldo previsto após quitar as despesas pendentes: '
                            + moeda_c(receita - despesa_s - pend_s)
                            + '. Valor informativo; nenhuma baixa ou repasse foi realizado.')
-            st.dataframe(df_s, hide_index=True, use_container_width=True)
+            dejure_dataframe_br(df_s, hide_index=True, use_container_width=True)
             st.caption('Despesas pendentes são divididas entre os sócios e exibidas imediatamente '
                        'como valores a pagar na prestação de contas. Só despesas marcadas como pagas '
                        'reduzem o saldo realizado. A previsão não gera pagamento automático.')
@@ -2156,7 +2207,7 @@ elif authentication_status == True:
                         return 'background-color: #493d16; color: #ffe18a; font-weight: bold;'
                     return ''
                 tabela_conferencia = pd.DataFrame(linhas_conferencia)
-                st.dataframe(tabela_conferencia.style.map(cor_status_prestacao, subset=['Situação']),
+                dejure_dataframe_br(tabela_conferencia.style.map(cor_status_prestacao, subset=['Situação']),
                              hide_index=True, use_container_width=True)
                 st.caption('🟢 Paga: despesa quitada. 🔴 A pagar no mês: não paga, com vencimento na competência selecionada. 🟡 A pagar: não paga, fora dessa competência.')
                 st.caption(
@@ -2171,10 +2222,10 @@ elif authentication_status == True:
                 for d in desp:
                     resumo_tipo[str(d.get('tipo') or 'Outras')] += centavos(d.get('valor'))
                 st.subheader('Despesas por categoria (pagas e pendentes)')
-                st.dataframe(pd.DataFrame([{'Categoria': k, 'Total': moeda_c(v)} for k,v in resumo_tipo.items()]), hide_index=True, use_container_width=True)
+                dejure_dataframe_br(pd.DataFrame([{'Categoria': k, 'Total': moeda_c(v)} for k,v in resumo_tipo.items()]), hide_index=True, use_container_width=True)
             st.subheader('Extrato dos repasses no período')
             if rep:
-                st.dataframe(pd.DataFrame([{'Data': r['data'].strftime('%d/%m/%Y'), 'Contrato': r['contrato'], 'Leônidas': moeda_c(r['leonidas']), 'Nelson': moeda_c(r['nelson'])} for r in rep]), hide_index=True, use_container_width=True)
+                dejure_dataframe_br(pd.DataFrame([{'Data': r['data'].strftime('%d/%m/%Y'), 'Contrato': r['contrato'], 'Leônidas': moeda_c(r['leonidas']), 'Nelson': moeda_c(r['nelson'])} for r in rep]), hide_index=True, use_container_width=True)
             else:
                 st.info('Nenhum repasse encontrado neste período.')
 
@@ -2183,7 +2234,7 @@ elif authentication_status == True:
             st.caption('Os movimentos são agrupados pelo mês de competência. A prestação de contas '
                        'ocorre entre os dias 1 e 5 do mês seguinte. Este calendário não confirma '
                        'automaticamente que os sócios receberam suas partes.')
-            mes_fech = st.date_input('Competência para prestação de contas',
+            mes_fech = dejure_date_input_br('Competência para prestação de contas',
                                       value=hoje_fin.replace(day=1), key='prest_competencia').replace(day=1)
             janela_inicio, janela_fim = janela_prestacao(mes_fech)
             st.info(f'Movimentação de {mes_fech:%m/%Y} — prestar contas entre '
@@ -2199,7 +2250,7 @@ elif authentication_status == True:
             despesas_a_pagar = sum(centavos(d.get('valor')) for d in desp_fech if d.get('situacao') != 'Paga')
             desp_n = despesas_quitadas // 2
             desp_l = despesas_quitadas - desp_n
-            st.dataframe(pd.DataFrame([
+            dejure_dataframe_br(pd.DataFrame([
                 {'Sócio': 'Leônidas', 'Receitas': moeda_c(receitas_l), 'Despesas pagas': moeda_c(desp_l), 'Saldo': moeda_c(receitas_l - desp_l)},
                 {'Sócio': 'Nelson', 'Receitas': moeda_c(receitas_n), 'Despesas pagas': moeda_c(desp_n), 'Saldo': moeda_c(receitas_n - desp_n)},
             ]), hide_index=True, use_container_width=True)
@@ -2265,7 +2316,7 @@ elif authentication_status == True:
                          'Despesas pendentes': moeda_c(total_despesas),
                          'Leônidas (após despesas)': moeda_c(total_leo_liquido),
                          'Nelson (após despesas)': moeda_c(total_nel_liquido)})
-            st.dataframe(pd.DataFrame(proj), hide_index=True, use_container_width=True)
+            dejure_dataframe_br(pd.DataFrame(proj), hide_index=True, use_container_width=True)
             st.info('Valores por sócio são projeções, não repasses realizados. Eventuais pagamentos a colaboradores definidos na baixa futura reduzirão os valores efetivos. Os saldos após despesas consideram somente despesas pendentes cadastradas para cada mês.')
             st.warning('Parcelas vencidas antes do mês atual não entram nesta projeção. Despesas fixas ativas são projetadas mensalmente.')
 
@@ -3895,7 +3946,7 @@ elif authentication_status == True:
                         else:
                             val_data = None
                         
-                        p_nasc = st.date_input("Data de Nascimento", value=val_data, min_value=date(1920, 1, 1), max_value=date.today(), format="DD/MM/YYYY")
+                        p_nasc = dejure_date_input_br("Data de Nascimento", value=val_data, min_value=date(1920, 1, 1), max_value=date.today(), format="DD/MM/YYYY")
                         
                         file_foto = st.file_uploader("Escolher Foto do Computador ou Celular (.png, .jpg, .jpeg)", type=["png", "jpg", "jpeg"])
                         
@@ -4205,7 +4256,7 @@ elif authentication_status == True:
                     st.caption(f"O saldo será dividido automaticamente em {npar} parcelas.")
 
                 with st.form("fc_hon", clear_on_submit=False):
-                    dt1 = st.date_input("Vencimento da 1ª Parcela (ou Entrada)", datetime.now())
+                    dt1 = dejure_date_input_br("Vencimento da 1ª Parcela (ou Entrada)", datetime.now())
 
                     col_b_h1, col_b_h2 = st.columns(2)
                     with col_b_h1:
@@ -4328,13 +4379,13 @@ elif authentication_status == True:
                         inicio_rpv += 1000
                     st.subheader('RPVs cadastradas')
                     if registros_rpv:
-                        st.dataframe(pd.DataFrame(registros_rpv)[[c for c in ['id','cliente','servico','numero_rpv','percentual_rpv','valor_rpv_bruto','valor','status','data_liberacao','parcela_id'] if c in registros_rpv[0]]], use_container_width=True, hide_index=True)
+                        dejure_dataframe_br(pd.DataFrame(registros_rpv)[[c for c in ['id','cliente','servico','numero_rpv','percentual_rpv','valor_rpv_bruto','valor','status','data_liberacao','parcela_id'] if c in registros_rpv[0]]], use_container_width=True, hide_index=True)
                         aguardando_rpv = [r for r in registros_rpv if r.get('status') == 'Aguardando liberação']
                         if aguardando_rpv:
                             opcoes_rpv = {f"#{r['id']} — {r['cliente']} — {r.get('percentual_rpv') or 0}% da RPV":r for r in aguardando_rpv}
                             escolhido_rpv = st.selectbox('Selecionar RPV para informar liberação', list(opcoes_rpv), key='rpv_escolher')
                             registro_rpv = opcoes_rpv[escolhido_rpv]
-                            data_liberacao_rpv = st.date_input('Data da liberação', value=date.today(), key='rpv_data_liberacao')
+                            data_liberacao_rpv = dejure_date_input_br('Data da liberação', value=date.today(), key='rpv_data_liberacao')
                             valor_bruto_liberado = st.number_input('Valor bruto efetivamente liberado da RPV (R$)', min_value=0.0, value=0.0, step=100.0, format='%.2f', key='rpv_bruto_liberado')
                             from decimal import Decimal, ROUND_HALF_UP
                             honorarios_calculados = (Decimal(str(valor_bruto_liberado)) * Decimal(str(registro_rpv.get('percentual_rpv') or 0)) / Decimal('100')).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
@@ -4393,10 +4444,10 @@ elif authentication_status == True:
                 st.markdown("#### 💰 Entrada do cliente")
                 tem_entrada_hist = st.checkbox("O cliente deu uma entrada", key="hist_tem_entrada")
                 entrada_hist = campo_moeda_br("Valor da entrada já recebida (R$)", "hist_entrada") if tem_entrada_hist else 0.0
-                data_entrada_hist = st.date_input("Data do recebimento da entrada", value=date.today(), key="hist_data_entrada") if tem_entrada_hist else None
+                data_entrada_hist = dejure_date_input_br("Data do recebimento da entrada", value=date.today(), key="hist_data_entrada") if tem_entrada_hist else None
                 st.caption("A entrada é um recebimento histórico, não gera repasses e será descontada do total antes de calcular as parcelas.")
                 modo_hist = st.radio("Valores das parcelas", ["Parcelas iguais", "Informar valor de cada parcela"], horizontal=True, key="hist_modo")
-                primeira_data_hist = st.date_input("Vencimento original da primeira parcela", value=date.today(), key="hist_primeiro_venc")
+                primeira_data_hist = dejure_date_input_br("Vencimento original da primeira parcela", value=date.today(), key="hist_primeiro_venc")
                 st.caption("Os vencimentos seguintes são calculados mensalmente. Marque individualmente apenas as parcelas realmente recebidas; parcelas futuras não são pagas automaticamente.")
                 if valor_total_hist is not None and valor_total_hist > 0:
                     centavos_hist = int((Decimal(str(valor_total_hist)) * 100).quantize(Decimal("1")))
@@ -4426,10 +4477,10 @@ elif authentication_status == True:
                         recebida_hist = st.checkbox(f"Parcela {i_hist+1} já foi efetivamente recebida", value=(i_hist < pagas_hist), key=f"hist_recebida_{i_hist}")
                         recebida_flags_hist.append(recebida_hist)
                         if recebida_hist:
-                            data_rec = st.date_input(f"Data em que a parcela {i_hist+1} foi efetivamente recebida", value=venc_hist if venc_hist <= date.today() else date.today(), key=f"hist_data_rec_{i_hist}")
+                            data_rec = dejure_date_input_br(f"Data em que a parcela {i_hist+1} foi efetivamente recebida", value=venc_hist if venc_hist <= date.today() else date.today(), key=f"hist_data_rec_{i_hist}")
                             datas_receb_hist.append(data_rec)
                             incluir_balanco_hist.append(st.checkbox(f'Incluir parcela {i_hist+1} no Balanço Financeiro', value=False, key=f'hist_incluir_bal_{i_hist}'))
-                            mes_hist = st.date_input(f'Mês em que a parcela {i_hist+1} deve constar no Balanço', value=data_rec.replace(day=1), key=f'hist_competencia_{i_hist}') if incluir_balanco_hist[-1] else data_rec.replace(day=1)
+                            mes_hist = dejure_date_input_br(f'Mês em que a parcela {i_hist+1} deve constar no Balanço', value=data_rec.replace(day=1), key=f'hist_competencia_{i_hist}') if incluir_balanco_hist[-1] else data_rec.replace(day=1)
                             competencia_balanco_hist.append(mes_hist.strftime('%Y-%m'))
                         else:
                             datas_receb_hist.append(None)
@@ -4509,7 +4560,7 @@ elif authentication_status == True:
                             df_p['vencimento'] = df_p['vencimento'].apply(formatar_data_br)
                         if 'valor' in df_p.columns:
                             df_p['valor'] = df_p['valor'].apply(formatar_moeda_br)
-                        referencia_parcelas = st.date_input('Mês de referência para parcelas a receber',
+                        referencia_parcelas = dejure_date_input_br('Mês de referência para parcelas a receber',
                                                              value=date.today().replace(day=1), key='referencia_parcelas_receber')
                         df_p['Situação visual'] = [dejure_status_parcela_visual(p.get('status'), p.get('vencimento'), referencia_parcelas, 'receber') for p in res_p.data]
                         exibir_tabela(df_p.style.map(dejure_cor_status_visual, subset=['Situação visual']),
@@ -4833,9 +4884,9 @@ elif authentication_status == True:
 
                 col_f1, col_f2, col_f3 = st.columns(3)
                 with col_f1:
-                    dt_inicio = st.date_input("Data Inicial", value=primeiro_dia_mes)
+                    dt_inicio = dejure_date_input_br("Data Inicial", value=primeiro_dia_mes)
                 with col_f2:
-                    dt_fim = st.date_input("Data Final", value=hoje_dt)
+                    dt_fim = dejure_date_input_br("Data Final", value=hoje_dt)
                 with col_f3:
                     lista_usuarios_rel = ["Todos os Colaboradores / Sócios"]
                     for u in credentials['usernames'].values():
@@ -5020,10 +5071,10 @@ elif authentication_status == True:
                     cpf = st.text_input("CPF")
                     nome = st.text_input("Nome *")
                     local_pm = st.text_input("Local PM")
-                    dt_pm = st.date_input("Data PM", datetime.now())
+                    dt_pm = dejure_date_input_br("Data PM", datetime.now())
                     hora_pm = st.text_input("Hora PM (ex: 14:30:00)")
                     local_ps = st.text_input("Local PS")
-                    dt_ps = st.date_input("Data PS", datetime.now())
+                    dt_ps = dejure_date_input_br("Data PS", datetime.now())
                     hora_ps = st.text_input("Hora PS (ex: 15:30:00)")
                     senha_inss = st.text_input("Senha INSS")
                     elaborador = st.text_input("Elaborador")
@@ -5123,8 +5174,8 @@ elif authentication_status == True:
                                 dt_pm_val = datetime.strptime(obj.get('data_pm'), "%Y-%m-%d").date()
                             except:
                                 pass
-                        edt_pm = st.date_input("Data PM", value=dt_pm_val)
-                        ehora_pm = st.text_input("Hora PM (HH:MM:SS)", value=obj.get('hora_pm',''))
+                        edt_pm = dejure_date_input_br("Data PM", value=dt_pm_val)
+                        ehora_pm = st.text_input("Hora PM (HH:MM:SS)", value=str(obj.get('hora_pm') or ''))
 
                         elocal_ps = st.text_input("Local PS", value=obj.get('local_ps',''))
                         dt_ps_val = datetime.now().date()
@@ -5133,8 +5184,8 @@ elif authentication_status == True:
                                 dt_ps_val = datetime.strptime(obj.get('data_ps'), "%Y-%m-%d").date()
                             except:
                                 pass
-                        edt_ps = st.date_input("Data PS", value=dt_ps_val)
-                        ehora_ps = st.text_input("Hora PS (HH:MM:SS)", value=obj.get('hora_ps',''))
+                        edt_ps = dejure_date_input_br("Data PS", value=dt_ps_val)
+                        ehora_ps = st.text_input("Hora PS (HH:MM:SS)", value=str(obj.get('hora_ps') or ''))
 
                         esenhainss = st.text_input("Senha INSS", value=obj.get('senha_inss',''))
                         eelab = st.text_input("Elaborador", value=obj.get('elaborador',''))
@@ -5152,10 +5203,10 @@ elif authentication_status == True:
                                 "nome": enome,
                                 "local_pm": elocal_pm,
                                 "data_pm": edt_pm.strftime("%Y-%m-%d"),
-                                "hora_pm": formatar_hora_br(ehora_pm) if ehora_pm.strip() else None,
+                                "hora_pm": formatar_hora_br(ehora_pm) if str(ehora_pm or "").strip() else None,
                                 "local_ps": elocal_ps,
                                 "data_ps": edt_ps.strftime("%Y-%m-%d"),
-                                "hora_ps": formatar_hora_br(ehora_ps) if ehora_ps.strip() else None,
+                                "hora_ps": formatar_hora_br(ehora_ps) if str(ehora_ps or "").strip() else None,
                                 "senha_inss": esenhainss,
                                 "elaborador": eelab,
                                 "status": est_op
@@ -5200,7 +5251,7 @@ elif authentication_status == True:
             if sub == "Cadastrar Expediente":
                 st.header("📂 Novo Expediente")
                 with st.form("fc_exp", clear_on_submit=True):
-                    proc, cli, desc, dt, resp = st.text_input("Processo"), st.text_input("Cliente"), st.text_input("Descrição"), st.date_input("Prazo", datetime.now()), st.text_input("Responsável")
+                    proc, cli, desc, dt, resp = st.text_input("Processo"), st.text_input("Cliente"), st.text_input("Descrição"), dejure_date_input_br("Prazo", datetime.now()), st.text_input("Responsável")
                     
                     col_bx1, col_bx2 = st.columns(2)
                     with col_bx1:
@@ -5316,7 +5367,7 @@ elif authentication_status == True:
             if sub == "Cadastrar Expediente TRF":
                 st.header("⚖️ Novo Expediente TRF")
                 with st.form("fc_exp_trf", clear_on_submit=True):
-                    proc, cli, desc, dt, resp = st.text_input("Processo"), st.text_input("Cliente"), st.text_input("Descrição"), st.date_input("Prazo", datetime.now()), st.text_input("Responsável")
+                    proc, cli, desc, dt, resp = st.text_input("Processo"), st.text_input("Cliente"), st.text_input("Descrição"), dejure_date_input_br("Prazo", datetime.now()), st.text_input("Responsável")
                     
                     col_btrf1, col_btrf2 = st.columns(2)
                     with col_btrf1:

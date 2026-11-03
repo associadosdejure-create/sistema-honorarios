@@ -8,6 +8,8 @@ from dateutil.relativedelta import relativedelta
 import time
 import os
 import bcrypt
+import secrets
+import string
 import json
 import base64
 import html
@@ -327,6 +329,19 @@ def endereco_legado(logradouro, numero, bairro):
         str(numero or "").strip(),
         str(bairro or "").strip()
     ] if parte)
+
+def gerar_senha_provisoria(tamanho=18):
+    """Senha criptograficamente aleatória, com caracteres fáceis de digitar."""
+    letras = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
+    numeros = "23456789"
+    especiais = "@#%*-_"
+    alfabeto = letras + numeros + especiais
+    while True:
+        senha = "".join(secrets.choice(alfabeto) for _ in range(tamanho))
+        if (any(c in letras for c in senha) and any(c in numeros for c in senha)
+                and any(c in especiais for c in senha)):
+            return senha
+
 
 def gerar_hash(senha: str) -> str:
     return bcrypt.hashpw(senha.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
@@ -762,6 +777,7 @@ elif authentication_status == True:
         
         if st.button("Sair", use_container_width=True):
             registrar_auditoria(username, "Logout", "Acesso", f"Usuário {name} ({username}) efetuou logout do sistema.")
+            st.session_state.pop("_dejure_senha_provisoria", None)
             st.session_state.update({'authentication_status': None, 'login_registrado': False})
             st.rerun()
 
@@ -4038,52 +4054,58 @@ elif authentication_status == True:
 
             elif sub == "Redefinir Senha de Usuário" and user_role == "admin":
                 st.header("🔐 Redefinir senha de funcionário")
-                st.info("A senha temporária deverá ser alterada obrigatoriamente no próximo acesso.")
-                candidatos = [(login, dados.get("name") or login)
-                              for login, dados in credentials["usernames"].items()
-                              if login not in (username, "master")
-                              and (username == "master" or dados.get("role") != "admin")]
-                if not candidatos:
-                    st.info("Não há usuários elegíveis.")
+                st.info("O sistema gerará automaticamente uma senha provisória. O funcionário deverá alterá-la ao entrar novamente.")
+                # A senha só é exibida após o banco confirmar a redefinição.
+                aviso = st.session_state.get("_dejure_senha_provisoria")
+                if aviso:
+                    st.success(f"Senha provisória gerada para **{aviso['usuario']}**. Copie e entregue de forma privada.")
+                    st.code(aviso["senha"], language=None)
+                    st.warning("Esta senha ficará visível apenas nesta sessão até você ocultá-la. Não compartilhe por grupos.")
+                    if st.button("Ocultar senha provisória", key="ocultar_senha_provisoria"):
+                        st.session_state.pop("_dejure_senha_provisoria", None)
+                        st.rerun()
                 else:
-                    opcoes = {f"{nome} ({login})": login for login, nome in candidatos}
-                    with st.form("form_redefinir_senha_usuario"):
-                        escolha = st.selectbox("Funcionário", list(opcoes))
-                        senha_temp = st.text_input("Senha temporária", type="password")
-                        senha_conf = st.text_input("Confirmar senha temporária", type="password")
-                        autorizo = st.checkbox("Confirmo a redefinição da senha deste usuário.")
-                        enviar = st.form_submit_button("Redefinir senha", type="primary")
-                    if enviar:
-                        alvo = opcoes[escolha]
-                        if not autorizo:
-                            st.error("Confirme a operação.")
-                        elif len(senha_temp) < 12:
-                            st.error("A senha deve ter pelo menos 12 caracteres.")
-                        elif senha_temp != senha_conf:
-                            st.error("As senhas não coincidem.")
-                        else:
-                            try:
-                                consulta = supabase.table("usuarios_sistema").select("username,role").eq("username", alvo).execute()
-                                registros = consulta.data or []
-                                if len(registros) != 1:
-                                    raise ValueError("Usuário não encontrado.")
-                                perfil = str(registros[0].get("role") or "")
-                                if alvo in ("master", username) or (username != "master" and perfil == "admin"):
-                                    raise PermissionError("Sem permissão para redefinir esta conta.")
-                                if perfil not in ("admin", "advogado", "bacharel", "estagiario"):
-                                    raise PermissionError("Perfil não autorizado.")
-                                hash_novo = gerar_hash(senha_temp)
-                                resposta = supabase.table("usuarios_sistema").update({
-                                    "senha_hash": hash_novo, "password": hash_novo, "trocar_senha": True
-                                }).eq("username", alvo).eq("role", perfil).execute()
-                                if len(resposta.data or []) != 1:
-                                    raise RuntimeError("Atualização não confirmada pelo banco.")
-                                registrar_auditoria(username, "Redefinição de senha", "Segurança",
-                                                    f"Senha temporária definida para {alvo}; troca obrigatória ativada.")
-                                st.cache_data.clear()
-                                st.success("Senha redefinida. Entregue-a por um canal privado.")
-                            except Exception as erro:
-                                st.error(f"Redefinição não concluída: {erro}")
+                    candidatos = [(login, dados.get("name") or login)
+                                  for login, dados in credentials["usernames"].items()
+                                  if login not in (username, "master")
+                                  and (username == "master" or dados.get("role") != "admin")]
+                    if not candidatos:
+                        st.info("Não há usuários elegíveis.")
+                    else:
+                        opcoes = {f"{nome} ({login})": login for login, nome in candidatos}
+                        with st.form("form_redefinir_senha_usuario"):
+                            escolha = st.selectbox("Funcionário", list(opcoes))
+                            autorizo = st.checkbox("Confirmo que desejo invalidar a senha atual deste funcionário.")
+                            enviar = st.form_submit_button("Gerar senha provisória e redefinir", type="primary")
+                        if enviar:
+                            alvo = opcoes[escolha]
+                            if not autorizo:
+                                st.error("Confirme a operação.")
+                            else:
+                                try:
+                                    consulta = supabase.table("usuarios_sistema").select("username,role").eq("username", alvo).execute()
+                                    registros = consulta.data or []
+                                    if len(registros) != 1:
+                                        raise ValueError("Usuário não encontrado.")
+                                    perfil = str(registros[0].get("role") or "")
+                                    if alvo in ("master", username) or (username != "master" and perfil == "admin"):
+                                        raise PermissionError("Sem permissão para redefinir esta conta.")
+                                    if perfil not in ("admin", "advogado", "bacharel", "estagiario"):
+                                        raise PermissionError("Perfil não autorizado.")
+                                    senha_temp = gerar_senha_provisoria()
+                                    hash_novo = gerar_hash(senha_temp)
+                                    resposta = supabase.table("usuarios_sistema").update({
+                                        "senha_hash": hash_novo, "password": hash_novo, "trocar_senha": True
+                                    }).eq("username", alvo).eq("role", perfil).execute()
+                                    if len(resposta.data or []) != 1:
+                                        raise RuntimeError("Atualização não confirmada pelo banco.")
+                                    registrar_auditoria(username, "Redefinição de senha", "Segurança",
+                                                        f"Senha provisória gerada para {alvo}; troca obrigatória ativada.")
+                                    st.session_state["_dejure_senha_provisoria"] = {"usuario": alvo, "senha": senha_temp}
+                                    st.cache_data.clear()
+                                    st.rerun()
+                                except Exception as erro:
+                                    st.error(f"Redefinição não concluída: {erro}")
 
             elif sub == "Cadastrar Novo Usuário" and user_role == 'admin':
                 st.header("➕ Cadastrar Novo Usuário no Sistema")

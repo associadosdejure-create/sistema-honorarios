@@ -2,6 +2,7 @@ import streamlit as str_app
 import streamlit as st
 from supabase import create_client
 import pandas as pd
+from pandas.io.formats.style import Styler
 from datetime import datetime, date
 from dateutil.relativedelta import relativedelta
 import time
@@ -196,7 +197,7 @@ def largura_automatica_colunas(tabela):
 
 def exibir_tabela(dados, **kwargs):
     """Exibe valores ausentes em branco e ajusta a largura das colunas."""
-    if isinstance(dados, pd.io.formats.style.Styler):
+    if isinstance(dados, Styler):
         # Preserva os estilos e trabalha com uma cópia dos dados.
         tabela = preparar_tabela_visualizacao(dados.data)
         dados = dados._copy(deepcopy=True)
@@ -216,7 +217,7 @@ def dejure_dataframe_br(dados, **kwargs):
     """Formata datas em tabelas visuais sem modificar os dados de origem."""
     if isinstance(dados, pd.DataFrame):
         dados = dejure_formatar_datas_tabela(dados)
-    elif isinstance(dados, pd.io.formats.style.Styler):
+    elif isinstance(dados, Styler):
         dados = dados._copy(deepcopy=True)
         dados.data = dejure_formatar_datas_tabela(dados.data)
     return st.dataframe(dados, **kwargs)

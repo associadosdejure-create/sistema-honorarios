@@ -1,15 +1,13 @@
 import streamlit as str_app
 import streamlit as st
+import streamlit_authenticator as stauth
 from supabase import create_client
 import pandas as pd
-from pandas.io.formats.style import Styler
 from datetime import datetime, date
 from dateutil.relativedelta import relativedelta
 import time
 import os
 import bcrypt
-import secrets
-import string
 import json
 import base64
 import html
@@ -120,44 +118,9 @@ if st.session_state.get('_dejure_ultima_confirmacao'):
     st.success(st.session_state.pop('_dejure_ultima_confirmacao'), icon="✅")
 
 # --- APRESENTAÇÃO DE TABELAS: CAMPOS SEM DADOS FICAM EM BRANCO ---
-def dejure_formatar_datas_tabela(tabela):
-    """Padroniza datas ISO em colunas de data na cópia visual da tabela."""
-    import datetime as _datetime
-    import re as _re
-    tabela = tabela.copy()
-    for coluna in tabela.columns:
-        nome = str(coluna).lower().replace(" ", "_")
-        eh_data = (nome.startswith("data") or nome.endswith("_data") or
-                   "vencimento" in nome or "prazo" in nome or
-                   "nascimento" in nome or "competencia" in nome or
-                   nome in ("recebimento", "pagamento"))
-        if not eh_data:
-            continue
-        def converter(valor):
-            if valor is None:
-                return ""
-            if isinstance(valor, (_datetime.datetime, _datetime.date, pd.Timestamp)):
-                return valor.strftime("%d/%m/%Y")
-            if isinstance(valor, str):
-                v = valor.strip()
-                if _re.fullmatch(r"\\d{4}-\\d{2}-\\d{2}", v):
-                    try:
-                        return _datetime.date.fromisoformat(v).strftime("%d/%m/%Y")
-                    except ValueError:
-                        return valor
-                if _re.fullmatch(r"\\d{4}-\\d{2}-\\d{2}T.*", v):
-                    try:
-                        return _datetime.date.fromisoformat(v[:10]).strftime("%d/%m/%Y")
-                    except ValueError:
-                        return valor
-            return valor
-        tabela[coluna] = tabela[coluna].map(converter)
-    return tabela
-
-
 def preparar_tabela_visualizacao(dados):
     """Limpa apenas a visualização, sem alterar os registros do Supabase."""
-    tabela = dejure_formatar_datas_tabela(dados)
+    tabela = dados.copy()
     # Evita exibir os textos None, nan, NaN e <NA> vindos de colunas textuais.
     for coluna in tabela.columns:
         serie = tabela[coluna]
@@ -197,7 +160,7 @@ def largura_automatica_colunas(tabela):
 
 def exibir_tabela(dados, **kwargs):
     """Exibe valores ausentes em branco e ajusta a largura das colunas."""
-    if isinstance(dados, Styler):
+    if isinstance(dados, pd.io.formats.style.Styler):
         # Preserva os estilos e trabalha com uma cópia dos dados.
         tabela = preparar_tabela_visualizacao(dados.data)
         dados = dados._copy(deepcopy=True)
@@ -212,16 +175,6 @@ def exibir_tabela(dados, **kwargs):
     configuracao = largura_automatica_colunas(tabela)
     configuracao.update(kwargs.pop("column_config", {}) or {})
     return st.dataframe(dados, column_config=configuracao, **kwargs)
-
-def dejure_dataframe_br(dados, **kwargs):
-    """Formata datas em tabelas visuais sem modificar os dados de origem."""
-    if isinstance(dados, pd.DataFrame):
-        dados = dejure_formatar_datas_tabela(dados)
-    elif isinstance(dados, Styler):
-        dados = dados._copy(deepcopy=True)
-        dados.data = dejure_formatar_datas_tabela(dados.data)
-    return st.dataframe(dados, **kwargs)
-
 
 # --- ENTRADAS MONETÁRIAS EM PADRÃO BRASILEIRO ---
 def interpretar_moeda_br(texto):
@@ -329,19 +282,6 @@ def endereco_legado(logradouro, numero, bairro):
         str(numero or "").strip(),
         str(bairro or "").strip()
     ] if parte)
-
-def gerar_senha_provisoria(tamanho=18):
-    """Senha criptograficamente aleatória, com caracteres fáceis de digitar."""
-    letras = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
-    numeros = "23456789"
-    especiais = "@#%*-_"
-    alfabeto = letras + numeros + especiais
-    while True:
-        senha = "".join(secrets.choice(alfabeto) for _ in range(tamanho))
-        if (any(c in letras for c in senha) and any(c in numeros for c in senha)
-                and any(c in especiais for c in senha)):
-            return senha
-
 
 def gerar_hash(senha: str) -> str:
     return bcrypt.hashpw(senha.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
@@ -469,12 +409,6 @@ def validar_email(email):
     padrao = r'^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$'
     return bool(re.match(padrao, email.strip()))
 
-def dejure_date_input_br(*args, **kwargs):
-    """Exibe calendário em DD/MM/AAAA; preserva valores date para salvar no banco."""
-    kwargs["format"] = "DD/MM/YYYY"
-    return st.date_input(*args, **kwargs)
-
-
 def formatar_data_br(val):
     if not val: return ""
     str_val = str(val).strip()
@@ -590,69 +524,33 @@ def carregar_usuarios_db():
 
 
 credentials = carregar_usuarios_db()
-
-# Login nativo Streamlit: dispensa o componente frontend CookieManager.
-# Cada aba/conexão mantém sua própria sessão, sem cookie persistente.
-usuarios_login = credentials["usernames"]
-username = st.session_state.get("username")
-authentication_status = st.session_state.get("authentication_status")
-if authentication_status is True:
-    usuario_atual = usuarios_login.get(str(username or "").lower())
-    hash_atual = usuario_atual.get("password") if usuario_atual else None
-    # Invalida sessões quando a conta é excluída ou a senha é redefinida.
-    if (not hash_atual or not st.session_state.get("_dejure_hash_login")
-            or not secrets.compare_digest(str(hash_atual), str(st.session_state["_dejure_hash_login"]))):
-        st.session_state.update(authentication_status=None, username=None, name=None,
-                                login_registrado=False)
-        st.session_state.pop("_dejure_hash_login", None)
-        authentication_status = None
-        username = None
-
-if authentication_status is not True:
-    col_l1, col_l2, col_l3 = st.columns([1, 1, 1])
-    with col_l2:
-        if os.path.exists("logo.png"):
-            st.image("logo.png", use_container_width=True)
-        else:
-            st.markdown("<h1 style='text-align: center; color: #D4AF37;'>⚖️ DEJURE ADVOCACIA</h1>", unsafe_allow_html=True)
-        st.subheader("Login")
-        if st.session_state.get("sessao_expirada"):
-            st.warning("Sua sessão expirou. Faça login novamente.")
-        bloqueio_ate = st.session_state.get("_dejure_login_bloqueio_ate", 0)
-        if time.time() < bloqueio_ate:
-            st.error("Muitas tentativas incorretas. Aguarde alguns minutos para tentar novamente.")
-        else:
-            with st.form("dejure_login_nativo", clear_on_submit=True):
-                login_digitado = st.text_input("Usuário").strip().lower()
-                senha_digitada = st.text_input("Senha", type="password")
-                entrar = st.form_submit_button("Entrar", type="primary")
-            if entrar:
-                conta = usuarios_login.get(login_digitado)
-                hash_senha = str(conta.get("password") or "") if conta else ""
-                valido = False
-                try:
-                    if hash_senha.startswith(("$2a$", "$2b$", "$2y$")):
-                        valido = bcrypt.checkpw(senha_digitada.encode("utf-8"), hash_senha.encode("utf-8"))
-                except (ValueError, TypeError):
-                    valido = False
-                if valido and conta.get("role") not in ("inativo", "bloqueado"):
-                    st.session_state.update(authentication_status=True, username=login_digitado,
-                                            name=conta["name"], _dejure_hash_login=hash_senha,
-                                            login_registrado=False, sessao_expirada=False,
-                                            ultima_atividade=time.time(), _dejure_login_falhas=0)
-                    st.rerun()
-                else:
-                    falhas = st.session_state.get("_dejure_login_falhas", 0) + 1
-                    st.session_state["_dejure_login_falhas"] = falhas
-                    if falhas >= 5:
-                        st.session_state["_dejure_login_bloqueio_ate"] = time.time() + 300
-                        st.session_state["_dejure_login_falhas"] = 0
-                    st.error("Usuário ou senha incorretos.")
+cookie_secret = str(st.secrets.get("AUTH_COOKIE_KEY", "")).strip()
+if len(cookie_secret) < 32:
+    st.error("Configuração de segurança incompleta: AUTH_COOKIE_KEY deve ter pelo menos 32 caracteres.")
     st.stop()
 
-name = st.session_state.get("name")
-username = st.session_state.get("username")
-authentication_status = True
+authenticator = stauth.Authenticate(
+    credentials,
+    cookie_name="sistema_dejure_cookie_seguro_v1",
+    cookie_key=cookie_secret,
+    cookie_expiry_days=1
+)
+
+authentication_status = st.session_state.get('authentication_status')
+
+if authentication_status != True:
+    col_l1, col_l2, col_l3 = st.columns([1, 1, 1])
+    with col_l2:
+        if os.path.exists("logo.png"): st.image("logo.png", use_container_width=True)
+        else: st.markdown("<h1 style='text-align: center; color: #D4AF37;'>⚖️ DEJURE ADVOCACIA</h1>", unsafe_allow_html=True)
+
+try:
+    authenticator.login(location='main')
+except Exception:
+    authenticator.login('main')
+
+name = st.session_state.get('name')
+username = st.session_state.get('username')
 
 if authentication_status == True and not st.session_state.get('login_registrado', False):
     registrar_auditoria(username, "Login", "Acesso", f"Usuário {name} ({username}) efetuou login no sistema.")
@@ -696,24 +594,25 @@ elif authentication_status == True:
                 if st.form_submit_button("Atualizar Senha e Entrar", type="primary"):
                     if not nova_s or nova_s != conf_s:
                         st.error("As senhas não coincidem ou estão em branco.")
-                    elif len(nova_s) < 12:
-                        st.error("A senha deve ter pelo menos 12 caracteres.")
                     elif nova_s == "mudar123":
                         st.error("A nova senha não pode ser igual à senha padrão ('mudar123'). Escolha uma senha segura.")
                     else:
                         hash_novo = gerar_hash(nova_s)
                         try:
-                            resposta = supabase.table("usuarios_sistema").update({
-                                "senha_hash": hash_novo,
-                                "password": hash_novo,
-                                "trocar_senha": False
-                            }).eq("username", username).execute()
-                            if len(resposta.data or []) != 1:
-                                raise RuntimeError("Troca de senha não confirmada pelo banco.")
+                            try:
+                                supabase.table("usuarios_sistema").update({
+                                    "senha_hash": hash_novo,
+                                    "password": hash_novo,
+                                    "trocar_senha": False
+                                }).eq("username", username).execute()
+                            except Exception:
+                                supabase.table("usuarios_sistema").update({
+                                    "senha_hash": hash_novo,
+                                    "password": hash_novo
+                                }).eq("username", username).execute()
                             
                             registrar_auditoria(username, "Troca de Senha Obrigatória", "Segurança", "Senha alterada com sucesso no primeiro acesso.")
                             st.cache_data.clear()
-                            st.session_state["_dejure_hash_login"] = hash_novo
                             confirmar_operacao("🎉 Senha alterada com sucesso! Liberando acesso ao sistema...")
                             time.sleep(1)
                             st.rerun()
@@ -726,7 +625,6 @@ elif authentication_status == True:
                 st.session_state.update({
                     'authentication_status': None,
                     'login_registrado': False,
-                    '_dejure_hash_login': None,
                     'name': None,
                     'username': None
                 })
@@ -814,8 +712,6 @@ elif authentication_status == True:
         
         if st.button("Sair", use_container_width=True):
             registrar_auditoria(username, "Logout", "Acesso", f"Usuário {name} ({username}) efetuou logout do sistema.")
-            st.session_state.pop("_dejure_senha_provisoria", None)
-            st.session_state.pop("_dejure_hash_login", None)
             st.session_state.update({'authentication_status': None, 'login_registrado': False})
             st.rerun()
 
@@ -1396,7 +1292,7 @@ elif authentication_status == True:
                                   if str(p.get('status') or '').strip().casefold() == 'pago'}
         st.caption(f'{len(parcelas_todas_cliente)} parcela(s) cadastrada(s) para este cliente; '
                    f'{len(parcelas_cliente_baixas)} marcada(s) como pagas.')
-        referencia_baixas = dejure_date_input_br('Mês de referência para destacar parcelas a receber',
+        referencia_baixas = st.date_input('Mês de referência para destacar parcelas a receber',
                                           value=date.today().replace(day=1), key='referencia_baixas_status')
         st.subheader('Todas as parcelas do cliente')
         st.caption('Inclui parcelas históricas e parcelas em andamento, pagas ou pendentes. '
@@ -1415,7 +1311,7 @@ elif authentication_status == True:
                 'ID': pid,
             })
         if linhas_visao:
-            dejure_dataframe_br(pd.DataFrame(linhas_visao).style.map(dejure_cor_status_visual, subset=['Situação']),
+            st.dataframe(pd.DataFrame(linhas_visao).style.map(dejure_cor_status_visual, subset=['Situação']),
                          use_container_width=True, hide_index=True)
         st.caption('🟢 Recebida: baixa registrada. 🔴 A receber no mês: vencimento na referência selecionada. 🟡 A receber: pendente fora desse mês.')
         if not parcelas_cliente_baixas:
@@ -1457,7 +1353,7 @@ elif authentication_status == True:
                             data_padrao = date.fromisoformat(data_anterior)
                         except ValueError:
                             data_padrao = date.today()
-                        nova_data = dejure_date_input_br('Data efetiva do recebimento', data_padrao)
+                        nova_data = st.date_input('Data efetiva do recebimento', data_padrao)
                         colab_atual = str(info_baixa.get('colaborador_parcela') or '').strip()
                         # Lista de usuários cadastrados, sem necessidade de digitar o nome.
                         usuarios_colab = sorted({str(dados.get('name') or login).strip()
@@ -1608,13 +1504,13 @@ elif authentication_status == True:
                         data_hist_padrao = date.fromisoformat(str(estado_hist.get('data_recebimento') or '')[:10])
                     except ValueError:
                         data_hist_padrao = date.today()
-                    data_hist_ed = dejure_date_input_br('Data real do recebimento pelo escritório', value=data_hist_padrao)
+                    data_hist_ed = st.date_input('Data real do recebimento pelo escritório', value=data_hist_padrao)
                     comp_hist_atual = str(estado_hist.get('competencia_balanco') or data_hist_padrao.strftime('%Y-%m'))
                     try:
                         comp_hist_data = date.fromisoformat(comp_hist_atual[:7] + '-01')
                     except ValueError:
                         comp_hist_data = data_hist_padrao.replace(day=1)
-                    competencia_hist_ed = dejure_date_input_br('Mês de competência no balanço (escolha qualquer dia do mês)', value=comp_hist_data, key='competencia_edicao_hist')
+                    competencia_hist_ed = st.date_input('Mês de competência no balanço (escolha qualquer dia do mês)', value=comp_hist_data, key='competencia_edicao_hist')
                     st.caption('O mês escolhido define a prestação de contas, independentemente da data do pagamento do cliente.')
                     motivo_hist_ed = st.text_input('Justificativa da alteração (obrigatória)')
                     salvar_hist_ed = st.form_submit_button('Salvar escolha', type='primary')
@@ -1659,7 +1555,7 @@ elif authentication_status == True:
                 pesquisa_prot = st.text_input("Pesquisar por processo ou protocolante", key="master_busca_protocolo")
                 filtrados_prot = [e for e in eventos_prot if pesquisa_prot.casefold() in
                                   (str(e.get("processo_id", "")) + " " + str(e.get("protocolado_por", ""))).casefold()]
-                dejure_dataframe_br([{"Processo ID": e.get("processo_id"), "Protocolante": e.get("protocolado_por"),
+                st.dataframe([{"Processo ID": e.get("processo_id"), "Protocolante": e.get("protocolado_por"),
                                "Data": e.get("protocolado_em")} for e in filtrados_prot],
                              use_container_width=True, hide_index=True)
                 if filtrados_prot:
@@ -1679,7 +1575,7 @@ elif authentication_status == True:
                             data_original_prot = date.fromisoformat(str(evento_prot.get("protocolado_em"))[:10])
                         except (ValueError, TypeError):
                             data_original_prot = date.today()
-                        data_nova_prot = dejure_date_input_br("Data do protocolo", value=data_original_prot)
+                        data_nova_prot = st.date_input("Data do protocolo", value=data_original_prot)
                         motivo_prot = st.text_area("Motivo da correção (obrigatório)")
                         salvar_prot = st.form_submit_button("Salvar correção", type="primary")
                         if salvar_prot:
@@ -1845,8 +1741,8 @@ elif authentication_status == True:
             with st.form('form_despesa_dejure', clear_on_submit=True):
                 descricao = st.text_input('Descrição', max_chars=180)
                 valor = st.number_input('Valor (R$)', min_value=0.01, step=10.0, format='%.2f')
-                competencia = dejure_date_input_br('Primeiro mês de competência (mês a que a despesa pertence)', value=competencia_sugerida, help='Ex.: despesa de outubro paga em novembro: competência 01/10, vencimento 02/11.')
-                vencimento = dejure_date_input_br('Primeiro vencimento', hoje_fin)
+                competencia = st.date_input('Primeiro mês de competência (mês a que a despesa pertence)', value=competencia_sugerida, help='Ex.: despesa de outubro paga em novembro: competência 01/10, vencimento 02/11.')
+                vencimento = st.date_input('Primeiro vencimento', hoje_fin)
                 if forma != 'Única':
                     st.caption('Para despesas parceladas ou recorrentes, as próximas parcelas são geradas mensalmente a partir da competência escolhida. Confira as datas na Projeção de parcelas.')
                 if forma == 'Parcelada':
@@ -1924,7 +1820,7 @@ elif authentication_status == True:
                     'Situação': dejure_status_parcela_visual(d.get('situacao'), d.get('vencimento'), hoje_fin, 'pagar'),
                     'Parcela': d.get('numero_parcela_despesa') or '—'
                 } for d in despesas_filtradas]
-                dejure_dataframe_br(pd.DataFrame(linhas_d).style.map(dejure_cor_status_visual, subset=['Situação']), hide_index=True, use_container_width=True)
+                st.dataframe(pd.DataFrame(linhas_d).style.map(dejure_cor_status_visual, subset=['Situação']), hide_index=True, use_container_width=True)
                 opcoes_d = {f"#{d['id']} | Parcela {d.get('numero_parcela_despesa') or 'única'} | {str(d.get('competencia') or '')[:7]} | {moeda_c(centavos(d.get('valor')))}": d for d in despesas_filtradas}
                 escolha_d = st.selectbox('2. Selecione a parcela / lançamento para editar',
                                          list(opcoes_d), key='bal_despesa_edicao')
@@ -1934,8 +1830,8 @@ elif authentication_status == True:
                     novo_tipo = st.selectbox('Categoria', ['Fixa', 'Variável', 'Outras'], index=['Fixa','Variável','Outras'].index(alvo.get('tipo')) if alvo.get('tipo') in ['Fixa','Variável','Outras'] else 2)
                     nova_desc = st.text_input('Descrição', value=str(alvo.get('descricao') or ''))
                     novo_valor = st.number_input('Valor (R$)', min_value=0.01, value=max(0.01, centavos(alvo.get('valor')) / 100), format='%.2f')
-                    nova_comp = dejure_date_input_br('Competência (mês da despesa, independente do vencimento)', value=data_segura(alvo.get('competencia')) or competencia_sugerida)
-                    novo_venc = dejure_date_input_br('Vencimento', value=data_segura(alvo.get('vencimento')) or hoje_fin)
+                    nova_comp = st.date_input('Competência (mês da despesa, independente do vencimento)', value=data_segura(alvo.get('competencia')) or competencia_sugerida)
+                    novo_venc = st.date_input('Vencimento', value=data_segura(alvo.get('vencimento')) or hoje_fin)
                     nova_sit = st.selectbox('Situação', ['Pendente','Paga'], index=1 if alvo.get('situacao') == 'Paga' else 0)
                     nova_obs = st.text_area('Observações', value=str(alvo.get('observacoes') or ''))
                     atualizar = st.form_submit_button('Salvar alterações')
@@ -2005,7 +1901,7 @@ elif authentication_status == True:
         with abas[4]:
             st.subheader('Despesas fixas e parceladas programadas')
             if programacoes:
-                dejure_dataframe_br(pd.DataFrame([{
+                st.dataframe(pd.DataFrame([{
                     'ID': p['id'], 'Descrição': p['descricao'], 'Tipo': p['tipo'],
                     'Valor mensal': moeda_c(centavos(p['valor'])),
                     'Início': str(p['inicio'])[:7],
@@ -2071,7 +1967,7 @@ elif authentication_status == True:
             # A prestação de contas dos dias 1 a 5 refere-se ao mês anterior.
             # O painel NUNCA soma competências anteriores à escolhida.
             competencia_padrao = hoje_fin.replace(day=1) - relativedelta(months=1)
-            mes_ref = dejure_date_input_br('Mês de competência da prestação de contas',
+            mes_ref = st.date_input('Mês de competência da prestação de contas',
                                     value=competencia_padrao, key='bal_mes_ref')
             inicio = mes_ref.replace(day=1)
             fim = inicio + relativedelta(months=1)
@@ -2143,14 +2039,14 @@ elif authentication_status == True:
                             'Situação': d.get('situacao') or '',
                             'Valor': moeda_c(centavos(d.get('valor'))),
                         })
-                    dejure_dataframe_br(pd.DataFrame(linhas_fora), hide_index=True, use_container_width=True)
+                    st.dataframe(pd.DataFrame(linhas_fora), hide_index=True, use_container_width=True)
                     vencem_mes = [d for d in registros_fora if data_segura(d.get('vencimento'))
                                  and no_periodo(data_segura(d.get('vencimento')))]
                     if vencem_mes:
                         st.warning(f'ATENÇÃO: {len(vencem_mes)} despesa(s) têm vencimento em {inicio:%m/%Y}, '
                                    'mas estão cadastradas em outra competência. Elas não foram somadas ao balanço. '
                                    'Confira os registros antes de corrigir a competência.')
-                        dejure_dataframe_br(pd.DataFrame([{
+                        st.dataframe(pd.DataFrame([{
                             'ID': d.get('id'), 'Descrição': d.get('descricao') or '',
                             'Competência atual': str(d.get('competencia') or '')[:10],
                             'Vencimento': formatar_data_br(d.get('vencimento')),
@@ -2163,7 +2059,7 @@ elif authentication_status == True:
                     st.success('Todos os lançamentos encontrados pertencem à competência selecionada.')
                 if programacoes:
                     st.markdown('**Programações de despesas cadastradas**')
-                    dejure_dataframe_br(pd.DataFrame([{
+                    st.dataframe(pd.DataFrame([{
                         'ID': p.get('id'), 'Descrição': p.get('descricao') or '',
                         'Modalidade': 'Parcelada' if int(p.get('quantidade') or 0) > 0 else 'Mensal recorrente',
                         'Categoria': p.get('tipo') or '',
@@ -2219,7 +2115,7 @@ elif authentication_status == True:
                 st.caption('Saldo previsto após quitar as despesas pendentes: '
                            + moeda_c(receita - despesa_s - pend_s)
                            + '. Valor informativo; nenhuma baixa ou repasse foi realizado.')
-            dejure_dataframe_br(df_s, hide_index=True, use_container_width=True)
+            st.dataframe(df_s, hide_index=True, use_container_width=True)
             st.caption('Despesas pendentes são divididas entre os sócios e exibidas imediatamente '
                        'como valores a pagar na prestação de contas. Só despesas marcadas como pagas '
                        'reduzem o saldo realizado. A previsão não gera pagamento automático.')
@@ -2261,7 +2157,7 @@ elif authentication_status == True:
                         return 'background-color: #493d16; color: #ffe18a; font-weight: bold;'
                     return ''
                 tabela_conferencia = pd.DataFrame(linhas_conferencia)
-                dejure_dataframe_br(tabela_conferencia.style.map(cor_status_prestacao, subset=['Situação']),
+                st.dataframe(tabela_conferencia.style.map(cor_status_prestacao, subset=['Situação']),
                              hide_index=True, use_container_width=True)
                 st.caption('🟢 Paga: despesa quitada. 🔴 A pagar no mês: não paga, com vencimento na competência selecionada. 🟡 A pagar: não paga, fora dessa competência.')
                 st.caption(
@@ -2276,10 +2172,10 @@ elif authentication_status == True:
                 for d in desp:
                     resumo_tipo[str(d.get('tipo') or 'Outras')] += centavos(d.get('valor'))
                 st.subheader('Despesas por categoria (pagas e pendentes)')
-                dejure_dataframe_br(pd.DataFrame([{'Categoria': k, 'Total': moeda_c(v)} for k,v in resumo_tipo.items()]), hide_index=True, use_container_width=True)
+                st.dataframe(pd.DataFrame([{'Categoria': k, 'Total': moeda_c(v)} for k,v in resumo_tipo.items()]), hide_index=True, use_container_width=True)
             st.subheader('Extrato dos repasses no período')
             if rep:
-                dejure_dataframe_br(pd.DataFrame([{'Data': r['data'].strftime('%d/%m/%Y'), 'Contrato': r['contrato'], 'Leônidas': moeda_c(r['leonidas']), 'Nelson': moeda_c(r['nelson'])} for r in rep]), hide_index=True, use_container_width=True)
+                st.dataframe(pd.DataFrame([{'Data': r['data'].strftime('%d/%m/%Y'), 'Contrato': r['contrato'], 'Leônidas': moeda_c(r['leonidas']), 'Nelson': moeda_c(r['nelson'])} for r in rep]), hide_index=True, use_container_width=True)
             else:
                 st.info('Nenhum repasse encontrado neste período.')
 
@@ -2288,7 +2184,7 @@ elif authentication_status == True:
             st.caption('Os movimentos são agrupados pelo mês de competência. A prestação de contas '
                        'ocorre entre os dias 1 e 5 do mês seguinte. Este calendário não confirma '
                        'automaticamente que os sócios receberam suas partes.')
-            mes_fech = dejure_date_input_br('Competência para prestação de contas',
+            mes_fech = st.date_input('Competência para prestação de contas',
                                       value=hoje_fin.replace(day=1), key='prest_competencia').replace(day=1)
             janela_inicio, janela_fim = janela_prestacao(mes_fech)
             st.info(f'Movimentação de {mes_fech:%m/%Y} — prestar contas entre '
@@ -2304,7 +2200,7 @@ elif authentication_status == True:
             despesas_a_pagar = sum(centavos(d.get('valor')) for d in desp_fech if d.get('situacao') != 'Paga')
             desp_n = despesas_quitadas // 2
             desp_l = despesas_quitadas - desp_n
-            dejure_dataframe_br(pd.DataFrame([
+            st.dataframe(pd.DataFrame([
                 {'Sócio': 'Leônidas', 'Receitas': moeda_c(receitas_l), 'Despesas pagas': moeda_c(desp_l), 'Saldo': moeda_c(receitas_l - desp_l)},
                 {'Sócio': 'Nelson', 'Receitas': moeda_c(receitas_n), 'Despesas pagas': moeda_c(desp_n), 'Saldo': moeda_c(receitas_n - desp_n)},
             ]), hide_index=True, use_container_width=True)
@@ -2370,7 +2266,7 @@ elif authentication_status == True:
                          'Despesas pendentes': moeda_c(total_despesas),
                          'Leônidas (após despesas)': moeda_c(total_leo_liquido),
                          'Nelson (após despesas)': moeda_c(total_nel_liquido)})
-            dejure_dataframe_br(pd.DataFrame(proj), hide_index=True, use_container_width=True)
+            st.dataframe(pd.DataFrame(proj), hide_index=True, use_container_width=True)
             st.info('Valores por sócio são projeções, não repasses realizados. Eventuais pagamentos a colaboradores definidos na baixa futura reduzirão os valores efetivos. Os saldos após despesas consideram somente despesas pendentes cadastradas para cada mês.')
             st.warning('Parcelas vencidas antes do mês atual não entram nesta projeção. Despesas fixas ativas são projetadas mensalmente.')
 
@@ -2402,41 +2298,7 @@ elif authentication_status == True:
                     exibir_tabela(df_dist, use_container_width=True, hide_index=True)
 
                 st.markdown("---")
-                with st.expander("➕ Incluir prospectado pendente na fila de distribuição", expanded=False):
-                    st.caption("O prospectado continua pendente. O atendimento só será concluído pelo usuário responsável.")
-                    try:
-                        prospectados_fila = supabase.table("prospectados_pendentes").select("*").execute().data or []
-                        candidatos = [p for p in prospectados_fila if not p.get("atendido", False)]
-                        opcoes_prospectados = {f"#{p['id']} — {p.get('nome', 'Sem nome')}": p for p in candidatos}
-                        if not opcoes_prospectados:
-                            st.info("Nenhum prospectado pendente disponível.")
-                        else:
-                            escolhido_pros = st.selectbox("Prospectado a enviar", list(opcoes_prospectados), key="fila_pros_sel")
-                            if st.button("Enviar prospectado para a fila", key="fila_pros_enviar", type="primary"):
-                                pros = opcoes_prospectados[escolhido_pros]
-                                existentes = supabase.table("distribuicao_processos").select("id,status").eq("prospectado_id", pros['id']).execute().data or []
-                                if existentes:
-                                    st.warning("Este prospectado já foi enviado para a distribuição. Nenhum registro duplicado foi criado.")
-                                else:
-                                    supabase.table("distribuicao_processos").insert({
-                                        "cliente_nome": pros.get("nome") or "Sem nome",
-                                        "cpf_cnpj": None,
-                                        "telefone": pros.get("celular") or pros.get("telefone"),
-                                        "cadastrado_por": name,
-                                        "status": "Pendente",
-                                        "data_envio": date.today().isoformat(),
-                                        "observacoes": f"Prospectado pendente #{pros['id']} — {pros.get('prospectador') or 'Sem prospectador'}",
-                                        "origem_cliente": "Prospectados Pendentes",
-                                        "prospectado_id": pros['id']
-                                    }).execute()
-                                    registrar_auditoria(username, "Enviar Prospectado para Distribuição", "Distribuição", f"Prospectado ID {pros['id']}")
-                                    st.cache_data.clear()
-                                    st.success("Prospectado incluído na fila, mantendo a situação Pendente.")
-                                    st.rerun()
-                    except Exception as erro_pros_fila:
-                        st.error(f"Erro ao consultar ou enviar prospectados: {erro_pros_fila}")
-                        st.caption("Confirme se o SQL de integração foi executado no Supabase.")
-
+                
                 tab_dist_cad, tab_dist_exc = st.tabs(["⚖️ Distribuir Processo", "🗑️ Excluir da Fila"])
                 
                 with tab_dist_cad:
@@ -2476,9 +2338,7 @@ elif authentication_status == True:
                                     "descricao": f"Processo distribuído por {name}. Obs: {obs_dist}",
                                     "status": "Aguardando Documentação",
                                     "responsavel": adv_responsavel,
-                                    "solicitou_revisao": False,
-                                    "origem_cliente": obj_sel_dist.get('origem_cliente') or 'Clientes Cadastrados',
-                                    "prospectado_id": obj_sel_dist.get('prospectado_id')
+                                    "solicitou_revisao": False
                                 }).execute()
 
                                 registrar_auditoria(username, "Distribuir Processo", "Distribuição", f"Cliente {obj_sel_dist['cliente_nome']} atribuído a {adv_responsavel}")
@@ -2820,7 +2680,7 @@ elif authentication_status == True:
             acoes = ["Nossa Equipe"]
         elif menu_principal == "Segurança":
             acoes = ["Meu Perfil", "Alterar Senha"]
-            if user_role == 'admin': acoes = ["Meu Perfil", "Gerenciar Usuários", "Cadastrar Novo Usuário", "Redefinir Senha de Usuário", "Alterar Senha"]
+            if user_role == 'admin': acoes = ["Meu Perfil", "Gerenciar Usuários", "Cadastrar Novo Usuário", "Alterar Senha"]
             if username == "master": acoes.append("Reiniciar IDs de Teste")
         else:
             acoes = []
@@ -2829,7 +2689,7 @@ elif authentication_status == True:
             if acoes: st.session_state['submenu_atual'] = acoes[0]
 
         if acoes:
-            cols = st.columns(3 if menu_principal in ("Meus Processos", "Pagamentos") else len(acoes))
+            cols = st.columns(3 if menu_principal == "Meus Processos" else len(acoes))
             for idx, acao in enumerate(acoes):
                 with cols[idx % len(cols)]:
                     if st.button(acao, use_container_width=True, type="primary" if st.session_state['submenu_atual'] == acao else "secondary"):
@@ -3437,40 +3297,6 @@ elif authentication_status == True:
                                     st.write(f"**Tel / Cel:** {p.get('telefone') or p.get('celular') or 'N/D'}")
                                 with col_info3:
                                     st.write(f"**Cel. Prospectado:** {p.get('celular_prospectados') or 'N/D'}")
-                                # Envio direto à fila unificada, sem mudar o status do prospectado.
-                                if not p.get('atendido', False):
-                                    try:
-                                        envios_existentes = supabase.table('distribuicao_processos').select('id,status').eq('prospectado_id', p['id']).execute().data or []
-                                    except Exception as erro_consulta_envio:
-                                        envios_existentes = None
-                                        st.error(f"Não foi possível consultar a fila de distribuição: {erro_consulta_envio}")
-                                    if envios_existentes is not None:
-                                        if envios_existentes:
-                                            st.caption("📥 Já enviado à Distribuição de Processos.")
-                                        elif st.button("📤 Enviar para distribuição", key=f"enviar_prospectado_{p['id']}", use_container_width=False):
-                                            try:
-                                                # Nova conferência para evitar duplicidade entre atualizações de tela.
-                                                rechecagem = supabase.table('distribuicao_processos').select('id').eq('prospectado_id', p['id']).execute().data or []
-                                                if rechecagem:
-                                                    st.warning("Este prospectado já consta na distribuição. Nenhum registro duplicado foi criado.")
-                                                else:
-                                                    supabase.table('distribuicao_processos').insert({
-                                                        'cliente_nome': p.get('nome') or 'Sem nome',
-                                                        'cpf_cnpj': None,
-                                                        'telefone': p.get('celular') or p.get('telefone'),
-                                                        'cadastrado_por': name,
-                                                        'status': 'Pendente',
-                                                        'data_envio': date.today().isoformat(),
-                                                        'observacoes': f"Prospectado pendente #{p['id']} — {p.get('prospectador') or 'Sem prospectador'}",
-                                                        'origem_cliente': 'Prospectados Pendentes',
-                                                        'prospectado_id': p['id']
-                                                    }).execute()
-                                                    registrar_auditoria(username, 'Enviar Prospectado para Distribuição', 'Prospectados Pendentes', f"Prospectado ID {p['id']} - {p.get('nome')}")
-                                                    st.cache_data.clear()
-                                                    st.success("Cliente enviado para a fila de distribuição. Continua pendente até o atendimento.")
-                                                    st.rerun()
-                                            except Exception as erro_envio:
-                                                st.error(f"Erro ao enviar prospectado: {erro_envio}")
                                 with col_info4:
                                     status_atual = p.get('atendido', False)
                                     check_atendido = st.checkbox("Atendido", value=status_atual, key=f"chk_atend_{p['id']}")
@@ -3663,23 +3489,6 @@ elif authentication_status == True:
                     sel_proc_str = st.selectbox("Selecione o Processo:", list(dict_ps.keys()))
                     obj_proc = dict_ps[sel_proc_str]
 
-                    if obj_proc.get('prospectado_id'):
-                        st.info("📍 Origem: Prospectados Pendentes. O fluxo de status, documentos e revisão é igual ao dos demais processos.")
-                        try:
-                            id_pros_atual = obj_proc['prospectado_id']
-                            dados_pros = supabase.table('prospectados_pendentes').select('id,atendido').eq('id', id_pros_atual).execute().data or []
-                            if dados_pros:
-                                atendido_atual = bool(dados_pros[0].get('atendido'))
-                                with st.expander('Situação do atendimento do prospectado'):
-                                    st.write('Atendido' if atendido_atual else 'Pendente')
-                                    if st.button('Marcar como atendido' if not atendido_atual else 'Retornar a pendente', key=f"pros_atend_{obj_proc['id']}"):
-                                        supabase.table('prospectados_pendentes').update({'atendido': not atendido_atual}).eq('id', id_pros_atual).execute()
-                                        registrar_auditoria(username, 'Atualizar Atendimento Prospectado', 'Meus Processos', f"Prospectado {id_pros_atual}: atendido={not atendido_atual}")
-                                        st.cache_data.clear()
-                                        st.rerun()
-                        except Exception as erro_atend:
-                            st.warning(f"Não foi possível consultar o atendimento do prospectado: {erro_atend}")
-
                     if obj_proc.get('observacoes_revisao'):
                         st.warning(f"💬 **Feedback da Revisão (Admin):** {obj_proc.get('observacoes_revisao')}")
 
@@ -3722,8 +3531,6 @@ elif authentication_status == True:
                                     "status": novo_status,
                                     "descricao": nova_desc
                                 }).eq("id", obj_proc['id']).execute()
-                                if obj_proc.get('prospectado_id'):
-                                    supabase.table('prospectados_pendentes').update({'status_atendimento': novo_status}).eq('id', obj_proc['prospectado_id']).execute()
                                 registrar_auditoria(username, "Atualizar Processo", "Meus Processos", f"ID {obj_proc['id']} alterado para {novo_status}")
                                 st.cache_data.clear()
                                 confirmar_operacao("✅ Processo atualizado com sucesso!")
@@ -3766,8 +3573,6 @@ elif authentication_status == True:
                                             supabase.table('meus_processos').update({
                                                 'status': 'Aguardando Revisão', 'solicitou_revisao': True
                                             }).eq('id', obj_proc['id']).execute()
-                                            if obj_proc.get('prospectado_id'):
-                                                supabase.table('prospectados_pendentes').update({'status_atendimento': 'Aguardando Revisão'}).eq('id', obj_proc['prospectado_id']).execute()
                                             supabase.table('revisao_atribuicoes').upsert({
                                                 'processo_id': obj_proc['id'],
                                                 'admin_username': admins[admin_escolhido],
@@ -4000,7 +3805,7 @@ elif authentication_status == True:
                         else:
                             val_data = None
                         
-                        p_nasc = dejure_date_input_br("Data de Nascimento", value=val_data, min_value=date(1920, 1, 1), max_value=date.today(), format="DD/MM/YYYY")
+                        p_nasc = st.date_input("Data de Nascimento", value=val_data, min_value=date(1920, 1, 1), max_value=date.today(), format="DD/MM/YYYY")
                         
                         file_foto = st.file_uploader("Escolher Foto do Computador ou Celular (.png, .jpg, .jpeg)", type=["png", "jpg", "jpeg"])
                         
@@ -4089,61 +3894,6 @@ elif authentication_status == True:
                             confirmar_operacao("✅ Senha alterada! Saia e entre novamente com a nova senha.")
                         except Exception as erro:
                             st.error(f"Não foi possível salvar a senha: {erro}")
-
-            elif sub == "Redefinir Senha de Usuário" and user_role == "admin":
-                st.header("🔐 Redefinir senha de funcionário")
-                st.info("O sistema gerará automaticamente uma senha provisória. O funcionário deverá alterá-la ao entrar novamente.")
-                # A senha só é exibida após o banco confirmar a redefinição.
-                aviso = st.session_state.get("_dejure_senha_provisoria")
-                if aviso:
-                    st.success(f"Senha provisória gerada para **{aviso['usuario']}**. Copie e entregue de forma privada.")
-                    st.code(aviso["senha"], language=None)
-                    st.warning("Esta senha ficará visível apenas nesta sessão até você ocultá-la. Não compartilhe por grupos.")
-                    if st.button("Ocultar senha provisória", key="ocultar_senha_provisoria"):
-                        st.session_state.pop("_dejure_senha_provisoria", None)
-                        st.rerun()
-                else:
-                    candidatos = [(login, dados.get("name") or login)
-                                  for login, dados in credentials["usernames"].items()
-                                  if login not in (username, "master")
-                                  and (username == "master" or dados.get("role") != "admin")]
-                    if not candidatos:
-                        st.info("Não há usuários elegíveis.")
-                    else:
-                        opcoes = {f"{nome} ({login})": login for login, nome in candidatos}
-                        with st.form("form_redefinir_senha_usuario"):
-                            escolha = st.selectbox("Funcionário", list(opcoes))
-                            autorizo = st.checkbox("Confirmo que desejo invalidar a senha atual deste funcionário.")
-                            enviar = st.form_submit_button("Gerar senha provisória e redefinir", type="primary")
-                        if enviar:
-                            alvo = opcoes[escolha]
-                            if not autorizo:
-                                st.error("Confirme a operação.")
-                            else:
-                                try:
-                                    consulta = supabase.table("usuarios_sistema").select("username,role").eq("username", alvo).execute()
-                                    registros = consulta.data or []
-                                    if len(registros) != 1:
-                                        raise ValueError("Usuário não encontrado.")
-                                    perfil = str(registros[0].get("role") or "")
-                                    if alvo in ("master", username) or (username != "master" and perfil == "admin"):
-                                        raise PermissionError("Sem permissão para redefinir esta conta.")
-                                    if perfil not in ("admin", "advogado", "bacharel", "estagiario"):
-                                        raise PermissionError("Perfil não autorizado.")
-                                    senha_temp = gerar_senha_provisoria()
-                                    hash_novo = gerar_hash(senha_temp)
-                                    resposta = supabase.table("usuarios_sistema").update({
-                                        "senha_hash": hash_novo, "password": hash_novo, "trocar_senha": True
-                                    }).eq("username", alvo).eq("role", perfil).execute()
-                                    if len(resposta.data or []) != 1:
-                                        raise RuntimeError("Atualização não confirmada pelo banco.")
-                                    registrar_auditoria(username, "Redefinição de senha", "Segurança",
-                                                        f"Senha provisória gerada para {alvo}; troca obrigatória ativada.")
-                                    st.session_state["_dejure_senha_provisoria"] = {"usuario": alvo, "senha": senha_temp}
-                                    st.cache_data.clear()
-                                    st.rerun()
-                                except Exception as erro:
-                                    st.error(f"Redefinição não concluída: {erro}")
 
             elif sub == "Cadastrar Novo Usuário" and user_role == 'admin':
                 st.header("➕ Cadastrar Novo Usuário no Sistema")
@@ -4269,26 +4019,17 @@ elif authentication_status == True:
                 st.header("📝 Novo Contrato e Parcelamento")
                 cli_db = carregar_dados("clientes_cadastrados")
                 nomes = [c['nome'] for c in cli_db]
-                # À vista cria um único recebimento pendente, com rateio na baixa.
-                tipo_pagamento = st.radio(
-                    "Forma de pagamento do contrato:",
-                    ["Parcelado", "À vista (pagamento integral)"],
-                    key="hon_tipo_pagamento", horizontal=True
-                )
-                pagamento_a_vista = tipo_pagamento == "À vista (pagamento integral)"
                 # Controles dinâmicos fora do formulário: Streamlit atualiza a cada alteração.
                 modo_parcelamento = st.radio(
                     "Forma de parcelamento do saldo:",
                     ["Parcelas iguais (automático)", "Parcelas personalizadas (valores diferentes)"],
                     key="modo_parcelamento_honorarios",
-                    horizontal=True,
-                    disabled=pagamento_a_vista
+                    horizontal=True
                 )
-                personalizado = (not pagamento_a_vista) and modo_parcelamento == "Parcelas personalizadas (valores diferentes)"
+                personalizado = modo_parcelamento == "Parcelas personalizadas (valores diferentes)"
                 npar = int(st.number_input(
                     "Quantidade de parcelas do saldo", min_value=1, max_value=36,
-                    value=3, step=1, key="hon_quantidade_parcelas_dinamica",
-                    disabled=pagamento_a_vista
+                    value=3, step=1, key="hon_quantidade_parcelas_dinamica"
                 ))
 
                 # Dados e valores personalizados também ficam fora do st.form.
@@ -4297,11 +4038,7 @@ elif authentication_status == True:
                 cli = st.text_input("Nome", key="hon_cliente_nome") if cli_op == "Outro" else cli_op
                 serv = st.text_input("Serviço", key="hon_servico")
                 vtot = campo_moeda_br("Valor Total do Contrato (R$)", "hon_valor_total")
-                if pagamento_a_vista:
-                    v_entrada = 0.0
-                    st.info("À vista: será gerado um único pagamento pendente pelo valor integral. O rateio será calculado quando o ADM confirmar o recebimento em 'Baixar Parcela'.")
-                else:
-                    v_entrada = campo_moeda_br("Valor de Entrada (R$)", "hon_valor_entrada")
+                v_entrada = campo_moeda_br("Valor de Entrada (R$)", "hon_valor_entrada")
                 saldo_preview = round(float(vtot or 0) - float(v_entrada or 0), 2)
                 valores_parcelas = []
 
@@ -4325,18 +4062,15 @@ elif authentication_status == True:
                         st.error(f"As parcelas ultrapassam o saldo em {formatar_moeda_br(abs(diferenca_preview))}.")
                     else:
                         st.success("A soma das parcelas corresponde ao saldo restante.")
-                elif not pagamento_a_vista:
+                else:
                     st.caption(f"O saldo será dividido automaticamente em {npar} parcelas.")
 
                 with st.form("fc_hon", clear_on_submit=False):
-                    dt1 = dejure_date_input_br(
-                        "Data prevista do pagamento integral" if pagamento_a_vista else "Vencimento da 1ª Parcela (ou Entrada)",
-                        datetime.now()
-                    )
+                    dt1 = st.date_input("Vencimento da 1ª Parcela (ou Entrada)", datetime.now())
 
                     col_b_h1, col_b_h2 = st.columns(2)
                     with col_b_h1:
-                        salvar_hon = st.form_submit_button("Cadastrar Contrato à Vista" if pagamento_a_vista else "Gerar Contrato e Parcelas", type="primary", use_container_width=True)
+                        salvar_hon = st.form_submit_button("Gerar Contrato e Parcelas", type="primary", use_container_width=True)
                     with col_b_h2:
                         voltar_hon = st.form_submit_button("⬅️ Voltar", use_container_width=True)
 
@@ -4356,22 +4090,6 @@ elif authentication_status == True:
                             if res.data:
                                 h_id = res.data[0]['id']
                                 saldo_restante = round(float(vtot) - float(v_entrada), 2)
-
-                                if pagamento_a_vista:
-                                    # Mesmo fluxo de parcelas, porém um único título integral.
-                                    # "À vista" usa o rateio completo da entrada na baixa.
-                                    supabase.table("parcelas").insert({
-                                        "honorario_id": h_id,
-                                        "numero_parcela": "À vista",
-                                        "valor": round(float(vtot), 2),
-                                        "vencimento": dt1.strftime("%Y-%m-%d"),
-                                        "status": "Pendente"
-                                    }).execute()
-                                    registrar_auditoria(username, "Cadastrar Contrato à Vista", "Pagamentos",
-                                                        f"Cliente: {cli} - Total: {formatar_moeda_br(vtot)}")
-                                    st.cache_data.clear()
-                                    confirmar_operacao("Contrato à vista cadastrado. O pagamento integral está pendente de baixa.")
-                                    st.rerun()
 
                                 if v_entrada > 0:
                                     supabase.table("parcelas").insert({
@@ -4471,13 +4189,13 @@ elif authentication_status == True:
                         inicio_rpv += 1000
                     st.subheader('RPVs cadastradas')
                     if registros_rpv:
-                        dejure_dataframe_br(pd.DataFrame(registros_rpv)[[c for c in ['id','cliente','servico','numero_rpv','percentual_rpv','valor_rpv_bruto','valor','status','data_liberacao','parcela_id'] if c in registros_rpv[0]]], use_container_width=True, hide_index=True)
+                        st.dataframe(pd.DataFrame(registros_rpv)[[c for c in ['id','cliente','servico','numero_rpv','percentual_rpv','valor_rpv_bruto','valor','status','data_liberacao','parcela_id'] if c in registros_rpv[0]]], use_container_width=True, hide_index=True)
                         aguardando_rpv = [r for r in registros_rpv if r.get('status') == 'Aguardando liberação']
                         if aguardando_rpv:
                             opcoes_rpv = {f"#{r['id']} — {r['cliente']} — {r.get('percentual_rpv') or 0}% da RPV":r for r in aguardando_rpv}
                             escolhido_rpv = st.selectbox('Selecionar RPV para informar liberação', list(opcoes_rpv), key='rpv_escolher')
                             registro_rpv = opcoes_rpv[escolhido_rpv]
-                            data_liberacao_rpv = dejure_date_input_br('Data da liberação', value=date.today(), key='rpv_data_liberacao')
+                            data_liberacao_rpv = st.date_input('Data da liberação', value=date.today(), key='rpv_data_liberacao')
                             valor_bruto_liberado = st.number_input('Valor bruto efetivamente liberado da RPV (R$)', min_value=0.0, value=0.0, step=100.0, format='%.2f', key='rpv_bruto_liberado')
                             from decimal import Decimal, ROUND_HALF_UP
                             honorarios_calculados = (Decimal(str(valor_bruto_liberado)) * Decimal(str(registro_rpv.get('percentual_rpv') or 0)) / Decimal('100')).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
@@ -4536,10 +4254,10 @@ elif authentication_status == True:
                 st.markdown("#### 💰 Entrada do cliente")
                 tem_entrada_hist = st.checkbox("O cliente deu uma entrada", key="hist_tem_entrada")
                 entrada_hist = campo_moeda_br("Valor da entrada já recebida (R$)", "hist_entrada") if tem_entrada_hist else 0.0
-                data_entrada_hist = dejure_date_input_br("Data do recebimento da entrada", value=date.today(), key="hist_data_entrada") if tem_entrada_hist else None
+                data_entrada_hist = st.date_input("Data do recebimento da entrada", value=date.today(), key="hist_data_entrada") if tem_entrada_hist else None
                 st.caption("A entrada é um recebimento histórico, não gera repasses e será descontada do total antes de calcular as parcelas.")
                 modo_hist = st.radio("Valores das parcelas", ["Parcelas iguais", "Informar valor de cada parcela"], horizontal=True, key="hist_modo")
-                primeira_data_hist = dejure_date_input_br("Vencimento original da primeira parcela", value=date.today(), key="hist_primeiro_venc")
+                primeira_data_hist = st.date_input("Vencimento original da primeira parcela", value=date.today(), key="hist_primeiro_venc")
                 st.caption("Os vencimentos seguintes são calculados mensalmente. Marque individualmente apenas as parcelas realmente recebidas; parcelas futuras não são pagas automaticamente.")
                 if valor_total_hist is not None and valor_total_hist > 0:
                     centavos_hist = int((Decimal(str(valor_total_hist)) * 100).quantize(Decimal("1")))
@@ -4569,10 +4287,10 @@ elif authentication_status == True:
                         recebida_hist = st.checkbox(f"Parcela {i_hist+1} já foi efetivamente recebida", value=(i_hist < pagas_hist), key=f"hist_recebida_{i_hist}")
                         recebida_flags_hist.append(recebida_hist)
                         if recebida_hist:
-                            data_rec = dejure_date_input_br(f"Data em que a parcela {i_hist+1} foi efetivamente recebida", value=venc_hist if venc_hist <= date.today() else date.today(), key=f"hist_data_rec_{i_hist}")
+                            data_rec = st.date_input(f"Data em que a parcela {i_hist+1} foi efetivamente recebida", value=venc_hist if venc_hist <= date.today() else date.today(), key=f"hist_data_rec_{i_hist}")
                             datas_receb_hist.append(data_rec)
                             incluir_balanco_hist.append(st.checkbox(f'Incluir parcela {i_hist+1} no Balanço Financeiro', value=False, key=f'hist_incluir_bal_{i_hist}'))
-                            mes_hist = dejure_date_input_br(f'Mês em que a parcela {i_hist+1} deve constar no Balanço', value=data_rec.replace(day=1), key=f'hist_competencia_{i_hist}') if incluir_balanco_hist[-1] else data_rec.replace(day=1)
+                            mes_hist = st.date_input(f'Mês em que a parcela {i_hist+1} deve constar no Balanço', value=data_rec.replace(day=1), key=f'hist_competencia_{i_hist}') if incluir_balanco_hist[-1] else data_rec.replace(day=1)
                             competencia_balanco_hist.append(mes_hist.strftime('%Y-%m'))
                         else:
                             datas_receb_hist.append(None)
@@ -4652,7 +4370,7 @@ elif authentication_status == True:
                             df_p['vencimento'] = df_p['vencimento'].apply(formatar_data_br)
                         if 'valor' in df_p.columns:
                             df_p['valor'] = df_p['valor'].apply(formatar_moeda_br)
-                        referencia_parcelas = dejure_date_input_br('Mês de referência para parcelas a receber',
+                        referencia_parcelas = st.date_input('Mês de referência para parcelas a receber',
                                                              value=date.today().replace(day=1), key='referencia_parcelas_receber')
                         df_p['Situação visual'] = [dejure_status_parcela_visual(p.get('status'), p.get('vencimento'), referencia_parcelas, 'receber') for p in res_p.data]
                         exibir_tabela(df_p.style.map(dejure_cor_status_visual, subset=['Situação visual']),
@@ -4704,8 +4422,7 @@ elif authentication_status == True:
                                 lista_usuarios.append({"nome": nome_u, "papel": papel_u})
                         
                         nomes_opcoes = [u['nome'] for u in lista_usuarios]
-                        is_entrada = (parcela_obj['numero_parcela'] in ("Entrada", "À vista"))
-                        is_avista = parcela_obj['numero_parcela'] == "À vista"
+                        is_entrada = (parcela_obj['numero_parcela'] == "Entrada")
                         
                         opcoes_prosp_baixa = ["Nenhum / Sem Prospectador", "Prospectador Externo"] + nomes_opcoes
                         if prosp_automatico_cli.startswith("Prospectador Externo:") and prosp_automatico_cli not in opcoes_prosp_baixa:
@@ -4716,8 +4433,8 @@ elif authentication_status == True:
                             idx_prosp_init = opcoes_prosp_baixa.index(prosp_automatico_cli)
 
                         if is_entrada:
-                            st.subheader("⚙️ Regra de Pagamento à Vista" if is_avista else "⚙️ Regra de Entrada (Com / Sem Prospecção)")
-                            st.info(("Pagamento integral à vista" if is_avista else "Entrada") + ": descontar prospectador e operador; aplicar fundo de 5% sobre o saldo somente se o valor bruto negociado do contrato for igual ou superior a R$ 1.000,00; dividir o restante entre os sócios (60/40).")
+                            st.subheader("⚙️ Regra de Entrada (Com / Sem Prospecção)")
+                            st.info("Entrada: descontar prospectador e operador; aplicar fundo de 5% sobre o saldo somente se o valor bruto negociado do contrato for igual ou superior a R$ 1.000,00; dividir o restante entre os sócios (60/40).")
                             
                             col_r1, col_r2 = st.columns(2)
                             with col_r1:
@@ -4767,7 +4484,7 @@ elif authentication_status == True:
                             regra_aplicada = "Entrada"
                             
                             if prosp_name == resp_name:
-                                regra_aplicada = "À vista (Acúmulo)" if is_avista else "Entrada (Acúmulo)"
+                                regra_aplicada = "Entrada (Acúmulo)"
                                 taxa = 0.60 if resp_role in ['admin', 'advogado'] else 0.40
                                 val_operador = round(valor_bruto * taxa, 2)
                                 val_prospectador = val_operador
@@ -4859,7 +4576,6 @@ elif authentication_status == True:
                                 "contrato": sel_contrato_str,
                                 "regra": regra_aplicada,
                                 "valor_bruto": round(valor_bruto, 2),
-                                "tipo_recebimento": "À vista" if is_avista else ("Entrada" if is_entrada else "Parcela"),
                                 "prospectador": prosp_name,
                                 "valor_prospectador": round(val_prospectador, 2),
                                 "operador": resp_name,
@@ -4978,9 +4694,9 @@ elif authentication_status == True:
 
                 col_f1, col_f2, col_f3 = st.columns(3)
                 with col_f1:
-                    dt_inicio = dejure_date_input_br("Data Inicial", value=primeiro_dia_mes)
+                    dt_inicio = st.date_input("Data Inicial", value=primeiro_dia_mes)
                 with col_f2:
-                    dt_fim = dejure_date_input_br("Data Final", value=hoje_dt)
+                    dt_fim = st.date_input("Data Final", value=hoje_dt)
                 with col_f3:
                     lista_usuarios_rel = ["Todos os Colaboradores / Sócios"]
                     for u in credentials['usernames'].values():
@@ -5165,10 +4881,10 @@ elif authentication_status == True:
                     cpf = st.text_input("CPF")
                     nome = st.text_input("Nome *")
                     local_pm = st.text_input("Local PM")
-                    dt_pm = dejure_date_input_br("Data PM", datetime.now())
+                    dt_pm = st.date_input("Data PM", datetime.now())
                     hora_pm = st.text_input("Hora PM (ex: 14:30:00)")
                     local_ps = st.text_input("Local PS")
-                    dt_ps = dejure_date_input_br("Data PS", datetime.now())
+                    dt_ps = st.date_input("Data PS", datetime.now())
                     hora_ps = st.text_input("Hora PS (ex: 15:30:00)")
                     senha_inss = st.text_input("Senha INSS")
                     elaborador = st.text_input("Elaborador")
@@ -5268,8 +4984,8 @@ elif authentication_status == True:
                                 dt_pm_val = datetime.strptime(obj.get('data_pm'), "%Y-%m-%d").date()
                             except:
                                 pass
-                        edt_pm = dejure_date_input_br("Data PM", value=dt_pm_val)
-                        ehora_pm = st.text_input("Hora PM (HH:MM:SS)", value=str(obj.get('hora_pm') or ''))
+                        edt_pm = st.date_input("Data PM", value=dt_pm_val)
+                        ehora_pm = st.text_input("Hora PM (HH:MM:SS)", value=obj.get('hora_pm',''))
 
                         elocal_ps = st.text_input("Local PS", value=obj.get('local_ps',''))
                         dt_ps_val = datetime.now().date()
@@ -5278,8 +4994,8 @@ elif authentication_status == True:
                                 dt_ps_val = datetime.strptime(obj.get('data_ps'), "%Y-%m-%d").date()
                             except:
                                 pass
-                        edt_ps = dejure_date_input_br("Data PS", value=dt_ps_val)
-                        ehora_ps = st.text_input("Hora PS (HH:MM:SS)", value=str(obj.get('hora_ps') or ''))
+                        edt_ps = st.date_input("Data PS", value=dt_ps_val)
+                        ehora_ps = st.text_input("Hora PS (HH:MM:SS)", value=obj.get('hora_ps',''))
 
                         esenhainss = st.text_input("Senha INSS", value=obj.get('senha_inss',''))
                         eelab = st.text_input("Elaborador", value=obj.get('elaborador',''))
@@ -5297,10 +5013,10 @@ elif authentication_status == True:
                                 "nome": enome,
                                 "local_pm": elocal_pm,
                                 "data_pm": edt_pm.strftime("%Y-%m-%d"),
-                                "hora_pm": formatar_hora_br(ehora_pm) if str(ehora_pm or "").strip() else None,
+                                "hora_pm": formatar_hora_br(ehora_pm) if ehora_pm.strip() else None,
                                 "local_ps": elocal_ps,
                                 "data_ps": edt_ps.strftime("%Y-%m-%d"),
-                                "hora_ps": formatar_hora_br(ehora_ps) if str(ehora_ps or "").strip() else None,
+                                "hora_ps": formatar_hora_br(ehora_ps) if ehora_ps.strip() else None,
                                 "senha_inss": esenhainss,
                                 "elaborador": eelab,
                                 "status": est_op
@@ -5345,7 +5061,7 @@ elif authentication_status == True:
             if sub == "Cadastrar Expediente":
                 st.header("📂 Novo Expediente")
                 with st.form("fc_exp", clear_on_submit=True):
-                    proc, cli, desc, dt, resp = st.text_input("Processo"), st.text_input("Cliente"), st.text_input("Descrição"), dejure_date_input_br("Prazo", datetime.now()), st.text_input("Responsável")
+                    proc, cli, desc, dt, resp = st.text_input("Processo"), st.text_input("Cliente"), st.text_input("Descrição"), st.date_input("Prazo", datetime.now()), st.text_input("Responsável")
                     
                     col_bx1, col_bx2 = st.columns(2)
                     with col_bx1:
@@ -5461,7 +5177,7 @@ elif authentication_status == True:
             if sub == "Cadastrar Expediente TRF":
                 st.header("⚖️ Novo Expediente TRF")
                 with st.form("fc_exp_trf", clear_on_submit=True):
-                    proc, cli, desc, dt, resp = st.text_input("Processo"), st.text_input("Cliente"), st.text_input("Descrição"), dejure_date_input_br("Prazo", datetime.now()), st.text_input("Responsável")
+                    proc, cli, desc, dt, resp = st.text_input("Processo"), st.text_input("Cliente"), st.text_input("Descrição"), st.date_input("Prazo", datetime.now()), st.text_input("Responsável")
                     
                     col_btrf1, col_btrf2 = st.columns(2)
                     with col_btrf1:

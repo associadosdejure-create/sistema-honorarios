@@ -1,6 +1,6 @@
 streamlit
-streamlit-authenticator
 supabase
 pandas
 openpyxl
 python-dateutil
+bcrypt

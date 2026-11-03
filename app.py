@@ -1,6 +1,5 @@
 import streamlit as str_app
 import streamlit as st
-import streamlit_authenticator as stauth
 from supabase import create_client
 import pandas as pd
 from datetime import datetime, date
@@ -8,6 +7,8 @@ from dateutil.relativedelta import relativedelta
 import time
 import os
 import bcrypt
+import secrets
+import string
 import json
 import base64
 import html
@@ -328,6 +329,19 @@ def endereco_legado(logradouro, numero, bairro):
         str(bairro or "").strip()
     ] if parte)
 
+def gerar_senha_provisoria(tamanho=18):
+    """Senha criptograficamente aleatória, com caracteres fáceis de digitar."""
+    letras = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
+    numeros = "23456789"
+    especiais = "@#%*-_"
+    alfabeto = letras + numeros + especiais
+    while True:
+        senha = "".join(secrets.choice(alfabeto) for _ in range(tamanho))
+        if (any(c in letras for c in senha) and any(c in numeros for c in senha)
+                and any(c in especiais for c in senha)):
+            return senha
+
+
 def gerar_hash(senha: str) -> str:
     return bcrypt.hashpw(senha.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
 
@@ -575,34 +589,69 @@ def carregar_usuarios_db():
 
 
 credentials = carregar_usuarios_db()
-cookie_secret = str(st.secrets.get("AUTH_COOKIE_KEY", "")).strip()
-if len(cookie_secret) < 32:
-    st.error("Configuração de segurança incompleta: AUTH_COOKIE_KEY deve ter pelo menos 32 caracteres.")
-    st.stop()
 
-authenticator = stauth.Authenticate(
-    credentials,
-    cookie_name="sistema_dejure_cookie_seguro_v1",
-    cookie_key=cookie_secret,
-    cookie_expiry_days=1
-)
+# Login nativo Streamlit: dispensa o componente frontend CookieManager.
+# Cada aba/conexão mantém sua própria sessão, sem cookie persistente.
+usuarios_login = credentials["usernames"]
+username = st.session_state.get("username")
+authentication_status = st.session_state.get("authentication_status")
+if authentication_status is True:
+    usuario_atual = usuarios_login.get(str(username or "").lower())
+    hash_atual = usuario_atual.get("password") if usuario_atual else None
+    # Invalida sessões quando a conta é excluída ou a senha é redefinida.
+    if (not hash_atual or not st.session_state.get("_dejure_hash_login")
+            or not secrets.compare_digest(str(hash_atual), str(st.session_state["_dejure_hash_login"]))):
+        st.session_state.update(authentication_status=None, username=None, name=None,
+                                login_registrado=False)
+        st.session_state.pop("_dejure_hash_login", None)
+        authentication_status = None
+        username = None
 
-authentication_status = st.session_state.get('authentication_status')
-
-if authentication_status != True:
+if authentication_status is not True:
     col_l1, col_l2, col_l3 = st.columns([1, 1, 1])
     with col_l2:
-        if os.path.exists("logo.png"): st.image("logo.png", use_container_width=True)
-        else: st.markdown("<h1 style='text-align: center; color: #D4AF37;'>⚖️ DEJURE ADVOCACIA</h1>", unsafe_allow_html=True)
+        if os.path.exists("logo.png"):
+            st.image("logo.png", use_container_width=True)
+        else:
+            st.markdown("<h1 style='text-align: center; color: #D4AF37;'>⚖️ DEJURE ADVOCACIA</h1>", unsafe_allow_html=True)
+        st.subheader("Login")
+        if st.session_state.get("sessao_expirada"):
+            st.warning("Sua sessão expirou. Faça login novamente.")
+        bloqueio_ate = st.session_state.get("_dejure_login_bloqueio_ate", 0)
+        if time.time() < bloqueio_ate:
+            st.error("Muitas tentativas incorretas. Aguarde alguns minutos para tentar novamente.")
+        else:
+            with st.form("dejure_login_nativo", clear_on_submit=True):
+                login_digitado = st.text_input("Usuário").strip().lower()
+                senha_digitada = st.text_input("Senha", type="password")
+                entrar = st.form_submit_button("Entrar", type="primary")
+            if entrar:
+                conta = usuarios_login.get(login_digitado)
+                hash_senha = str(conta.get("password") or "") if conta else ""
+                valido = False
+                try:
+                    if hash_senha.startswith(("$2a$", "$2b$", "$2y$")):
+                        valido = bcrypt.checkpw(senha_digitada.encode("utf-8"), hash_senha.encode("utf-8"))
+                except (ValueError, TypeError):
+                    valido = False
+                if valido and conta.get("role") not in ("inativo", "bloqueado"):
+                    st.session_state.update(authentication_status=True, username=login_digitado,
+                                            name=conta["name"], _dejure_hash_login=hash_senha,
+                                            login_registrado=False, sessao_expirada=False,
+                                            ultima_atividade=time.time(), _dejure_login_falhas=0)
+                    st.rerun()
+                else:
+                    falhas = st.session_state.get("_dejure_login_falhas", 0) + 1
+                    st.session_state["_dejure_login_falhas"] = falhas
+                    if falhas >= 5:
+                        st.session_state["_dejure_login_bloqueio_ate"] = time.time() + 300
+                        st.session_state["_dejure_login_falhas"] = 0
+                    st.error("Usuário ou senha incorretos.")
+    st.stop()
 
-try:
-    authenticator.login(location='main')
-except Exception:
-    authenticator.login('main')
-
-authentication_status = st.session_state.get('authentication_status')
-name = st.session_state.get('name')
-username = st.session_state.get('username')
+name = st.session_state.get("name")
+username = st.session_state.get("username")
+authentication_status = True
 
 if authentication_status == True and not st.session_state.get('login_registrado', False):
     registrar_auditoria(username, "Login", "Acesso", f"Usuário {name} ({username}) efetuou login no sistema.")
@@ -663,6 +712,7 @@ elif authentication_status == True:
                             
                             registrar_auditoria(username, "Troca de Senha Obrigatória", "Segurança", "Senha alterada com sucesso no primeiro acesso.")
                             st.cache_data.clear()
+                            st.session_state["_dejure_hash_login"] = hash_novo
                             confirmar_operacao("🎉 Senha alterada com sucesso! Liberando acesso ao sistema...")
                             time.sleep(1)
                             st.rerun()
@@ -675,6 +725,7 @@ elif authentication_status == True:
                 st.session_state.update({
                     'authentication_status': None,
                     'login_registrado': False,
+                    '_dejure_hash_login': None,
                     'name': None,
                     'username': None
                 })
@@ -762,6 +813,8 @@ elif authentication_status == True:
         
         if st.button("Sair", use_container_width=True):
             registrar_auditoria(username, "Logout", "Acesso", f"Usuário {name} ({username}) efetuou logout do sistema.")
+            st.session_state.pop("_dejure_senha_provisoria", None)
+            st.session_state.pop("_dejure_hash_login", None)
             st.session_state.update({'authentication_status': None, 'login_registrado': False})
             st.rerun()
 
@@ -4038,52 +4091,58 @@ elif authentication_status == True:
 
             elif sub == "Redefinir Senha de Usuário" and user_role == "admin":
                 st.header("🔐 Redefinir senha de funcionário")
-                st.info("A senha temporária deverá ser alterada obrigatoriamente no próximo acesso.")
-                candidatos = [(login, dados.get("name") or login)
-                              for login, dados in credentials["usernames"].items()
-                              if login not in (username, "master")
-                              and (username == "master" or dados.get("role") != "admin")]
-                if not candidatos:
-                    st.info("Não há usuários elegíveis.")
+                st.info("O sistema gerará automaticamente uma senha provisória. O funcionário deverá alterá-la ao entrar novamente.")
+                # A senha só é exibida após o banco confirmar a redefinição.
+                aviso = st.session_state.get("_dejure_senha_provisoria")
+                if aviso:
+                    st.success(f"Senha provisória gerada para **{aviso['usuario']}**. Copie e entregue de forma privada.")
+                    st.code(aviso["senha"], language=None)
+                    st.warning("Esta senha ficará visível apenas nesta sessão até você ocultá-la. Não compartilhe por grupos.")
+                    if st.button("Ocultar senha provisória", key="ocultar_senha_provisoria"):
+                        st.session_state.pop("_dejure_senha_provisoria", None)
+                        st.rerun()
                 else:
-                    opcoes = {f"{nome} ({login})": login for login, nome in candidatos}
-                    with st.form("form_redefinir_senha_usuario"):
-                        escolha = st.selectbox("Funcionário", list(opcoes))
-                        senha_temp = st.text_input("Senha temporária", type="password")
-                        senha_conf = st.text_input("Confirmar senha temporária", type="password")
-                        autorizo = st.checkbox("Confirmo a redefinição da senha deste usuário.")
-                        enviar = st.form_submit_button("Redefinir senha", type="primary")
-                    if enviar:
-                        alvo = opcoes[escolha]
-                        if not autorizo:
-                            st.error("Confirme a operação.")
-                        elif len(senha_temp) < 12:
-                            st.error("A senha deve ter pelo menos 12 caracteres.")
-                        elif senha_temp != senha_conf:
-                            st.error("As senhas não coincidem.")
-                        else:
-                            try:
-                                consulta = supabase.table("usuarios_sistema").select("username,role").eq("username", alvo).execute()
-                                registros = consulta.data or []
-                                if len(registros) != 1:
-                                    raise ValueError("Usuário não encontrado.")
-                                perfil = str(registros[0].get("role") or "")
-                                if alvo in ("master", username) or (username != "master" and perfil == "admin"):
-                                    raise PermissionError("Sem permissão para redefinir esta conta.")
-                                if perfil not in ("admin", "advogado", "bacharel", "estagiario"):
-                                    raise PermissionError("Perfil não autorizado.")
-                                hash_novo = gerar_hash(senha_temp)
-                                resposta = supabase.table("usuarios_sistema").update({
-                                    "senha_hash": hash_novo, "password": hash_novo, "trocar_senha": True
-                                }).eq("username", alvo).eq("role", perfil).execute()
-                                if len(resposta.data or []) != 1:
-                                    raise RuntimeError("Atualização não confirmada pelo banco.")
-                                registrar_auditoria(username, "Redefinição de senha", "Segurança",
-                                                    f"Senha temporária definida para {alvo}; troca obrigatória ativada.")
-                                st.cache_data.clear()
-                                st.success("Senha redefinida. Entregue-a por um canal privado.")
-                            except Exception as erro:
-                                st.error(f"Redefinição não concluída: {erro}")
+                    candidatos = [(login, dados.get("name") or login)
+                                  for login, dados in credentials["usernames"].items()
+                                  if login not in (username, "master")
+                                  and (username == "master" or dados.get("role") != "admin")]
+                    if not candidatos:
+                        st.info("Não há usuários elegíveis.")
+                    else:
+                        opcoes = {f"{nome} ({login})": login for login, nome in candidatos}
+                        with st.form("form_redefinir_senha_usuario"):
+                            escolha = st.selectbox("Funcionário", list(opcoes))
+                            autorizo = st.checkbox("Confirmo que desejo invalidar a senha atual deste funcionário.")
+                            enviar = st.form_submit_button("Gerar senha provisória e redefinir", type="primary")
+                        if enviar:
+                            alvo = opcoes[escolha]
+                            if not autorizo:
+                                st.error("Confirme a operação.")
+                            else:
+                                try:
+                                    consulta = supabase.table("usuarios_sistema").select("username,role").eq("username", alvo).execute()
+                                    registros = consulta.data or []
+                                    if len(registros) != 1:
+                                        raise ValueError("Usuário não encontrado.")
+                                    perfil = str(registros[0].get("role") or "")
+                                    if alvo in ("master", username) or (username != "master" and perfil == "admin"):
+                                        raise PermissionError("Sem permissão para redefinir esta conta.")
+                                    if perfil not in ("admin", "advogado", "bacharel", "estagiario"):
+                                        raise PermissionError("Perfil não autorizado.")
+                                    senha_temp = gerar_senha_provisoria()
+                                    hash_novo = gerar_hash(senha_temp)
+                                    resposta = supabase.table("usuarios_sistema").update({
+                                        "senha_hash": hash_novo, "password": hash_novo, "trocar_senha": True
+                                    }).eq("username", alvo).eq("role", perfil).execute()
+                                    if len(resposta.data or []) != 1:
+                                        raise RuntimeError("Atualização não confirmada pelo banco.")
+                                    registrar_auditoria(username, "Redefinição de senha", "Segurança",
+                                                        f"Senha provisória gerada para {alvo}; troca obrigatória ativada.")
+                                    st.session_state["_dejure_senha_provisoria"] = {"usuario": alvo, "senha": senha_temp}
+                                    st.cache_data.clear()
+                                    st.rerun()
+                                except Exception as erro:
+                                    st.error(f"Redefinição não concluída: {erro}")
 
             elif sub == "Cadastrar Novo Usuário" and user_role == 'admin':
                 st.header("➕ Cadastrar Novo Usuário no Sistema")
@@ -4209,17 +4268,26 @@ elif authentication_status == True:
                 st.header("📝 Novo Contrato e Parcelamento")
                 cli_db = carregar_dados("clientes_cadastrados")
                 nomes = [c['nome'] for c in cli_db]
+                # À vista cria um único recebimento pendente, com rateio na baixa.
+                tipo_pagamento = st.radio(
+                    "Forma de pagamento do contrato:",
+                    ["Parcelado", "À vista (pagamento integral)"],
+                    key="hon_tipo_pagamento", horizontal=True
+                )
+                pagamento_a_vista = tipo_pagamento == "À vista (pagamento integral)"
                 # Controles dinâmicos fora do formulário: Streamlit atualiza a cada alteração.
                 modo_parcelamento = st.radio(
                     "Forma de parcelamento do saldo:",
                     ["Parcelas iguais (automático)", "Parcelas personalizadas (valores diferentes)"],
                     key="modo_parcelamento_honorarios",
-                    horizontal=True
+                    horizontal=True,
+                    disabled=pagamento_a_vista
                 )
-                personalizado = modo_parcelamento == "Parcelas personalizadas (valores diferentes)"
+                personalizado = (not pagamento_a_vista) and modo_parcelamento == "Parcelas personalizadas (valores diferentes)"
                 npar = int(st.number_input(
                     "Quantidade de parcelas do saldo", min_value=1, max_value=36,
-                    value=3, step=1, key="hon_quantidade_parcelas_dinamica"
+                    value=3, step=1, key="hon_quantidade_parcelas_dinamica",
+                    disabled=pagamento_a_vista
                 ))
 
                 # Dados e valores personalizados também ficam fora do st.form.
@@ -4228,7 +4296,11 @@ elif authentication_status == True:
                 cli = st.text_input("Nome", key="hon_cliente_nome") if cli_op == "Outro" else cli_op
                 serv = st.text_input("Serviço", key="hon_servico")
                 vtot = campo_moeda_br("Valor Total do Contrato (R$)", "hon_valor_total")
-                v_entrada = campo_moeda_br("Valor de Entrada (R$)", "hon_valor_entrada")
+                if pagamento_a_vista:
+                    v_entrada = 0.0
+                    st.info("À vista: será gerado um único pagamento pendente pelo valor integral. O rateio será calculado quando o ADM confirmar o recebimento em 'Baixar Parcela'.")
+                else:
+                    v_entrada = campo_moeda_br("Valor de Entrada (R$)", "hon_valor_entrada")
                 saldo_preview = round(float(vtot or 0) - float(v_entrada or 0), 2)
                 valores_parcelas = []
 
@@ -4252,15 +4324,18 @@ elif authentication_status == True:
                         st.error(f"As parcelas ultrapassam o saldo em {formatar_moeda_br(abs(diferenca_preview))}.")
                     else:
                         st.success("A soma das parcelas corresponde ao saldo restante.")
-                else:
+                elif not pagamento_a_vista:
                     st.caption(f"O saldo será dividido automaticamente em {npar} parcelas.")
 
                 with st.form("fc_hon", clear_on_submit=False):
-                    dt1 = dejure_date_input_br("Vencimento da 1ª Parcela (ou Entrada)", datetime.now())
+                    dt1 = dejure_date_input_br(
+                        "Data prevista do pagamento integral" if pagamento_a_vista else "Vencimento da 1ª Parcela (ou Entrada)",
+                        datetime.now()
+                    )
 
                     col_b_h1, col_b_h2 = st.columns(2)
                     with col_b_h1:
-                        salvar_hon = st.form_submit_button("Gerar Contrato e Parcelas", type="primary", use_container_width=True)
+                        salvar_hon = st.form_submit_button("Cadastrar Contrato à Vista" if pagamento_a_vista else "Gerar Contrato e Parcelas", type="primary", use_container_width=True)
                     with col_b_h2:
                         voltar_hon = st.form_submit_button("⬅️ Voltar", use_container_width=True)
 
@@ -4280,6 +4355,22 @@ elif authentication_status == True:
                             if res.data:
                                 h_id = res.data[0]['id']
                                 saldo_restante = round(float(vtot) - float(v_entrada), 2)
+
+                                if pagamento_a_vista:
+                                    # Mesmo fluxo de parcelas, porém um único título integral.
+                                    # "À vista" usa o rateio completo da entrada na baixa.
+                                    supabase.table("parcelas").insert({
+                                        "honorario_id": h_id,
+                                        "numero_parcela": "À vista",
+                                        "valor": round(float(vtot), 2),
+                                        "vencimento": dt1.strftime("%Y-%m-%d"),
+                                        "status": "Pendente"
+                                    }).execute()
+                                    registrar_auditoria(username, "Cadastrar Contrato à Vista", "Pagamentos",
+                                                        f"Cliente: {cli} - Total: {formatar_moeda_br(vtot)}")
+                                    st.cache_data.clear()
+                                    confirmar_operacao("Contrato à vista cadastrado. O pagamento integral está pendente de baixa.")
+                                    st.rerun()
 
                                 if v_entrada > 0:
                                     supabase.table("parcelas").insert({
@@ -4612,7 +4703,8 @@ elif authentication_status == True:
                                 lista_usuarios.append({"nome": nome_u, "papel": papel_u})
                         
                         nomes_opcoes = [u['nome'] for u in lista_usuarios]
-                        is_entrada = (parcela_obj['numero_parcela'] == "Entrada")
+                        is_entrada = (parcela_obj['numero_parcela'] in ("Entrada", "À vista"))
+                        is_avista = parcela_obj['numero_parcela'] == "À vista"
                         
                         opcoes_prosp_baixa = ["Nenhum / Sem Prospectador", "Prospectador Externo"] + nomes_opcoes
                         if prosp_automatico_cli.startswith("Prospectador Externo:") and prosp_automatico_cli not in opcoes_prosp_baixa:
@@ -4623,8 +4715,8 @@ elif authentication_status == True:
                             idx_prosp_init = opcoes_prosp_baixa.index(prosp_automatico_cli)
 
                         if is_entrada:
-                            st.subheader("⚙️ Regra de Entrada (Com / Sem Prospecção)")
-                            st.info("Entrada: descontar prospectador e operador; aplicar fundo de 5% sobre o saldo somente se o valor bruto negociado do contrato for igual ou superior a R$ 1.000,00; dividir o restante entre os sócios (60/40).")
+                            st.subheader("⚙️ Regra de Pagamento à Vista" if is_avista else "⚙️ Regra de Entrada (Com / Sem Prospecção)")
+                            st.info(("Pagamento integral à vista" if is_avista else "Entrada") + ": descontar prospectador e operador; aplicar fundo de 5% sobre o saldo somente se o valor bruto negociado do contrato for igual ou superior a R$ 1.000,00; dividir o restante entre os sócios (60/40).")
                             
                             col_r1, col_r2 = st.columns(2)
                             with col_r1:
@@ -4674,7 +4766,7 @@ elif authentication_status == True:
                             regra_aplicada = "Entrada"
                             
                             if prosp_name == resp_name:
-                                regra_aplicada = "Entrada (Acúmulo)"
+                                regra_aplicada = "À vista (Acúmulo)" if is_avista else "Entrada (Acúmulo)"
                                 taxa = 0.60 if resp_role in ['admin', 'advogado'] else 0.40
                                 val_operador = round(valor_bruto * taxa, 2)
                                 val_prospectador = val_operador
@@ -4766,6 +4858,7 @@ elif authentication_status == True:
                                 "contrato": sel_contrato_str,
                                 "regra": regra_aplicada,
                                 "valor_bruto": round(valor_bruto, 2),
+                                "tipo_recebimento": "À vista" if is_avista else ("Entrada" if is_entrada else "Parcela"),
                                 "prospectador": prosp_name,
                                 "valor_prospectador": round(val_prospectador, 2),
                                 "operador": resp_name,

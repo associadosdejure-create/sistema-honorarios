@@ -549,6 +549,7 @@ try:
 except Exception:
     authenticator.login('main')
 
+authentication_status = st.session_state.get('authentication_status')
 name = st.session_state.get('name')
 username = st.session_state.get('username')
 
@@ -594,22 +595,20 @@ elif authentication_status == True:
                 if st.form_submit_button("Atualizar Senha e Entrar", type="primary"):
                     if not nova_s or nova_s != conf_s:
                         st.error("As senhas não coincidem ou estão em branco.")
+                    elif len(nova_s) < 12:
+                        st.error("A senha deve ter pelo menos 12 caracteres.")
                     elif nova_s == "mudar123":
                         st.error("A nova senha não pode ser igual à senha padrão ('mudar123'). Escolha uma senha segura.")
                     else:
                         hash_novo = gerar_hash(nova_s)
                         try:
-                            try:
-                                supabase.table("usuarios_sistema").update({
-                                    "senha_hash": hash_novo,
-                                    "password": hash_novo,
-                                    "trocar_senha": False
-                                }).eq("username", username).execute()
-                            except Exception:
-                                supabase.table("usuarios_sistema").update({
-                                    "senha_hash": hash_novo,
-                                    "password": hash_novo
-                                }).eq("username", username).execute()
+                            resposta = supabase.table("usuarios_sistema").update({
+                                "senha_hash": hash_novo,
+                                "password": hash_novo,
+                                "trocar_senha": False
+                            }).eq("username", username).execute()
+                            if len(resposta.data or []) != 1:
+                                raise RuntimeError("Troca de senha não confirmada pelo banco.")
                             
                             registrar_auditoria(username, "Troca de Senha Obrigatória", "Segurança", "Senha alterada com sucesso no primeiro acesso.")
                             st.cache_data.clear()
@@ -2716,7 +2715,7 @@ elif authentication_status == True:
             acoes = ["Nossa Equipe"]
         elif menu_principal == "Segurança":
             acoes = ["Meu Perfil", "Alterar Senha"]
-            if user_role == 'admin': acoes = ["Meu Perfil", "Gerenciar Usuários", "Cadastrar Novo Usuário", "Alterar Senha"]
+            if user_role == 'admin': acoes = ["Meu Perfil", "Gerenciar Usuários", "Cadastrar Novo Usuário", "Redefinir Senha de Usuário", "Alterar Senha"]
             if username == "master": acoes.append("Reiniciar IDs de Teste")
         else:
             acoes = []
@@ -3985,6 +3984,55 @@ elif authentication_status == True:
                             confirmar_operacao("✅ Senha alterada! Saia e entre novamente com a nova senha.")
                         except Exception as erro:
                             st.error(f"Não foi possível salvar a senha: {erro}")
+
+            elif sub == "Redefinir Senha de Usuário" and user_role == "admin":
+                st.header("🔐 Redefinir senha de funcionário")
+                st.info("A senha temporária deverá ser alterada obrigatoriamente no próximo acesso.")
+                candidatos = [(login, dados.get("name") or login)
+                              for login, dados in credentials["usernames"].items()
+                              if login not in (username, "master")
+                              and (username == "master" or dados.get("role") != "admin")]
+                if not candidatos:
+                    st.info("Não há usuários elegíveis.")
+                else:
+                    opcoes = {f"{nome} ({login})": login for login, nome in candidatos}
+                    with st.form("form_redefinir_senha_usuario"):
+                        escolha = st.selectbox("Funcionário", list(opcoes))
+                        senha_temp = st.text_input("Senha temporária", type="password")
+                        senha_conf = st.text_input("Confirmar senha temporária", type="password")
+                        autorizo = st.checkbox("Confirmo a redefinição da senha deste usuário.")
+                        enviar = st.form_submit_button("Redefinir senha", type="primary")
+                    if enviar:
+                        alvo = opcoes[escolha]
+                        if not autorizo:
+                            st.error("Confirme a operação.")
+                        elif len(senha_temp) < 12:
+                            st.error("A senha deve ter pelo menos 12 caracteres.")
+                        elif senha_temp != senha_conf:
+                            st.error("As senhas não coincidem.")
+                        else:
+                            try:
+                                consulta = supabase.table("usuarios_sistema").select("username,role").eq("username", alvo).execute()
+                                registros = consulta.data or []
+                                if len(registros) != 1:
+                                    raise ValueError("Usuário não encontrado.")
+                                perfil = str(registros[0].get("role") or "")
+                                if alvo in ("master", username) or (username != "master" and perfil == "admin"):
+                                    raise PermissionError("Sem permissão para redefinir esta conta.")
+                                if perfil not in ("admin", "advogado", "bacharel", "estagiario"):
+                                    raise PermissionError("Perfil não autorizado.")
+                                hash_novo = gerar_hash(senha_temp)
+                                resposta = supabase.table("usuarios_sistema").update({
+                                    "senha_hash": hash_novo, "password": hash_novo, "trocar_senha": True
+                                }).eq("username", alvo).eq("role", perfil).execute()
+                                if len(resposta.data or []) != 1:
+                                    raise RuntimeError("Atualização não confirmada pelo banco.")
+                                registrar_auditoria(username, "Redefinição de senha", "Segurança",
+                                                    f"Senha temporária definida para {alvo}; troca obrigatória ativada.")
+                                st.cache_data.clear()
+                                st.success("Senha redefinida. Entregue-a por um canal privado.")
+                            except Exception as erro:
+                                st.error(f"Redefinição não concluída: {erro}")
 
             elif sub == "Cadastrar Novo Usuário" and user_role == 'admin':
                 st.header("➕ Cadastrar Novo Usuário no Sistema")
